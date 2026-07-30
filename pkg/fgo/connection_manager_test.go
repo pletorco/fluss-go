@@ -2,12 +2,14 @@ package fgo
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
@@ -236,6 +238,40 @@ func TestConnectionManagerRedialsDisconnectedServer(t *testing.T) {
 	<-secondDone
 }
 
+func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
+	firstClient, firstServer := net.Pipe()
+	firstDone := serveVersionThenRemoteError(t, firstServer, TabletServer, fmsg.ErrorCodeNotLeaderOrFollower)
+	secondClient, secondServer := net.Pipe()
+	secondDone := serveVersionThenRequest(t, secondServer, TabletServer, fmsg.APIKeyApiVersions)
+	dials := 0
+	manager := newConnectionManager(config{
+		name: "test", version: "1", retry: RetryPolicy{MaxAttempts: 2, Backoff: func(int) time.Duration { return 0 }},
+		dialContext: func(context.Context, string, string) (net.Conn, error) {
+			dials++
+			if dials == 1 {
+				return firstClient, nil
+			}
+			return secondClient, nil
+		},
+	})
+	node := Node{ID: 7, Address: "tablet:9123", Role: TabletServer}
+	request, _ := apiVersionsRequest()
+	if _, err := manager.request(context.Background(), node, request); err != nil {
+		t.Fatalf("retry request error = %v", err)
+	}
+	if got, want := dials, 2; got != want {
+		t.Fatalf("dial calls = %d, want %d", got, want)
+	}
+	if safeToRetry(fmsg.APIKeyCreateDatabase) {
+		t.Fatal("create database must not be retried automatically")
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-firstDone
+	<-secondDone
+}
+
 func TestServerRole(t *testing.T) {
 	for _, role := range []ServerRole{Coordinator, TabletServer} {
 		got, err := serverRole(int32(role))
@@ -329,6 +365,35 @@ func serveThenDisconnect(t *testing.T, conn net.Conn, role ServerRole) <-chan st
 	return done
 }
 
+func serveVersionThenRemoteError(t *testing.T, conn net.Conn, role ServerRole, code fmsg.ErrorCode) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer conn.Close()
+		id, key, _ := readTransportRequest(t, conn)
+		if key != fmsg.APIKeyApiVersions {
+			t.Errorf("API key = %d, want API_VERSIONS", key)
+			return
+		}
+		body, err := versionResponse(role)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		writeTransportResponse(t, conn, id, body)
+		id, _, _ = readTransportRequest(t, conn)
+		codeValue := int32(code)
+		body, err = proto.Marshal(&fmsg.ErrorResponse{ErrorCode: &codeValue})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		writeTransportError(t, conn, id, body)
+	}()
+	return done
+}
+
 func versionResponse(role ServerRole) ([]byte, error) {
 	apiKey := int32(fmsg.APIKeyApiVersions)
 	minimum, maximum, roleValue := int32(0), int32(0), int32(role)
@@ -349,4 +414,16 @@ func apiVersionsRequest() (*fmsg.MessageRequest, error) {
 	message.ClientSoftwareName = proto.String("test")
 	message.ClientSoftwareVersion = proto.String("1")
 	return request, nil
+}
+
+func writeTransportError(t *testing.T, conn net.Conn, id int32, body []byte) {
+	t.Helper()
+	frame := make([]byte, 9+len(body))
+	binary.BigEndian.PutUint32(frame, uint32(5+len(body)))
+	frame[4] = 1
+	binary.BigEndian.PutUint32(frame[5:], uint32(id))
+	copy(frame[9:], body)
+	if _, err := conn.Write(frame); err != nil {
+		t.Error(err)
+	}
 }

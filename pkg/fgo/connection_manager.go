@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/pletorco/fluss-go/internal/transport"
 	"github.com/pletorco/fluss-go/pkg/fmsg"
@@ -44,6 +45,12 @@ type connectionManager struct {
 }
 
 func newConnectionManager(cfg config) *connectionManager {
+	if cfg.retry.MaxAttempts == 0 {
+		cfg.retry.MaxAttempts = 1
+	}
+	if cfg.retry.Backoff == nil {
+		cfg.retry.Backoff = func(int) time.Duration { return 0 }
+	}
 	return &connectionManager{
 		cfg:     cfg,
 		clients: make(map[connectionKey]*Client),
@@ -180,16 +187,60 @@ func (m *connectionManager) remove(address string, role ServerRole, client *Clie
 }
 
 func (m *connectionManager) request(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
-	client, err := m.getNode(ctx, node)
-	if err != nil {
-		return nil, err
-	}
-	response, err := client.request(ctx, request)
-	if shouldReplaceConnection(err) {
+	for attempt := 1; attempt <= m.cfg.retry.MaxAttempts; attempt++ {
+		client, err := m.getNode(ctx, node)
+		if err != nil {
+			return nil, err
+		}
+		response, err := client.request(ctx, request)
+		if err == nil || !m.shouldRetry(ctx, request.APIKey(), err, attempt) {
+			if shouldReplaceConnection(err) {
+				m.remove(node.Address, node.Role, client)
+				_ = client.shutdown()
+			}
+			return response, err
+		}
 		m.remove(node.Address, node.Role, client)
 		_ = client.shutdown()
+		if err := waitRetry(ctx, m.cfg.retry.Backoff(attempt)); err != nil {
+			return nil, err
+		}
 	}
-	return response, err
+	return nil, fmt.Errorf("fgo: retry attempts exhausted")
+}
+
+func (m *connectionManager) shouldRetry(ctx context.Context, key fmsg.APIKey, err error, attempt int) bool {
+	if ctx.Err() != nil || attempt >= m.cfg.retry.MaxAttempts || !safeToRetry(key) {
+		return false
+	}
+	var server *ServerError
+	return errors.As(err, &server) && server.Retriable || shouldReplaceConnection(err)
+}
+
+func safeToRetry(key fmsg.APIKey) bool {
+	switch key {
+	case fmsg.APIKeyApiVersions, fmsg.APIKeyGetTableInfo, fmsg.APIKeyListTables,
+		fmsg.APIKeyListDatabases, fmsg.APIKeyDatabaseExists, fmsg.APIKeyTableExists,
+		fmsg.APIKeyGetMetadata, fmsg.APIKeyGetTableSchema, fmsg.APIKeyListPartitionInfos,
+		fmsg.APIKeyGetTableStats, fmsg.APIKeyListOffsets:
+		return true
+	default:
+		return false
+	}
+}
+
+func waitRetry(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (m *connectionManager) Close() error {

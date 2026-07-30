@@ -67,6 +67,13 @@ type config struct {
 	authFactory AuthenticatorFactory
 	timeout     time.Duration
 	limits      transport.Config
+	retry       RetryPolicy
+}
+
+// RetryPolicy bounds automatic retries of safe, read-only requests.
+type RetryPolicy struct {
+	MaxAttempts int
+	Backoff     func(attempt int) time.Duration
 }
 
 func WithSeedBrokers(seeds ...string) Option {
@@ -142,6 +149,19 @@ func WithTransportLimits(limits transport.Config) Option {
 	}
 }
 
+func WithRetryPolicy(policy RetryPolicy) Option {
+	return func(c *config) error {
+		if policy.MaxAttempts < 1 {
+			return fmt.Errorf("%w: retry attempts must be positive", ErrInvalidConfig)
+		}
+		if policy.Backoff == nil {
+			policy.Backoff = func(int) time.Duration { return 0 }
+		}
+		c.retry = policy
+		return nil
+	}
+}
+
 type Client struct {
 	requester fmsg.Requester
 	close     func() error
@@ -157,7 +177,7 @@ type Client struct {
 }
 
 func Open(ctx context.Context, options ...Option) (*Client, error) {
-	cfg := config{name: "fluss-go", version: "dev", timeout: 10 * time.Second}
+	cfg := config{name: "fluss-go", version: "dev", timeout: 10 * time.Second, retry: RetryPolicy{MaxAttempts: 1, Backoff: func(int) time.Duration { return 0 }}}
 	for _, option := range options {
 		if err := option(&cfg); err != nil {
 			return nil, err
@@ -216,7 +236,11 @@ func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 	if err := request.SetVersion(version); err != nil {
 		return nil, err
 	}
-	return c.requester.Request(ctx, request)
+	response, err := c.requester.Request(ctx, request)
+	if err != nil {
+		return nil, serverError(err, request.APIKey(), c.address)
+	}
+	return response, nil
 }
 
 func (c *Client) Close() error {
