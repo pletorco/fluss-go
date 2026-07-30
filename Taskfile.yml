@@ -60,8 +60,13 @@ tasks:
 
   generate:
     desc: Regenerate protocol artifacts
+    deps:
+      - generate:protocol
+
+  generate:protocol:
+    desc: Regenerate pinned Apache Fluss protocol metadata
     cmds:
-      - test ! -d cmd/protocolgen || go run ./cmd/protocolgen
+      - go run ./cmd/protocolgen
 
   verify:generate:
     desc: Verify generated protocol artifacts are current
@@ -78,7 +83,7 @@ tasks:
     desc: Scan Go dependencies with govulncheck
     cmds:
       - test -z "{{.GO_PACKAGES}}" || mkdir -p "{{.TOOLS_DIR}}"
-      - test -z "{{.GO_PACKAGES}}" || GOBIN="$(PWD)/{{.TOOLS_DIR}}" go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}
+      - test -z "{{.GO_PACKAGES}}" || GOBIN="$(pwd)/{{.TOOLS_DIR}}" go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}
       - test -z "{{.GO_PACKAGES}}" || "{{.TOOLS_DIR}}/govulncheck" ./...
 
   security:repo:
