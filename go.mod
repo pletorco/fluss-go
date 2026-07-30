@@ -2,6 +2,8 @@ module github.com/pletorco/fluss-go
 
 go 1.25.0
 
+toolchain go1.26.5
+
 require (
 	github.com/apache/arrow-go/v18 v18.7.0
 	google.golang.org/protobuf v1.36.11

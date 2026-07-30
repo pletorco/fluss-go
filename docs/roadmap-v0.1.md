@@ -41,8 +41,8 @@ Usage and extension contracts are documented in
   negotiation, catalog operations, append and scan, KV mutation, point and
   prefix lookup, dynamic partition creation, bounded scans, supported log
   formats, security tokens, and a three-tablet leader change.
-- CI covers Go 1.25.x and 1.26.x. Weekly workflows rerun security and live
-  compatibility checks.
+- CI covers patched Go 1.25 and 1.26 releases without toolchain auto-switching.
+  Weekly workflows rerun security and live compatibility checks.
 
 ## Deliberate limits
 
