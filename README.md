@@ -30,7 +30,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Log append writers | Supported | `LogWriter` provides schema-aware row and explicit-bucket Arrow appends, Fluss hash/sticky/round-robin assignment, bounded per-bucket batching, idempotent sequences, partial results, `Flush`, and `Close`. |
 | Log scanners | Supported | `LogScanner` provides explicit/earliest/latest/timestamp subscriptions, projection pushdown, ordered row and Arrow polling, partial bucket errors, and cancellation-aware lifecycle management. |
 | Primary-key writers | Supported | `KVWriter` provides full and projected upsert, delete, Fluss hash routing, v0/v1 `PUT_KV`, idempotent per-bucket sequences, batching, partial results, and bounded lifecycle operations. |
-| Point and prefix lookups | Planned | These user operations are tracked in [#13](https://github.com/pletorco/fluss-go/issues/13). |
+| Point and prefix lookups | Supported | `LookupClient` validates and batches v0/v1 keys by bucket, preserves input association, distinguishes not-found results, bounds concurrency, and supports routable leading-key prefixes. |
 | `fadm` administrative client | Planned | No `pkg/fadm` package is published. Core and advanced administrative APIs are tracked in [#14](https://github.com/pletorco/fluss-go/issues/14) and [#15](https://github.com/pletorco/fluss-go/issues/15). |
 | Live Fluss 0.9.1 compatibility | Not yet verified | Unit, golden, and race tests run in `task verify`; the opt-in live integration harness is tracked in [#27](https://github.com/pletorco/fluss-go/issues/27). Do not infer production compatibility from generated protocol types alone. |
 
