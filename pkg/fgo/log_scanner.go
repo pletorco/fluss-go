@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -57,12 +58,14 @@ func (s ScanOffset) Validate() error {
 }
 
 type LogScannerConfig struct {
-	Projection     []string
-	Partition      string
-	MaxBytes       int32
-	MaxBucketBytes int32
-	MinBytes       int32
-	MaxWait        time.Duration
+	Projection      []string
+	Partition       string
+	MaxBytes        int32
+	MaxBucketBytes  int32
+	MinBytes        int32
+	MaxWait         time.Duration
+	RowLimit        int64
+	StoppingOffsets map[int32]int64
 }
 
 type LogScannerOption func(*LogScannerConfig) error
@@ -99,6 +102,36 @@ func WithScanLimits(maxBytes, maxBucketBytes, minBytes int32, maxWait time.Durat
 	}
 }
 
+// WithScanRowLimit completes a scanner after it has delivered limit rows across all buckets.
+func WithScanRowLimit(limit int64) LogScannerOption {
+	return func(config *LogScannerConfig) error {
+		if limit <= 0 {
+			return fmt.Errorf("%w: scan row limit must be positive", ErrInvalidConfig)
+		}
+		config.RowLimit = limit
+		return nil
+	}
+}
+
+// WithScanStoppingOffsets sets the exclusive stopping offset for every initial bucket.
+func WithScanStoppingOffsets(offsets map[int32]int64) LogScannerOption {
+	return func(config *LogScannerConfig) error {
+		if len(offsets) == 0 {
+			return fmt.Errorf("%w: stopping offsets are empty", ErrInvalidConfig)
+		}
+		config.StoppingOffsets = make(map[int32]int64, len(offsets))
+		for bucket, offset := range offsets {
+			if bucket < 0 || offset < 0 {
+				return fmt.Errorf("%w: invalid stopping offset for bucket %d", ErrInvalidConfig, bucket)
+			}
+			config.StoppingOffsets[bucket] = offset
+		}
+		return nil
+	}
+}
+
+var ErrWakeup = errors.New("fgo: log scanner wakeup")
+
 type ScanRecord struct {
 	Bucket int32
 	Record Record
@@ -119,6 +152,7 @@ type ScanResult struct {
 	ArrowBatches  []ScanArrowBatch
 	BucketErrors  []BucketScanError
 	HighWatermark map[int32]int64
+	Done          bool
 }
 
 func (r *ScanResult) Release() {
@@ -269,12 +303,16 @@ type LogScanner struct {
 	schema      Schema
 	projection  []int32
 
-	pollMu sync.Mutex
-	mu     sync.RWMutex
-	offset map[int32]int64
-	closed bool
-	life   context.Context
-	cancel context.CancelFunc
+	pollMu      sync.Mutex
+	mu          sync.RWMutex
+	offset      map[int32]int64
+	delivered   int64
+	done        bool
+	closed      bool
+	life        context.Context
+	cancel      context.CancelFunc
+	pollCancel  context.CancelFunc
+	wakePending bool
 }
 
 func (c *Client) NewLogScanner(ctx context.Context, table Table, start ScanOffset, options ...LogScannerOption) (*LogScanner, error) {
@@ -324,6 +362,10 @@ func newLogScanner(
 	if err := scanner.initializeOffsets(ctx, start); err != nil {
 		return nil, err
 	}
+	if err := scanner.validateStoppingOffsets(); err != nil {
+		return nil, err
+	}
+	scanner.updateDone()
 	return scanner, nil
 }
 
@@ -392,12 +434,14 @@ func (s *LogScanner) Subscribe(ctx context.Context, bucket int32, start ScanOffs
 		return ErrClosed
 	}
 	s.offset[bucket] = offset
+	s.updateDoneLocked()
 	return nil
 }
 
 func (s *LogScanner) Unsubscribe(bucket int32) {
 	s.mu.Lock()
 	delete(s.offset, bucket)
+	s.updateDoneLocked()
 	s.mu.Unlock()
 }
 
@@ -407,15 +451,17 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 	}
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
-	offsets, err := s.offsetSnapshot()
+	offsets, requestCtx, cancel, err := s.beginPoll(ctx)
 	if err != nil {
 		return ScanResult{}, err
 	}
+	if cancel == nil {
+		return ScanResult{HighWatermark: map[int32]int64{}, Done: true}, nil
+	}
+	defer s.endPoll(cancel)
 	if len(offsets) == 0 {
 		return ScanResult{}, fmt.Errorf("%w: scanner has no subscriptions", ErrInvalidConfig)
 	}
-	requestCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	stop := context.AfterFunc(s.life, cancel)
 	defer stop()
 	result := ScanResult{HighWatermark: make(map[int32]int64, len(offsets))}
@@ -424,25 +470,50 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 		if !subscribed {
 			continue
 		}
+		if stop, bounded := s.config.StoppingOffsets[bucket]; bounded && offset >= stop {
+			continue
+		}
 		if err := s.pollBucket(requestCtx, ctx, bucket, offset, &result); err != nil {
 			result.Release()
 			return ScanResult{}, err
 		}
+		if s.Done() {
+			break
+		}
 	}
+	result.Done = s.Done()
 	return result, nil
 }
 
-func (s *LogScanner) offsetSnapshot() (map[int32]int64, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *LogScanner) beginPoll(
+	ctx context.Context,
+) (map[int32]int64, context.Context, context.CancelFunc, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.closed {
-		return nil, ErrClosed
+		return nil, nil, nil, ErrClosed
+	}
+	if s.done {
+		return nil, nil, nil, nil
+	}
+	if s.wakePending {
+		s.wakePending = false
+		return nil, nil, nil, ErrWakeup
 	}
 	offsets := make(map[int32]int64, len(s.offset))
 	for bucket, offset := range s.offset {
 		offsets[bucket] = offset
 	}
-	return offsets, nil
+	requestCtx, cancel := context.WithCancel(ctx)
+	s.pollCancel = cancel
+	return offsets, requestCtx, cancel, nil
+}
+
+func (s *LogScanner) endPoll(cancel context.CancelFunc) {
+	cancel()
+	s.mu.Lock()
+	s.pollCancel = nil
+	s.mu.Unlock()
 }
 
 func (s *LogScanner) pollBucket(
@@ -464,10 +535,11 @@ func (s *LogScanner) pollBucket(
 		result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
 		return nil
 	}
+	rows, arrows, delivered, boundedNext := s.applyBounds(bucket, rows, arrows, next)
 	result.Records = append(result.Records, rows...)
 	result.ArrowBatches = append(result.ArrowBatches, arrows...)
 	result.HighWatermark[bucket] = fetched.highWatermark
-	s.advanceOffset(bucket, offset, next)
+	s.advanceOffset(bucket, offset, boundedNext, delivered)
 	return nil
 }
 
@@ -480,20 +552,142 @@ func (s *LogScanner) recordFetchError(
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	s.mu.RLock()
+	s.mu.Lock()
 	closed := s.closed
-	s.mu.RUnlock()
+	woken := s.wakePending
+	if woken {
+		s.wakePending = false
+	}
+	s.mu.Unlock()
 	if closed {
 		return ErrClosed
+	}
+	if woken {
+		return ErrWakeup
 	}
 	result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: fetchErr})
 	return nil
 }
 
-func (s *LogScanner) advanceOffset(bucket int32, previous, next int64) {
+func (s *LogScanner) advanceOffset(bucket int32, previous, next, delivered int64) {
 	s.mu.Lock()
 	if current, ok := s.offset[bucket]; ok && current == previous {
 		s.offset[bucket] = next
+	}
+	s.delivered += delivered
+	s.updateDoneLocked()
+	s.mu.Unlock()
+}
+
+type scanSegment struct {
+	offset int64
+	row    int
+	arrow  int
+}
+
+func (s *LogScanner) applyBounds(
+	bucket int32,
+	rows []ScanRecord,
+	arrows []ScanArrowBatch,
+	decodedNext int64,
+) ([]ScanRecord, []ScanArrowBatch, int64, int64) {
+	if s.config.RowLimit == 0 && s.config.StoppingOffsets == nil {
+		delivered := int64(len(rows))
+		for index := range arrows {
+			delivered += arrows[index].Batch.Record.NumRows()
+		}
+		return rows, arrows, delivered, decodedNext
+	}
+	s.mu.RLock()
+	remaining := int64(math.MaxInt64)
+	if s.config.RowLimit > 0 {
+		remaining = s.config.RowLimit - s.delivered
+	}
+	stop := int64(math.MaxInt64)
+	if configured, ok := s.config.StoppingOffsets[bucket]; ok {
+		stop = configured
+	}
+	s.mu.RUnlock()
+
+	segments := make([]scanSegment, 0, len(rows)+len(arrows))
+	for index := range rows {
+		segments = append(segments, scanSegment{offset: rows[index].Record.Offset, row: index, arrow: -1})
+	}
+	for index := range arrows {
+		segments = append(segments, scanSegment{offset: arrows[index].Batch.BaseOffset, row: -1, arrow: index})
+	}
+	sort.SliceStable(segments, func(i, j int) bool { return segments[i].offset < segments[j].offset })
+
+	boundedRows := make([]ScanRecord, 0, len(rows))
+	boundedArrows := make([]ScanArrowBatch, 0, len(arrows))
+	var delivered int64
+	next := decodedNext
+	for _, segment := range segments {
+		if segment.row >= 0 {
+			if remaining > 0 && segment.offset < stop {
+				boundedRows = append(boundedRows, rows[segment.row])
+				remaining--
+				delivered++
+				next = segment.offset + 1
+			}
+			continue
+		}
+		batch := &arrows[segment.arrow].Batch
+		count := batch.Record.NumRows()
+		allowed := count
+		if stop-segment.offset < allowed {
+			allowed = stop - segment.offset
+		}
+		if remaining < allowed {
+			allowed = remaining
+		}
+		if allowed <= 0 {
+			batch.Release()
+			continue
+		}
+		if allowed == count {
+			boundedArrows = append(boundedArrows, arrows[segment.arrow])
+		} else {
+			boundedArrows = append(boundedArrows, ScanArrowBatch{
+				Bucket: bucket,
+				Batch:  sliceArrowLogBatch(batch, allowed),
+			})
+			batch.Release()
+		}
+		remaining -= allowed
+		delivered += allowed
+		next = segment.offset + allowed
+	}
+	if next > stop {
+		next = stop
+	}
+	return boundedRows, boundedArrows, delivered, next
+}
+
+func sliceArrowLogBatch(batch *ArrowLogBatch, rows int64) ArrowLogBatch {
+	sliced := *batch
+	sliced.Record = batch.Record.NewSlice(0, rows)
+	sliced.Changes = append([]ChangeType(nil), batch.Changes[:rows]...)
+	sliced.owned = true
+	sliced.release = &sync.Once{}
+	return sliced
+}
+
+// Done reports whether a configured row or stopping-offset bound has completed.
+func (s *LogScanner) Done() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.done
+}
+
+// Wakeup interrupts an active Poll, or the next Poll when none is active.
+func (s *LogScanner) Wakeup() {
+	s.mu.Lock()
+	if !s.closed && !s.done {
+		s.wakePending = true
+		if s.pollCancel != nil {
+			s.pollCancel()
+		}
 	}
 	s.mu.Unlock()
 }
@@ -505,6 +699,45 @@ func (s *LogScanner) Close() error {
 	s.cancel()
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *LogScanner) validateStoppingOffsets() error {
+	if s.config.StoppingOffsets == nil {
+		return nil
+	}
+	for _, bucket := range s.buckets {
+		if _, ok := s.config.StoppingOffsets[bucket]; !ok {
+			return fmt.Errorf("%w: stopping offset omitted bucket %d", ErrInvalidConfig, bucket)
+		}
+	}
+	for bucket := range s.config.StoppingOffsets {
+		if !s.hasBucket(bucket) {
+			return fmt.Errorf("%w: stopping offset has unknown bucket %d", ErrInvalidConfig, bucket)
+		}
+	}
+	return nil
+}
+
+func (s *LogScanner) updateDone() {
+	s.mu.Lock()
+	s.updateDoneLocked()
+	s.mu.Unlock()
+}
+
+func (s *LogScanner) updateDoneLocked() {
+	if s.config.RowLimit > 0 && s.delivered >= s.config.RowLimit {
+		s.done = true
+		return
+	}
+	if s.config.StoppingOffsets == nil {
+		return
+	}
+	for bucket, stop := range s.config.StoppingOffsets {
+		if s.offset[bucket] < stop {
+			return
+		}
+	}
+	s.done = true
 }
 
 func (s *LogScanner) resolveOffset(ctx context.Context, bucket int32, start ScanOffset) (int64, error) {

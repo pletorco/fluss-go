@@ -332,6 +332,39 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	if found[1] != "first" || found[2] != "second" || found[3] != "third" {
 		t.Fatalf("scanned rows = %#v", found)
 	}
+	testBoundedLogScan(t, ctx, client, table)
+}
+
+func testBoundedLogScan(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {
+	t.Helper()
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanRowLimit(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	var rows int64
+	for !scanner.Done() && ctx.Err() == nil {
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows += int64(len(result.Records))
+		for _, batch := range result.ArrowBatches {
+			rows += batch.Batch.Record.NumRows()
+		}
+		result.Release()
+	}
+	if rows != 2 {
+		t.Fatalf("bounded scan returned %d rows, want 2", rows)
+	}
+	result, err := scanner.Poll(ctx)
+	if err != nil || !result.Done || len(result.Records) != 0 || len(result.ArrowBatches) != 0 {
+		t.Fatalf("terminal bounded poll = %#v, %v", result, err)
+	}
 }
 
 func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
