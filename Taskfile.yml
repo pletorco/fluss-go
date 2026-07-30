@@ -11,6 +11,7 @@ vars:
   GO_PACKAGES:
     sh: go list ./... 2>/dev/null || true
   GOVULNCHECK_VERSION: v1.6.0
+  PROTOC_GEN_GO_VERSION: v1.36.10
   TRIVY_VERSION: 0.72.0
   TOOLS_DIR: .tools/bin
 
@@ -66,7 +67,10 @@ tasks:
   generate:protocol:
     desc: Regenerate pinned Apache Fluss protocol metadata
     cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - GOBIN="$(pwd)/{{.TOOLS_DIR}}" go install google.golang.org/protobuf/cmd/protoc-gen-go@{{.PROTOC_GEN_GO_VERSION}}
       - go run ./cmd/protocolgen
+      - PATH="$(pwd)/{{.TOOLS_DIR}}:$PATH" protoc --go_out=pkg/fmsg --go_opt=module=github.com/pletorco/fluss-go/pkg/fmsg --go_opt=Mthird_party/apache-fluss/FlussApi.proto=github.com/pletorco/fluss-go/pkg/fmsg third_party/apache-fluss/FlussApi.proto
 
   verify:generate:
     desc: Verify generated protocol artifacts are current
