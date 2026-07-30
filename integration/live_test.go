@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -361,6 +362,7 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	defer lookup.Close()
 	testPointAndPrefixLookup(t, ctx, lookup)
 	deleteLookupRow(t, ctx, client, table, lookup)
+	testConcurrentInsertLookup(t, ctx, client, table)
 }
 
 func upsertRows(t *testing.T, ctx context.Context, writer *fgo.KVWriter, rows []fgo.Row) {
@@ -411,6 +413,35 @@ func deleteLookupRow(
 	deleted := lookup.Lookup(ctx, fgo.PrimaryKey{"team-a", int32(1)})
 	if len(deleted) != 1 || !errors.Is(deleted[0].Err, fgo.ErrNotFound) || deleted[0].Found {
 		t.Fatalf("deleted lookup = %#v", deleted)
+	}
+}
+
+func testConcurrentInsertLookup(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {
+	t.Helper()
+	lookup, err := client.NewLookupClient(
+		ctx, table, fgo.WithLookupInsertIfNotExists(10*time.Second, -1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+	const callers = 12
+	results := make(chan fgo.LookupResult, callers)
+	var wait sync.WaitGroup
+	for range callers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			results <- lookup.Lookup(ctx, fgo.PrimaryKey{"inserted", int32(7)})[0]
+		}()
+	}
+	wait.Wait()
+	close(results)
+	for result := range results {
+		if result.Err != nil || !result.Found || result.Row[0] != "inserted" ||
+			result.Row[1] != int32(7) || result.Row[2] != nil {
+			t.Fatalf("concurrent insert lookup = %#v", result)
+		}
 	}
 }
 

@@ -60,6 +60,9 @@ func TestParseFlussSchemaJSON(t *testing.T) {
 	if got := schema.Columns[1].LogicalType.Element.Root; got != "STRING" {
 		t.Fatalf("nested root = %q", got)
 	}
+	if !schema.Columns[1].Nullable || !schema.Columns[1].LogicalType.Element.Nullable {
+		t.Fatalf("Fluss omitted nullable defaults were not applied: %#v", schema.Columns[1])
+	}
 	if _, err := schema.JSON(); err != nil {
 		t.Fatal(err)
 	}
