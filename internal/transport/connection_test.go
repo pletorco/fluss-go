@@ -57,6 +57,47 @@ func TestRemoteError(t *testing.T) {
 	}
 }
 
+func TestConnectionRejectsInvalidInput(t *testing.T) {
+	if _, err := New(nil, Config{}); !errors.Is(err, fmsg.ErrInvalidArgument) {
+		t.Fatalf("New(nil) error = %v", err)
+	}
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+	if _, err := New(left, Config{MaxFrameSize: 1}); !errors.Is(err, fmsg.ErrInvalidArgument) {
+		t.Fatalf("New(invalid limits) error = %v", err)
+	}
+}
+
+func TestReadFrameAndHandleFrameFailures(t *testing.T) {
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+	connection := &Connection{conn: left, maxFrame: 8, pending: make(map[int32]chan result)}
+	go func() {
+		var header [4]byte
+		binary.BigEndian.PutUint32(header[:], 9)
+		_, _ = right.Write(header[:])
+	}()
+	if _, err := connection.readFrame(); !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("readFrame() error = %v", err)
+	}
+	for _, frame := range [][]byte{
+		nil,
+		{99},
+		{0},
+		{1, 0},
+		{2, 0xff},
+	} {
+		if err := connection.handleFrame(frame); err == nil {
+			t.Fatalf("handleFrame(%v) error = nil", frame)
+		}
+	}
+	if got := (&RemoteError{Code: 3}).Error(); got != "transport: remote error 3" {
+		t.Fatalf("RemoteError error = %q", got)
+	}
+}
+
 func TestCanceledRequestDoesNotConsumeLateResponse(t *testing.T) {
 	client, server := net.Pipe()
 	defer server.Close()

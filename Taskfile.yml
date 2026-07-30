@@ -51,6 +51,13 @@ tasks:
     cmds:
       - test -z "{{.GO_PACKAGES}}" || go test -race ./...
 
+  coverage:
+    desc: Verify 80 percent coverage for hand-written Go source
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - cmd: >-
+          awk 'NR > 1 && $1 !~ /FlussApi\.pb\.go|api_keys_gen\.go/ { total += $2; if ($3 > 0) covered += $2 } END { percent = 100 * covered / total; printf "hand-written Go coverage: %.1f%% (%d/%d statements)\n", percent, covered, total; exit percent < 80 }' coverage.out
+
   test:integration:
     desc: Run integration tests against an explicitly configured Fluss cluster
     preconditions:
@@ -89,7 +96,7 @@ tasks:
     desc: Verify generated protocol artifacts are current
     cmds:
       - task: generate
-      - git diff --exit-code -- pkg/fmsg
+      - git diff --exit-code -- pkg/fmsg/FlussApi.pb.go pkg/fmsg/api_keys_gen.go
 
   tools:check:
     desc: Check required security tool versions
@@ -127,6 +134,7 @@ tasks:
       - vet
       - test
       - test:race
+      - coverage
       - security
 
   ci:

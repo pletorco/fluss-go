@@ -63,6 +63,64 @@ func TestResponseRejectsMalformedPayload(t *testing.T) {
 	}
 }
 
+func TestProtocolNilAndUnknownInputs(t *testing.T) {
+	var request *MessageRequest
+	if _, err := request.Marshal(); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("nil Marshal error = %v", err)
+	}
+	if err := request.SetVersion(0); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("nil SetVersion error = %v", err)
+	}
+	var response *MessageResponse
+	if err := response.Unmarshal(nil); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("nil Unmarshal error = %v", err)
+	}
+	if _, err := NewResponse(APIKey(999), 0); !errors.Is(err, ErrUnknownAPIKey) {
+		t.Fatalf("NewResponse unknown error = %v", err)
+	}
+	if _, err := NewResponse(APIKeyLookup, 2); !errors.Is(err, ErrUnsupportedVersion) {
+		t.Fatalf("NewResponse unsupported error = %v", err)
+	}
+}
+
+func TestRequestSetVersion(t *testing.T) {
+	request, err := NewRequest(APIKeyLookup, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := request.SetVersion(1); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := request.Version(), int16(1); got != want {
+		t.Fatalf("Version() = %d, want %d", got, want)
+	}
+	if err := request.SetVersion(2); !errors.Is(err, ErrUnsupportedVersion) {
+		t.Fatalf("SetVersion(2) error = %v", err)
+	}
+}
+
+func TestMessageAccessors(t *testing.T) {
+	request, err := NewRequest(APIKeyLookup, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.APIKey() != APIKeyLookup || request.Version() != 0 || request.Message() == nil {
+		t.Fatal("request accessors returned unexpected values")
+	}
+	response := request.NewResponse()
+	if response.APIKey() != APIKeyLookup || response.Version() != 0 || response.Message() == nil {
+		t.Fatal("response accessors returned unexpected values")
+	}
+	var nilRequest *MessageRequest
+	if nilRequest.APIKey() != 0 || nilRequest.Version() != 0 || nilRequest.Message() != nil || nilRequest.NewResponse() != nil {
+		t.Fatal("nil request accessors returned unexpected values")
+	}
+	var nilResponse *MessageResponse
+	if nilResponse.APIKey() != 0 || nilResponse.Version() != 0 || nilResponse.Message() != nil {
+		t.Fatal("nil response accessors returned unexpected values")
+	}
+}
+
 func FuzzResponseUnmarshal(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0xff})
