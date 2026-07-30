@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"sync"
+	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
@@ -13,9 +15,12 @@ import (
 var ErrNotFound = fmt.Errorf("fgo: record not found")
 
 type LookupConfig struct {
-	MaxBatchKeys  int
-	MaxConcurrent int
-	Partition     string
+	MaxBatchKeys      int
+	MaxConcurrent     int
+	Partition         string
+	InsertIfNotExists bool
+	Timeout           time.Duration
+	Acks              int32
 }
 
 type LookupOption func(*LookupConfig) error
@@ -41,6 +46,19 @@ func WithLookupPartition(partition string) LookupOption {
 	}
 }
 
+// WithLookupInsertIfNotExists atomically inserts a missing primary-key row before returning it.
+// Fluss fills auto-increment columns and sets nullable non-key columns to null.
+func WithLookupInsertIfNotExists(timeout time.Duration, acks int32) LookupOption {
+	return func(config *LookupConfig) error {
+		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 ||
+			(acks != 0 && acks != 1 && acks != -1) {
+			return fmt.Errorf("%w: invalid insert-if-not-exists request settings", ErrInvalidConfig)
+		}
+		config.InsertIfNotExists, config.Timeout, config.Acks = true, timeout, acks
+		return nil
+	}
+}
+
 type LookupResult struct {
 	Key    PrimaryKey
 	Row    Row
@@ -58,11 +76,22 @@ type PrefixLookupResult struct {
 
 type lookupBackend interface {
 	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
-	lookup(context.Context, PhysicalTablePath, int32, int64, int64, [][]byte) ([][]byte, error)
+	lookup(context.Context, lookupRequest) ([][]byte, error)
 	prefixLookup(context.Context, PhysicalTablePath, int32, int64, int64, [][]byte) ([][][]byte, error)
 }
 
 type clientLookupBackend struct{ client *Client }
+
+type lookupRequest struct {
+	path             PhysicalTablePath
+	bucket           int32
+	tableID          int64
+	partitionID      int64
+	keys             [][]byte
+	insertIfNotExist bool
+	timeout          time.Duration
+	acks             int32
+}
 
 func (b clientLookupBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
 	return (clientLogWriterBackend{client: b.client}).metadata(ctx, path)
@@ -70,24 +99,28 @@ func (b clientLookupBackend) metadata(ctx context.Context, path PhysicalTablePat
 
 func (b clientLookupBackend) lookup(
 	ctx context.Context,
-	path PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	keys [][]byte,
+	input lookupRequest,
 ) ([][]byte, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyLookup, 0)
 	if err != nil {
 		return nil, err
 	}
 	message := request.Message().(*fmsg.LookupRequest)
-	message.TableId = proto.Int64(tableID)
-	bucketRequest := &fmsg.PbLookupReqForBucket{BucketId: proto.Int32(bucket), Keys: cloneBytesList(keys)}
-	if partitionID >= 0 {
-		bucketRequest.PartitionId = proto.Int64(partitionID)
+	message.TableId = proto.Int64(input.tableID)
+	if input.insertIfNotExist {
+		message.InsertIfNotExists = proto.Bool(true)
+		message.TimeoutMs = proto.Int32(int32(input.timeout / time.Millisecond))
+		message.Acks = proto.Int32(input.acks)
+	}
+	bucketRequest := &fmsg.PbLookupReqForBucket{
+		BucketId: proto.Int32(input.bucket),
+		Keys:     cloneBytesList(input.keys),
+	}
+	if input.partitionID >= 0 {
+		bucketRequest.PartitionId = proto.Int64(input.partitionID)
 	}
 	message.BucketsReq = []*fmsg.PbLookupReqForBucket{bucketRequest}
-	response, err := b.client.RequestBucket(ctx, path, bucket, request)
+	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
 	if err != nil {
 		return nil, err
 	}
@@ -95,17 +128,20 @@ func (b clientLookupBackend) lookup(
 	if !ok {
 		return nil, fmt.Errorf("fgo: lookup: unexpected response %T", response.Message())
 	}
-	if len(lookup.GetBucketsResp()) != 1 || lookup.GetBucketsResp()[0].GetBucketId() != bucket {
-		return nil, fmt.Errorf("%w: lookup response omitted bucket %d", ErrValidation, bucket)
+	if len(lookup.GetBucketsResp()) != 1 || lookup.GetBucketsResp()[0].GetBucketId() != input.bucket {
+		return nil, fmt.Errorf("%w: lookup response omitted bucket %d", ErrValidation, input.bucket)
 	}
 	result := lookup.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyLookup); err != nil {
 		return nil, err
 	}
-	if len(result.GetValues()) != len(keys) {
-		return nil, fmt.Errorf("%w: lookup returned %d values for %d keys", ErrValidation, len(result.GetValues()), len(keys))
+	if len(result.GetValues()) != len(input.keys) {
+		return nil, fmt.Errorf(
+			"%w: lookup returned %d values for %d keys",
+			ErrValidation, len(result.GetValues()), len(input.keys),
+		)
 	}
-	values := make([][]byte, len(keys))
+	values := make([][]byte, len(input.keys))
 	for index, value := range result.GetValues() {
 		if value != nil && value.Values != nil {
 			values[index] = append([]byte(nil), value.GetValues()...)
@@ -192,14 +228,12 @@ func newLookupClient(ctx context.Context, backend lookupBackend, table Table, op
 	if err := table.Schema.Validate(); err != nil {
 		return nil, err
 	}
-	config := LookupConfig{MaxBatchKeys: 1000, MaxConcurrent: 8}
-	for _, option := range options {
-		if option == nil {
-			return nil, fmt.Errorf("%w: nil lookup option", ErrInvalidConfig)
-		}
-		if err := option(&config); err != nil {
-			return nil, err
-		}
+	config, err := lookupConfig(options)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateLookupInsertSchema(table.Schema, config); err != nil {
+		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	physicalID, locations, err := backend.metadata(ctx, path)
@@ -222,6 +256,38 @@ func newLookupClient(ctx context.Context, backend lookupBackend, table Table, op
 	}
 	client.life, client.cancel = context.WithCancel(context.Background())
 	return client, nil
+}
+
+func lookupConfig(options []LookupOption) (LookupConfig, error) {
+	config := LookupConfig{
+		MaxBatchKeys: 1000, MaxConcurrent: 8,
+		Timeout: 30 * time.Second, Acks: -1,
+	}
+	for _, option := range options {
+		if option == nil {
+			return LookupConfig{}, fmt.Errorf("%w: nil lookup option", ErrInvalidConfig)
+		}
+		if err := option(&config); err != nil {
+			return LookupConfig{}, err
+		}
+	}
+	return config, nil
+}
+
+func validateLookupInsertSchema(schema Schema, config LookupConfig) error {
+	if !config.InsertIfNotExists {
+		return nil
+	}
+	for _, column := range schema.Columns {
+		if !column.Nullable && !contains(schema.PrimaryKey, column.Name) &&
+			!contains(schema.AutoIncrement, column.Name) {
+			return fmt.Errorf(
+				"%w: insert-if-not-exists cannot fill required column %q",
+				ErrInvalidSchema, column.Name,
+			)
+		}
+	}
+	return nil
 }
 
 type lookupInput struct {
@@ -261,6 +327,15 @@ func (c *LookupClient) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupR
 func (c *LookupClient) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey) []PrefixLookupResult {
 	results := make([]PrefixLookupResult, len(prefixes))
 	if len(prefixes) == 0 {
+		return results
+	}
+	if c.config.InsertIfNotExists {
+		for index, prefix := range prefixes {
+			results[index] = PrefixLookupResult{
+				Prefix: prefix,
+				Err:    fmt.Errorf("%w: insert-if-not-exists does not support prefix lookup", ErrInvalidConfig),
+			}
+		}
 		return results
 	}
 	requestCtx, cancel, err := c.requestContext(ctx)
@@ -391,7 +466,11 @@ func (c *LookupClient) runPointChunk(
 		return
 	}
 	defer func() { <-sem }()
-	values, err := c.backend.lookup(ctx, c.path, bucket, c.tableID, c.partitionID, encodedLookupInputs(chunk))
+	values, err := c.backend.lookup(ctx, lookupRequest{
+		path: c.path, bucket: bucket, tableID: c.tableID, partitionID: c.partitionID,
+		keys: encodedLookupInputs(chunk), insertIfNotExist: c.config.InsertIfNotExists,
+		timeout: c.config.Timeout, acks: c.config.Acks,
+	})
 	if err != nil {
 		setPointErrors(chunk, results, err)
 		return

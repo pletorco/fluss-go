@@ -140,6 +140,63 @@ func TestLogScannerPollPreservesBucketOrderAndPartialErrors(t *testing.T) {
 	_ = scanner.Close()
 }
 
+func TestLogScannerRowLimitAndStoppingOffsets(t *testing.T) {
+	table := logWriterTable()
+	table.BucketCount = 2
+	backend := scannerBackend(0, 1)
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1, 2, 3)}
+	backend.fetches[1] = scannerFetch{records: encodedRows(t, table.Schema, 5, 4, 5)}
+	scanner, err := newLogScanner(
+		context.Background(), backend, table, AtOffset(5),
+		WithScanStoppingOffsets(map[int32]int64{0: 7, 1: 6}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || !result.Done || !scanner.Done() || len(result.Records) != 3 ||
+		result.Records[0].Record.Offset != 5 || result.Records[1].Record.Offset != 6 ||
+		result.Records[2].Record.Offset != 5 {
+		t.Fatalf("bounded Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	calls := len(backend.fetchCalls())
+	repeated, err := scanner.Poll(context.Background())
+	if err != nil || !repeated.Done || len(repeated.Records) != 0 ||
+		len(backend.fetchCalls()) != calls {
+		t.Fatalf("terminal Poll() = %#v, %v, calls=%d", repeated, err, len(backend.fetchCalls()))
+	}
+	_ = scanner.Close()
+
+	backend = scannerBackend(0, 1)
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 0, 1, 2, 3)}
+	backend.fetches[1] = scannerFetch{records: encodedRows(t, table.Schema, 0, 4)}
+	scanner, err = newLogScanner(context.Background(), backend, table, AtOffset(0), WithScanRowLimit(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = scanner.Poll(context.Background())
+	if err != nil || !result.Done || len(result.Records) != 2 || len(backend.fetchCalls()) != 1 {
+		t.Fatalf("limited Poll() = %#v, %v, calls=%#v", result, err, backend.fetchCalls())
+	}
+	result.Release()
+	_ = scanner.Close()
+
+	backend = scannerBackend(0)
+	scanner, err = newLogScanner(
+		context.Background(), backend, table, AtOffset(5),
+		WithScanStoppingOffsets(map[int32]int64{0: 5}),
+	)
+	if err != nil || !scanner.Done() {
+		t.Fatalf("initially complete scanner = %#v, %v", scanner, err)
+	}
+	result, err = scanner.Poll(context.Background())
+	if err != nil || !result.Done || len(backend.fetchCalls()) != 0 {
+		t.Fatalf("initial terminal Poll() = %#v, %v", result, err)
+	}
+	_ = scanner.Close()
+}
+
 func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	table := logWriterTable()
 	table.BucketCount = 1
@@ -177,6 +234,37 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	_ = scanner.Close()
 }
 
+func TestLogScannerDecodesIndexedTable(t *testing.T) {
+	table := logWriterTable()
+	table.Properties = map[string]string{"table.log.format": "INDEXED"}
+	backend := scannerBackend(0)
+	encoded, err := (LogBatch{
+		Magic: 0, BaseOffset: 3, SchemaID: int16(table.SchemaID), AppendOnly: true,
+		Records: []Record{{Value: Row{int32(7), "indexed"}, Change: Append}},
+	}).EncodeRows(table.Schema, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.fetches[0] = scannerFetch{records: encoded}
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.Records) != 1 || result.Records[0].Record.Value[1] != "indexed" {
+		t.Fatalf("indexed Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	_ = scanner.Close()
+
+	if _, err := newLogScanner(
+		context.Background(), scannerBackend(0), table, AtOffset(0),
+		WithScanProjection("name"),
+	); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("indexed projection error = %v", err)
+	}
+}
+
 func TestLogScannerArrowBatchOwnership(t *testing.T) {
 	table := logWriterTable()
 	backend := scannerBackend(0)
@@ -210,6 +298,88 @@ func TestLogScannerArrowBatchOwnership(t *testing.T) {
 	_, _ = scanner.Poll(context.Background())
 	if calls := backend.fetchCalls(); calls[1].offset != 31 {
 		t.Fatalf("next Arrow offset = %d", calls[1].offset)
+	}
+	_ = scanner.Close()
+}
+
+func TestLogScannerSlicesArrowBatchAtLimit(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: true},
+	}, nil))
+	for value := int32(1); value <= 3; value++ {
+		builder.Field(0).(*array.Int32Builder).Append(value)
+		builder.Field(1).(*array.StringBuilder).Append("arrow")
+	}
+	record := builder.NewRecordBatch()
+	builder.Release()
+	encoded, err := EncodeArrowLogBatch(ArrowLogBatch{
+		Magic: 0, BaseOffset: 10, SchemaID: 3, Record: record,
+		Changes: []ChangeType{Append, Append, Append},
+	}, ArrowCompressionNone, memory.DefaultAllocator)
+	record.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.fetches[0] = scannerFetch{records: encoded}
+	scanner, err := newLogScanner(
+		context.Background(), backend, table, AtOffset(10), WithScanRowLimit(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || !result.Done || len(result.ArrowBatches) != 1 ||
+		result.ArrowBatches[0].Batch.Record.NumRows() != 2 ||
+		len(result.ArrowBatches[0].Batch.Changes) != 2 {
+		t.Fatalf("sliced Arrow Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	result.Release()
+	_ = scanner.Close()
+}
+
+func TestLogScannerWakeupAndErrorPrecedence(t *testing.T) {
+	table := logWriterTable()
+	block := make(chan struct{})
+	backend := scannerBackend(0)
+	backend.block = block
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	polled := make(chan error, 1)
+	go func() {
+		_, pollErr := scanner.Poll(context.Background())
+		polled <- pollErr
+	}()
+	time.Sleep(10 * time.Millisecond)
+	scanner.Wakeup()
+	if err := <-polled; !errors.Is(err, ErrWakeup) {
+		t.Fatalf("Wakeup Poll error = %v", err)
+	}
+	backend.block = nil
+	if _, err := scanner.Poll(context.Background()); err != nil {
+		t.Fatalf("Poll after Wakeup = %v", err)
+	}
+	scanner.Wakeup()
+	if _, err := scanner.Poll(context.Background()); !errors.Is(err, ErrWakeup) {
+		t.Fatalf("pending Wakeup error = %v", err)
+	}
+
+	backend.block = block
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		_, pollErr := scanner.Poll(ctx)
+		polled <- pollErr
+	}()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	scanner.Wakeup()
+	if err := <-polled; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation precedence error = %v", err)
 	}
 	_ = scanner.Close()
 }
@@ -295,9 +465,15 @@ func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
 		{"zero timestamp", AtTimestamp(time.Time{}), scannerBackend(0), nil, ErrInvalidConfig},
 		{"unknown offset", ScanOffset{Kind: 99}, scannerBackend(0), nil, ErrInvalidConfig},
 		{"nil option", AtOffset(0), scannerBackend(0), []LogScannerOption{nil}, ErrInvalidConfig},
+		{"bad partition", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanPartition("   ")}, ErrInvalidConfig},
 		{"empty projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection()}, ErrInvalidConfig},
 		{"unknown projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection("missing")}, ErrInvalidSchema},
 		{"bad limits", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanLimits(0, 1, 2, -1)}, ErrInvalidConfig},
+		{"bad row limit", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanRowLimit(0)}, ErrInvalidConfig},
+		{"empty stops", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(nil)}, ErrInvalidConfig},
+		{"negative stop", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(map[int32]int64{0: -1})}, ErrInvalidConfig},
+		{"missing stop", AtOffset(0), scannerBackend(0, 1), []LogScannerOption{WithScanStoppingOffsets(map[int32]int64{0: 1})}, ErrInvalidConfig},
+		{"unknown stop", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(map[int32]int64{0: 1, 1: 1})}, ErrInvalidConfig},
 		{"metadata", AtOffset(0), &fakeLogScannerBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", AtOffset(0), scannerBackend(), nil, ErrMetadata},
 		{"list offset", Earliest(), &fakeLogScannerBackend{physicalID: 9, locations: scannerBackend(0).locations, listErr: context.Canceled}, nil, context.Canceled},
@@ -311,6 +487,11 @@ func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
 	}
 	if err := (ScanOffset{Kind: ScanFromLatest, Offset: 1}).Validate(); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("valued latest error = %v", err)
+	}
+	var config LogScannerConfig
+	if err := WithScanPartition("day=2026-07-30")(&config); err != nil ||
+		config.Partition != "day=2026-07-30" {
+		t.Fatalf("WithScanPartition() = %#v, %v", config, err)
 	}
 }
 

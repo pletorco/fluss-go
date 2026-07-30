@@ -375,3 +375,90 @@ func TestAdminFallbackNamesAndUnexpectedResponses(t *testing.T) {
 		t.Fatal("unexpected table exists response succeeded")
 	}
 }
+
+func TestAdminRejectsMalformedDescriptorsAndOpenFailures(t *testing.T) {
+	path := fgo.TablePath{Database: "db", Table: "users"}
+	sentinel := errors.New("open table failed")
+	client := newClient(&fakeRequester{
+		openErr: sentinel,
+		coordinator: func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+			switch message := response.Message().(type) {
+			case *fmsg.GetDatabaseInfoResponse:
+				message.DatabaseJson = []byte("{")
+			case *fmsg.GetTableSchemaResponse:
+				message.SchemaJson = []byte("{")
+			}
+			return response, nil
+		},
+	})
+	if _, err := client.DescribeTable(context.Background(), path); !errors.Is(err, sentinel) {
+		t.Fatalf("DescribeTable() error = %v", err)
+	}
+	if _, err := client.DescribeDatabase(context.Background(), "db"); !errors.Is(err, fgo.ErrValidation) {
+		t.Fatalf("DescribeDatabase() error = %v", err)
+	}
+	if _, err := client.TableSchema(context.Background(), path, 1); err == nil {
+		t.Fatal("TableSchema() malformed JSON error = nil")
+	}
+	if _, err := client.DescribeTable(context.Background(), fgo.TablePath{}); !errors.Is(err, fgo.ErrInvalidConfig) {
+		t.Fatalf("DescribeTable(invalid) error = %v", err)
+	}
+}
+
+func TestOffsetHelpersCoverEverySpecAndEpoch(t *testing.T) {
+	tests := []struct {
+		spec      fgo.ScanOffset
+		offset    int32
+		timestamp int64
+	}{
+		{spec: fgo.AtOffset(12)},
+		{spec: fgo.Earliest(), offset: 0},
+		{spec: fgo.Latest(), offset: 1},
+		{spec: fgo.AtTimestamp(time.UnixMilli(1234)), offset: 2, timestamp: 1234},
+	}
+	for _, test := range tests {
+		message := &fmsg.ListOffsetsRequest{}
+		applyOffsetSpec(message, test.spec)
+		if message.GetOffsetType() != test.offset || message.GetStartTimestamp() != test.timestamp {
+			t.Fatalf("applyOffsetSpec(%#v) = %#v", test.spec, message)
+		}
+	}
+	if got := millis(0); !got.IsZero() {
+		t.Fatalf("millis(0) = %v", got)
+	}
+	if got := millis(1234); got.UnixMilli() != 1234 {
+		t.Fatalf("millis(1234) = %v", got)
+	}
+}
+
+func TestListOffsetsRejectsMalformedBucketResponses(t *testing.T) {
+	path := fgo.PhysicalTablePath{
+		TablePath: fgo.TablePath{Database: "db", Table: "users"},
+	}
+	for _, test := range []struct {
+		name   string
+		bucket func(context.Context, fgo.PhysicalTablePath, int32, fmsg.Request) (fmsg.Response, error)
+		target error
+	}{
+		{name: "request error", target: context.Canceled, bucket: func(context.Context, fgo.PhysicalTablePath, int32, fmsg.Request) (fmsg.Response, error) {
+			return nil, context.Canceled
+		}},
+		{name: "unexpected response", target: fgo.ErrValidation, bucket: func(_ context.Context, _ fgo.PhysicalTablePath, _ int32, request fmsg.Request) (fmsg.Response, error) {
+			return fmsg.NewResponse(fmsg.APIKeyApiVersions, request.Version())
+		}},
+		{name: "omitted bucket", target: fgo.ErrValidation, bucket: func(_ context.Context, _ fgo.PhysicalTablePath, _ int32, request fmsg.Request) (fmsg.Response, error) {
+			return fmsg.NewResponse(request.APIKey(), request.Version())
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := newClient(&fakeRequester{bucket: test.bucket})
+			results := client.ListOffsets(
+				context.Background(), fgo.Table{ID: 1}, path, -1, []int32{0}, fgo.Latest(),
+			)
+			if len(results) != 1 || !errors.Is(results[0].Err, test.target) {
+				t.Fatalf("ListOffsets() = %#v, want %v", results, test.target)
+			}
+		})
+	}
+}

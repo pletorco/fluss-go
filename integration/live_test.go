@@ -11,9 +11,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/pletorco/fluss-go/internal/transport"
 	"github.com/pletorco/fluss-go/pkg/fadm"
 	"github.com/pletorco/fluss-go/pkg/fgo"
@@ -47,6 +50,10 @@ func TestFluss091Integration(t *testing.T) {
 		testSASLPlain(t, saslAddress)
 	})
 
+	t.Run("filesystem security token refresh", func(t *testing.T) {
+		testManagedFileSystemToken(t, plainAddress)
+	})
+
 	database := fmt.Sprintf("go_it_%d", time.Now().UnixNano())
 	logPath := fgo.TablePath{Database: database, Table: "events"}
 	kvPath := fgo.TablePath{Database: database, Table: "users"}
@@ -69,8 +76,16 @@ func TestFluss091Integration(t *testing.T) {
 		testCatalog(t, admin, database, logPath, kvPath)
 	})
 
+	t.Run("dynamic partition creation and routing", func(t *testing.T) {
+		testDynamicPartition(t, plainAddress, admin, database)
+	})
+
 	t.Run("append and scan", func(t *testing.T) {
 		testLogData(t, client, logPath)
+	})
+
+	t.Run("log write formats", func(t *testing.T) {
+		testLogWriteFormats(t, client, admin, database)
 	})
 
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
@@ -123,6 +138,27 @@ func testSASLPlain(t *testing.T, address string) {
 	if !errors.Is(err, fgo.ErrAuthentication) || strings.Contains(fmt.Sprint(err), password) {
 		t.Fatalf("invalid credential error = %v", err)
 	}
+}
+
+func testManagedFileSystemToken(t *testing.T, address string) {
+	t.Helper()
+	client := openClient(
+		t, []string{address},
+		fgo.WithFileSystemSecurityTokenRefresh(fgo.FileSystemSecurityTokenRefreshConfig{}),
+	)
+	defer client.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		token, ok := client.CurrentFileSystemSecurityToken()
+		if ok {
+			if token.Schema == "" || !strings.Contains(fmt.Sprintf("%#v", token), "[REDACTED]") {
+				t.Fatalf("managed filesystem token = %#v", token)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("managed filesystem token was not published")
 }
 
 func testCatalog(t *testing.T, admin *fadm.Client, database string, logPath, kvPath fgo.TablePath) {
@@ -331,6 +367,221 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	if found[1] != "first" || found[2] != "second" || found[3] != "third" {
 		t.Fatalf("scanned rows = %#v", found)
 	}
+	testBoundedLogScan(t, ctx, client, table)
+}
+
+func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, database string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	path := fgo.TablePath{Database: database, Table: "partitioned_events"}
+	schema := fgo.Schema{
+		Columns: []fgo.Column{
+			{Name: "id", Type: fgo.IntType},
+			{Name: "region", Type: fgo.StringType},
+			{Name: "message", Type: fgo.StringType},
+		},
+		PartitionKey: []string{"region"},
+	}
+	if err := admin.CreateTable(ctx, path, fadm.TableDefinition{
+		Schema: schema, BucketCount: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	client := openClient(t, []string{address}, fgo.WithDynamicPartitionCreation(
+		fgo.DynamicPartitionCreationConfig{MetadataAttempts: 10, RetryBackoff: 100 * time.Millisecond},
+	))
+	defer client.Close()
+	table, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := fgo.PartitionSpec{"region": "kr"}
+	writer, err := client.NewLogWriter(
+		ctx, table, fgo.WithLogPartitionSpec(table.Schema, spec), fgo.WithLogLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithScanPartitionSpec(table.Schema, spec),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	for ctx.Err() == nil {
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range result.Records {
+			if record.Record.Value[2] == "created" {
+				result.Release()
+				return
+			}
+		}
+		result.Release()
+	}
+	t.Fatal(ctx.Err())
+}
+
+func testBoundedLogScan(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {
+	t.Helper()
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanRowLimit(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	var rows int64
+	for !scanner.Done() && ctx.Err() == nil {
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows += int64(len(result.Records))
+		for _, batch := range result.ArrowBatches {
+			rows += batch.Batch.Record.NumRows()
+		}
+		result.Release()
+	}
+	if rows != 2 {
+		t.Fatalf("bounded scan returned %d rows, want 2", rows)
+	}
+	result, err := scanner.Poll(ctx)
+	if err != nil || !result.Done || len(result.Records) != 0 || len(result.ArrowBatches) != 0 {
+		t.Fatalf("terminal bounded poll = %#v, %v", result, err)
+	}
+}
+
+func testLogWriteFormats(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	database string,
+) {
+	t.Helper()
+	schema := fgo.Schema{Columns: []fgo.Column{
+		{Name: "id", Type: fgo.IntType},
+		{Name: "message", Type: fgo.StringType, Nullable: true},
+	}}
+	for _, format := range []fgo.LogWriteFormat{
+		fgo.LogWriteFormatCompacted,
+		fgo.LogWriteFormatIndexed,
+		fgo.LogWriteFormatArrow,
+	} {
+		testLogWriteFormat(t, client, admin, database, schema, format)
+	}
+}
+
+func testLogWriteFormat(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	database string,
+	schema fgo.Schema,
+	format fgo.LogWriteFormat,
+) {
+	t.Helper()
+	path := fgo.TablePath{Database: database, Table: "format_" + string(format)}
+	if err := admin.CreateTable(context.Background(), path, fadm.TableDefinition{
+		Schema: schema, BucketCount: 1,
+		Properties: map[string]string{"table.log.format": strings.ToUpper(string(format))},
+	}, false); err != nil {
+		t.Fatalf("create %s table: %v", format, err)
+	}
+	waitForTableReady(t, admin, path)
+	table, err := client.OpenTable(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := []fgo.LogWriterOption{
+		fgo.WithLogWriteFormat(format),
+		fgo.WithLogLinger(0),
+	}
+	if format == fgo.LogWriteFormatArrow {
+		options = append(options, fgo.WithLogArrowCompression(fgo.ArrowCompressionZSTD))
+	}
+	writer, err := client.NewLogWriter(context.Background(), table, options...)
+	if err != nil {
+		t.Fatalf("create %s writer: %v", format, err)
+	}
+	if format == fgo.LogWriteFormatArrow {
+		appendArrowFormatRow(t, writer, table)
+	} else {
+		result := writer.Append(context.Background(), fgo.Row{int32(1), string(format)}).
+			Await(context.Background())
+		if result.Err != nil {
+			t.Fatalf("append %s row: %v", format, result.Err)
+		}
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertFormatRow(t, client, table, format)
+}
+
+func appendArrowFormatRow(t *testing.T, writer *fgo.LogWriter, table fgo.Table) {
+	t.Helper()
+	schema, err := table.Schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int32Builder).Append(1)
+	builder.Field(1).(*array.StringBuilder).Append("arrow")
+	record := builder.NewRecordBatch()
+	builder.Release()
+	defer record.Release()
+	result := writer.AppendArrow(context.Background(), 0, record, []fgo.ChangeType{fgo.Append}).
+		Await(context.Background())
+	if result.Err != nil {
+		t.Fatalf("append Arrow row: %v", result.Err)
+	}
+}
+
+func assertFormatRow(
+	t *testing.T,
+	client *fgo.Client,
+	table fgo.Table,
+	format fgo.LogWriteFormat,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanRowLimit(1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	result, err := scanner.Poll(ctx)
+	if err != nil {
+		t.Fatalf("scan %s row: %v", format, err)
+	}
+	defer result.Release()
+	rows := len(result.Records)
+	for _, batch := range result.ArrowBatches {
+		rows += int(batch.Batch.Record.NumRows())
+	}
+	if rows != 1 || !result.Done {
+		t.Fatalf("%s scan result = %#v", format, result)
+	}
 }
 
 func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
@@ -360,7 +611,50 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	}
 	defer lookup.Close()
 	testPointAndPrefixLookup(t, ctx, lookup)
+	testCurrentBatchScan(t, ctx, client, table)
 	deleteLookupRow(t, ctx, client, table, lookup)
+	testConcurrentInsertLookup(t, ctx, client, table)
+}
+
+func testCurrentBatchScan(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) {
+	t.Helper()
+	buckets, err := client.ResolveTableBuckets(ctx, fgo.PhysicalTablePath{TablePath: table.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := make(map[string]string)
+	for _, bucket := range buckets {
+		scanner, err := client.NewBatchScanner(
+			ctx, table, bucket,
+			fgo.WithBatchLimit(100), fgo.WithBatchProjection("tenant", "name"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			_ = scanner.Close()
+			t.Fatal(err)
+		}
+		for _, row := range result.Rows {
+			found[row[1].(string)] = row[0].(string)
+		}
+		result.Release()
+		if !result.Done {
+			t.Fatalf("current batch scan for bucket %d is not complete", bucket.BucketID)
+		}
+		if err := scanner.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if found["alice"] != "team-a" || found["bob"] != "team-a" || found["carol"] != "team-b" {
+		t.Fatalf("current batch rows = %#v", found)
+	}
 }
 
 func upsertRows(t *testing.T, ctx context.Context, writer *fgo.KVWriter, rows []fgo.Row) {
@@ -411,6 +705,35 @@ func deleteLookupRow(
 	deleted := lookup.Lookup(ctx, fgo.PrimaryKey{"team-a", int32(1)})
 	if len(deleted) != 1 || !errors.Is(deleted[0].Err, fgo.ErrNotFound) || deleted[0].Found {
 		t.Fatalf("deleted lookup = %#v", deleted)
+	}
+}
+
+func testConcurrentInsertLookup(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {
+	t.Helper()
+	lookup, err := client.NewLookupClient(
+		ctx, table, fgo.WithLookupInsertIfNotExists(10*time.Second, -1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+	const callers = 12
+	results := make(chan fgo.LookupResult, callers)
+	var wait sync.WaitGroup
+	for range callers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			results <- lookup.Lookup(ctx, fgo.PrimaryKey{"inserted", int32(7)})[0]
+		}()
+	}
+	wait.Wait()
+	close(results)
+	for result := range results {
+		if result.Err != nil || !result.Found || result.Row[0] != "inserted" ||
+			result.Row[1] != int32(7) || result.Row[2] != nil {
+			t.Fatalf("concurrent insert lookup = %#v", result)
+		}
 	}
 }
 

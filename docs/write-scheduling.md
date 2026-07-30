@@ -1,0 +1,70 @@
+# Write scheduling decision
+
+Status: accepted for the Apache Fluss 0.9.1 client.
+
+## Current ownership
+
+The client shares one negotiated connection per server identity through
+`connectionManager`. Log and KV writers own their scheduling state:
+
+- each writer has one bounded FIFO command queue with `MaxBuffered` capacity;
+- each writer has one worker goroutine and at most one active server call;
+- pending batches are bounded per bucket by `MaxBatchRecords` and
+  `MaxBatchBytes`;
+- `Flush` and `Close` are barriers in that writer's queue;
+- an ambiguous write failure poisons only that writer's affected bucket.
+
+There is no hidden connection-wide record queue or memory pool. Connection-wide
+buffer use is therefore the sum of explicitly configured writer queues plus
+each writer's active per-bucket batches. Applications with many writers must
+budget that sum rather than treating `MaxBuffered` as a client-global limit.
+
+## Invariants
+
+- **Memory:** one writer cannot consume another writer's queue budget. Total
+  queued records grow additively with the number of writers and their configured
+  `MaxBuffered` values.
+- **Queue:** accepted commands retain FIFO order within a writer. No ordering is
+  promised across writers.
+- **Fairness:** writers independently submit requests to the shared transport.
+  A blocked or poisoned writer cannot prevent another writer from enqueueing,
+  flushing, or closing. The remote server and TCP connection may still affect
+  request latency; strict cross-writer fairness is not promised.
+- **Failure:** Fluss 0.9.1 writes are not automatically retried after an
+  ambiguous response. Bucket poisoning remains writer-local, so one writer's
+  uncertain state is not inherited by another.
+- **Shutdown:** `Close` drains commands accepted by that writer and stops its
+  worker. Writers should be closed before the parent client. Closing one writer
+  neither flushes nor closes another writer.
+
+The log saturation and failure tests use two writers sharing one backend. A
+separate KV test exercises the same shared-backend isolation. Together they
+verify that a full, blocked queue and an ambiguous failure do not block or
+poison a healthy writer, and that all worker goroutines terminate after close.
+The package race test covers the same paths under the race detector.
+
+## Decision
+
+A connection-owned shared accumulator/sender is not introduced. The current
+design already shares network connections, while keeping queue capacity,
+failure state, flush, and close ownership local to each writer. Centralizing
+those queues would save one goroutine and timer per writer, but would require a
+global admission policy and fair scheduling and would add a head-of-line
+blocking risk to independent writers.
+
+The decision can be revisited if production profiles show writer goroutines or
+additive queue memory are a material cost. Any replacement must preserve the
+invariants above and add an explicit client-wide byte budget rather than an
+unbounded shared queue.
+
+## Reproduce measurements
+
+```sh
+go test -run '^$' -bench BenchmarkWriterScheduling -benchmem ./pkg/fgo
+```
+
+The benchmark covers 16 writers over 8 buckets with an immediate server, the
+same topology with a 100 microsecond server delay, and repeated writer
+lifecycles against a failing server. Reference measurements and environment are
+recorded in GitHub issue 43 because benchmark numbers vary by machine and Go
+version.

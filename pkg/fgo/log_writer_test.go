@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -264,6 +265,51 @@ func TestLogWriterFailurePoisonsOnlyBucket(t *testing.T) {
 	}
 }
 
+func TestLogWriterRowFormats(t *testing.T) {
+	for _, test := range []struct {
+		format    LogWriteFormat
+		compacted bool
+	}{
+		{LogWriteFormatCompacted, true},
+		{LogWriteFormatIndexed, false},
+	} {
+		t.Run(string(test.format), func(t *testing.T) {
+			testLogWriterRowFormat(t, test.format, test.compacted)
+		})
+	}
+	config, err := logWriterConfig(nil)
+	if err != nil || config.Format != LogWriteFormatAuto ||
+		config.ArrowCompression != ArrowCompressionNone {
+		t.Fatalf("default format config = %#v, %v", config, err)
+	}
+}
+
+func testLogWriterRowFormat(t *testing.T, format LogWriteFormat, compacted bool) {
+	t.Helper()
+	table := logWriterTable()
+	table.Properties = map[string]string{"table.log.format": strings.ToUpper(string(format))}
+	backend := logBackend(0)
+	writer, err := newLogWriter(
+		context.Background(), backend, table,
+		WithLogWriteFormat(format), WithLogLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := writer.Append(context.Background(), Row{int32(1), "one"}).
+		Await(context.Background())
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	batch, err := DecodeLogBatchRows(table.Schema, backend.produced()[0].records, compacted)
+	if err != nil || len(batch.Records) != 1 || batch.Records[0].Value[1] != "one" {
+		t.Fatalf("decoded %s batch = %#v, %v", format, batch, err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLogWriterArrowAndPartition(t *testing.T) {
 	table := logWriterTable()
 	table.BucketCount = 2
@@ -279,7 +325,11 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 	builder.Release()
 	defer record.Release()
 
-	writer, err := newLogWriter(context.Background(), backend, table, WithLogPartition("day=1"), WithLogLinger(0))
+	writer, err := newLogWriter(
+		context.Background(), backend, table,
+		WithLogPartition("day=1"), WithLogLinger(0),
+		WithLogWriteFormat(LogWriteFormatArrow), WithLogArrowCompression(ArrowCompressionLZ4),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,15 +346,49 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded.Release()
+	if result := writer.Append(context.Background(), Row{int32(2), "two"}).
+		Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("row passed to Arrow writer = %#v", result)
+	}
 	if err := writer.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+
+	rowWriter, err := newLogWriter(
+		context.Background(), logBackend(1, 3), table,
+		WithLogWriteFormat(LogWriteFormatIndexed),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := rowWriter.AppendArrow(context.Background(), 1, record, []ChangeType{Append}).
+		Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("Arrow passed to indexed writer = %#v", result)
+	}
+	badSchema := arrow.NewSchema([]arrow.Field{{Name: "other", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	badBuilder := array.NewRecordBuilder(memory.DefaultAllocator, badSchema)
+	badBuilder.Field(0).(*array.Int32Builder).Append(1)
+	badRecord := badBuilder.NewRecordBatch()
+	badBuilder.Release()
+	defer badRecord.Release()
+	autoWriter, err := newLogWriter(context.Background(), logBackend(1, 3), table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := autoWriter.AppendArrow(context.Background(), 1, badRecord, []ChangeType{Append}).
+		Await(context.Background()); !errors.Is(result.Err, ErrInvalidSchema) {
+		t.Fatalf("mismatched Arrow schema = %#v", result)
+	}
+	_ = rowWriter.Close(context.Background())
+	_ = autoWriter.Close(context.Background())
 }
 
 func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 	table := logWriterTable()
 	primary := table
 	primary.Kind = PrimaryKeyTable
+	arrowTable := table
+	arrowTable.Properties = map[string]string{"table.log.format": "arrow"}
 	for _, test := range []struct {
 		name    string
 		table   Table
@@ -319,6 +403,10 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"bad linger", table, logBackend(0), []LogWriterOption{WithLogLinger(-1)}, ErrInvalidConfig},
 		{"bad request", table, logBackend(0), []LogWriterOption{WithLogRequest(0, 2)}, ErrInvalidConfig},
 		{"bad assignment", table, logBackend(0), []LogWriterOption{WithLogBucketAssignment("random")}, ErrInvalidConfig},
+		{"bad format", table, logBackend(0), []LogWriterOption{WithLogWriteFormat("unknown")}, ErrInvalidConfig},
+		{"bad compression", table, logBackend(0), []LogWriterOption{WithLogArrowCompression(ArrowCompression(99))}, ErrInvalidConfig},
+		{"row compression", table, logBackend(0), []LogWriterOption{WithLogWriteFormat(LogWriteFormatIndexed), WithLogArrowCompression(ArrowCompressionZSTD)}, ErrInvalidConfig},
+		{"table format", arrowTable, logBackend(0), []LogWriterOption{WithLogWriteFormat(LogWriteFormatCompacted)}, ErrInvalidConfig},
 		{"no buckets", table, logBackend(), nil, ErrMetadata},
 		{"metadata error", table, &fakeLogWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"init error", table, &fakeLogWriterBackend{physicalID: 9, locations: logBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
@@ -332,6 +420,118 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 	}
 	if result := (*WriteFuture)(nil).Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
 		t.Fatalf("nil future = %#v", result)
+	}
+}
+
+func TestLogWriterRejectsInvalidOperations(t *testing.T) {
+	table := logWriterTable()
+	writer, err := newLogWriter(
+		context.Background(), logBackend(0), table, WithLogLinger(time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := writer.Append(nil, Row{int32(1), "one"}).Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("Append(nil) = %#v", result)
+	}
+	if result := writer.Append(context.Background(), Row{int32(1)}).Await(context.Background()); !errors.Is(result.Err, ErrInvalidRow) {
+		t.Fatalf("Append(invalid row) = %#v", result)
+	}
+	if result := writer.AppendArrow(context.Background(), 0, nil, nil).Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("AppendArrow(nil) = %#v", result)
+	}
+
+	schema, err := table.Schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int32Builder).Append(1)
+	builder.Field(1).(*array.StringBuilder).Append("one")
+	record := builder.NewRecordBatch()
+	builder.Release()
+	defer record.Release()
+
+	for _, future := range []*WriteFuture{
+		writer.AppendArrow(context.Background(), 99, record, []ChangeType{Append}),
+		writer.AppendArrow(context.Background(), 0, record, nil),
+		writer.AppendArrow(context.Background(), 0, record, []ChangeType{ChangeType(99)}),
+	} {
+		if result := future.Await(context.Background()); result.Err == nil {
+			t.Fatalf("invalid Arrow append = %#v", result)
+		}
+	}
+	if err := writer.Flush(nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Flush(nil) error = %v", err)
+	}
+	if err := writer.Close(nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Close(nil) error = %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Flush(context.Background()); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Flush after Close error = %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("repeated Close error = %v", err)
+	}
+}
+
+func TestLogWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
+	release := make(chan struct{})
+	backend := logBackend(0)
+	backend.block = release
+	writer, err := newLogWriter(
+		context.Background(), backend, logWriterTable(), WithLogLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Append(context.Background(), Row{int32(1), "blocked"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	if err := writer.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() error = %v, want deadline", err)
+	}
+	close(release)
+	if result := future.Await(context.Background()); result.Err != nil {
+		t.Fatalf("blocked append = %#v", result)
+	}
+	select {
+	case <-writer.done:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not finish after backend release")
+	}
+}
+
+func TestLogWriterMovesStickyBatchAfterSizeBoundary(t *testing.T) {
+	backend := logBackend(0, 1)
+	table := logWriterTable()
+	table.BucketCount = 2
+	writer, err := newLogWriter(
+		context.Background(), backend, table,
+		WithLogLinger(time.Hour),
+		WithLogBatchLimits(logBatchV0HeaderSize+1, 100),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := writer.Append(context.Background(), Row{int32(1), strings.Repeat("a", 40)})
+	second := writer.Append(context.Background(), Row{int32(2), strings.Repeat("b", 40)})
+	if err := writer.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	firstResult := first.Await(context.Background())
+	secondResult := second.Await(context.Background())
+	if firstResult.Err != nil || secondResult.Err != nil {
+		t.Fatalf("write results = %#v, %#v", firstResult, secondResult)
+	}
+	if firstResult.Bucket == secondResult.Bucket {
+		t.Fatalf("sticky batches remained on bucket %d", firstResult.Bucket)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

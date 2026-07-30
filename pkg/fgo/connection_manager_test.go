@@ -224,6 +224,23 @@ func TestConnectionManagerCancelsWaitingDial(t *testing.T) {
 	}
 }
 
+func TestWaitRetryHandlesImmediateDelayAndCancellation(t *testing.T) {
+	if err := waitRetry(context.Background(), 0); err != nil {
+		t.Fatalf("waitRetry(0) error = %v", err)
+	}
+	if err := waitRetry(context.Background(), time.Millisecond); err != nil {
+		t.Fatalf("waitRetry(delay) error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitRetry(ctx, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitRetry(canceled) error = %v", err)
+	}
+	if err := waitRetry(ctx, 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitRetry(canceled, zero) error = %v", err)
+	}
+}
+
 func TestConnectionManagerDialAndAuthenticatorFailures(t *testing.T) {
 	dialFailure := newConnectionManager(config{
 		dialContext: func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("dial failed") },
@@ -372,8 +389,10 @@ func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
 	secondClient, secondServer := net.Pipe()
 	secondDone := serveVersionThenRequest(t, secondServer, TabletServer, fmsg.APIKeyApiVersions)
 	dials := 0
+	metrics := &metricRecorder{}
 	manager := newConnectionManager(config{
 		name: "test", version: "1", retry: RetryPolicy{MaxAttempts: 2, Backoff: func(int) time.Duration { return 0 }},
+		observer: metrics,
 		dialContext: func(context.Context, string, string) (net.Conn, error) {
 			dials++
 			if dials == 1 {
@@ -389,6 +408,14 @@ func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
 	}
 	if got, want := dials, 2; got != want {
 		t.Fatalf("dial calls = %d, want %d", got, want)
+	}
+	if event, ok := metrics.find(MetricRetry, MetricOperationRPC); !ok ||
+		event.APIKey != fmsg.APIKeyApiVersions || event.Attempt != 2 || !event.Failed {
+		t.Fatalf("retry metric = %#v, found=%v", event, ok)
+	}
+	if event, ok := metrics.find(MetricRemoteIO, MetricOperationDial); !ok ||
+		event.ServerRole != TabletServer || event.Failed {
+		t.Fatalf("dial metric = %#v, found=%v", event, ok)
 	}
 	if safeToRetry(fmsg.APIKeyCreateDatabase) {
 		t.Fatal("create database must not be retried automatically")

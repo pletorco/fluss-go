@@ -22,9 +22,33 @@ type KVWriterConfig struct {
 	Timeout         time.Duration
 	Acks            int32
 	Partition       string
+	MergeMode       MergeMode
 }
 
 type KVWriterOption func(*KVWriterConfig) error
+
+// MergeMode controls whether Fluss applies or bypasses a table's merge engine.
+type MergeMode int32
+
+const (
+	MergeModeDefault   MergeMode = 0
+	MergeModeOverwrite MergeMode = 1
+)
+
+func (m MergeMode) valid() bool {
+	return m == MergeModeDefault || m == MergeModeOverwrite
+}
+
+// WithKVMergeMode sets one merge mode for every record written by the writer.
+func WithKVMergeMode(mode MergeMode) KVWriterOption {
+	return func(config *KVWriterConfig) error {
+		if !mode.valid() {
+			return fmt.Errorf("%w: unsupported KV merge mode %d", ErrInvalidConfig, mode)
+		}
+		config.MergeMode = mode
+		return nil
+	}
+}
 
 func WithKVBatchLimits(bytes, records int) KVWriterOption {
 	return func(config *KVWriterConfig) error {
@@ -78,6 +102,18 @@ func WithKVPartition(partition string) KVWriterOption {
 	}
 }
 
+// WithKVPartitionSpec selects a partition using the table schema's partition-key order.
+func WithKVPartitionSpec(schema Schema, spec PartitionSpec) KVWriterOption {
+	return func(config *KVWriterConfig) error {
+		partition, err := schema.PartitionName(spec)
+		if err != nil {
+			return err
+		}
+		config.Partition = partition
+		return nil
+	}
+}
+
 type kvWriterBackend interface {
 	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
@@ -85,6 +121,14 @@ type kvWriterBackend interface {
 }
 
 type clientKVWriterBackend struct{ client *Client }
+
+func (b clientKVWriterBackend) ensurePartition(
+	ctx context.Context,
+	path PhysicalTablePath,
+	partitionKeys []string,
+) error {
+	return b.client.ensureDynamicPartition(ctx, path, partitionKeys)
+}
 
 type kvPutRequest struct {
 	path        PhysicalTablePath
@@ -95,6 +139,7 @@ type kvPutRequest struct {
 	records     []byte
 	timeout     time.Duration
 	acks        int32
+	mergeMode   MergeMode
 }
 
 func (b clientKVWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
@@ -118,7 +163,7 @@ func (b clientKVWriterBackend) put(
 	message.TableId = proto.Int64(input.tableID)
 	message.TimeoutMs = proto.Int32(int32(input.timeout / time.Millisecond))
 	message.TargetColumns = append([]int32(nil), input.targets...)
-	message.AggMode = proto.Int32(0)
+	message.AggMode = proto.Int32(int32(input.mergeMode))
 	bucketRequest := &fmsg.PbPutKvReqForBucket{BucketId: proto.Int32(input.bucket), Records: input.records}
 	if input.partitionID >= 0 {
 		bucketRequest.PartitionId = proto.Int64(input.partitionID)
@@ -155,6 +200,7 @@ type KVWriter struct {
 	done        chan struct{}
 	appendMu    sync.Mutex
 	closed      bool
+	observer    MetricsObserver
 }
 
 type kvWriterCommand struct {
@@ -164,12 +210,13 @@ type kvWriterCommand struct {
 }
 
 type pendingKVWrite struct {
-	ctx     context.Context
-	record  KVRecord
-	bucket  int32
-	targets []int32
-	size    int
-	future  *WriteFuture
+	ctx      context.Context
+	record   KVRecord
+	bucket   int32
+	targets  []int32
+	size     int
+	queuedAt time.Time
+	future   *WriteFuture
 }
 
 type kvPendingBatch struct {
@@ -189,7 +236,11 @@ type kvWriterLoop struct {
 }
 
 func (c *Client) NewKVWriter(ctx context.Context, table Table, options ...KVWriterOption) (*KVWriter, error) {
-	return newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
+	writer, err := newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
+	if err == nil {
+		writer.observer = c.observer
+	}
+	return writer, err
 }
 
 func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, options ...KVWriterOption) (*KVWriter, error) {
@@ -200,7 +251,21 @@ func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, opti
 	if err != nil {
 		return nil, err
 	}
+	if config.MergeMode == MergeModeOverwrite && table.Properties != nil &&
+		strings.TrimSpace(table.Properties["table.merge-engine"]) == "" {
+		return nil, fmt.Errorf(
+			"%w: KV overwrite requires table %s to configure table.merge-engine",
+			ErrInvalidConfig, table.Path,
+		)
+	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	if backend, ok := backend.(interface {
+		ensurePartition(context.Context, PhysicalTablePath, []string) error
+	}); ok {
+		if err := backend.ensurePartition(ctx, path, table.Schema.PartitionKey); err != nil {
+			return nil, err
+		}
+	}
 	physicalID, locations, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err
@@ -367,10 +432,14 @@ func (w *KVWriter) enqueueMutation(
 		return
 	}
 	bucket := w.buckets[int(hashBucket)]
-	w.enqueue(ctx, &pendingKVWrite{
+	item := &pendingKVWrite{
 		ctx: ctx, record: KVRecord{Key: key, Value: value}, bucket: bucket,
 		targets: append([]int32(nil), targets...), size: len(key) + len(value) + 8, future: future,
-	})
+	}
+	if w.observer != nil {
+		item.queuedAt = time.Now()
+	}
+	w.enqueue(ctx, item)
 }
 
 func (w *KVWriter) validatePartial(columns []string, values Row) ([]int32, error) {
@@ -608,12 +677,24 @@ func (l *kvWriterLoop) flushBucket(bucket int32) error {
 		BatchSequence: l.sequences[bucket], Records: batch.records,
 	}).Encode()
 	var logEnd int64
+	started := metricStart(l.writer.observer)
 	if err == nil {
 		logEnd, err = l.writer.backend.put(context.Background(), kvPutRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 			targets: batch.targets, records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+			mergeMode: l.writer.config.MergeMode,
 		})
 	}
+	queueTime := time.Duration(0)
+	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {
+		queueTime = time.Since(batch.items[0].queuedAt)
+	}
+	observeMetric(l.writer.observer, MetricEvent{
+		Kind: MetricWriteBatch, Operation: MetricOperationKVWrite,
+		Duration: metricDuration(started), QueueTime: queueTime,
+		QueueSize: len(l.writer.commands), Records: int64(len(batch.records)), Bytes: int64(len(encoded)),
+		Failed: err != nil, ErrorClass: metricErrorClass(err),
+	})
 	if err != nil {
 		l.poisoned[bucket] = err
 		l.writer.completeKVBatch(batch, bucket, 0, err)

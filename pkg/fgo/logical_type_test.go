@@ -1,6 +1,7 @@
 package fgo
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 )
@@ -23,6 +24,9 @@ func TestLogicalTypeRejectsInvalidParameters(t *testing.T) {
 			t.Fatalf("%#v: %v", typ, err)
 		}
 	}
+	if _, err := (LogicalType{Root: "UNKNOWN"}).JSON(); !errors.Is(err, ErrInvalidSchema) {
+		t.Fatalf("invalid logical JSON error = %v", err)
+	}
 }
 
 func TestLogicalTypeJavaJSONRoundTrip(t *testing.T) {
@@ -36,7 +40,16 @@ func TestLogicalTypeJavaJSONRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	roundTrip, err := ParseLogicalTypeJSON(encoded)
-	if err != nil || len(roundTrip.Fields) != 2 || roundTrip.Fields[1].Type.Scale != 2 {
+	if err != nil || len(roundTrip.Fields) != 2 || roundTrip.Fields[1].Type.Scale != 2 ||
+		!roundTrip.Nullable || !roundTrip.Fields[0].Type.Nullable {
 		t.Fatalf("round trip = %#v, %v", roundTrip, err)
+	}
+	if bytes.Contains(encoded, []byte(`"nullable":true`)) {
+		t.Fatalf("nullable default should be omitted: %s", encoded)
+	}
+
+	nonNull, err := (LogicalType{Root: "BIGINT"}).JSON()
+	if err != nil || !bytes.Contains(nonNull, []byte(`"nullable":false`)) {
+		t.Fatalf("non-null JSON = %s, %v", nonNull, err)
 	}
 }

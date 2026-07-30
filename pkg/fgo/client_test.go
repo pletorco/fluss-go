@@ -36,6 +36,12 @@ func TestOpenRejectsInvalidConfigBeforeDial(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsNilOption(t *testing.T) {
+	if _, err := Open(context.Background(), nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Open(nil option) error = %v, want ErrInvalidConfig", err)
+	}
+}
+
 func TestClientNegotiatesAndAppliesVersion(t *testing.T) {
 	var seenVersion int16
 	requester := requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
@@ -117,6 +123,18 @@ func TestClientOptions(t *testing.T) {
 	})(&cfg); err != nil || cfg.authFactory == nil {
 		t.Fatalf("WithAuthenticator() = %#v, %v", cfg, err)
 	}
+	if err := WithRetryPolicy(RetryPolicy{MaxAttempts: 2})(&cfg); err != nil ||
+		cfg.retry.MaxAttempts != 2 || cfg.retry.Backoff(1) != 0 {
+		t.Fatalf("WithRetryPolicy() = %#v, %v", cfg.retry, err)
+	}
+	observer := MetricsObserverFunc(func(MetricEvent) {})
+	if err := WithMetricsObserver(observer)(&cfg); err != nil || cfg.observer == nil {
+		t.Fatalf("WithMetricsObserver() = %#v, %v", cfg.observer, err)
+	}
+}
+
+func TestClientOptionsRejectInvalidValues(t *testing.T) {
+	var cfg config
 	for _, option := range []Option{
 		WithSeedBrokers(),
 		WithClientIdentity("", ""),
@@ -126,6 +144,8 @@ func TestClientOptions(t *testing.T) {
 		WithDialTimeout(0),
 		WithTransportLimits(transport.Config{MaxFrameSize: 1}),
 		WithTransportLimits(transport.Config{MaxInFlight: -1}),
+		WithRetryPolicy(RetryPolicy{}),
+		WithMetricsObserver(nil),
 	} {
 		if err := option(&cfg); !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("option error = %v, want ErrInvalidConfig", err)
@@ -148,6 +168,49 @@ func TestClientRequestErrors(t *testing.T) {
 	if client.Requester() != client {
 		t.Fatal("Requester() did not return client")
 	}
+	if _, err := client.Request(context.Background(), nil); !errors.Is(err, fmsg.ErrInvalidArgument) {
+		t.Fatalf("Request(nil) error = %v, want ErrInvalidArgument", err)
+	}
+	if _, err := client.RequestTo(
+		context.Background(), Node{Address: "tablet:9123", Role: TabletServer}, request,
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("RequestTo() unmanaged error = %v, want ErrClosed", err)
+	}
+}
+
+func TestClientRequestUsesManagedConnection(t *testing.T) {
+	node := Node{ID: 2, Address: "tablet:9123", Role: TabletServer}
+	tablet := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		return fmsg.NewResponse(request.APIKey(), request.Version())
+	}), nil)
+	tablet.versions[fmsg.APIKeyApiVersions] = 0
+	manager := newConnectionManager(config{})
+	manager.clients[connectionKey{id: node.ID, address: node.Address, role: node.Role}] = tablet
+	client := &Client{
+		manager: manager, serverID: node.ID, address: node.Address, role: node.Role,
+	}
+	request := apiVersionsRequestForClient(t)
+	if _, err := client.Request(context.Background(), request); err != nil {
+		t.Fatalf("Request() error = %v", err)
+	}
+	if _, err := client.Request(context.Background(), nil); !errors.Is(err, fmsg.ErrInvalidArgument) {
+		t.Fatalf("managed Request(nil) error = %v", err)
+	}
+	if _, err := client.RequestTo(context.Background(), node, nil); !errors.Is(err, fmsg.ErrInvalidArgument) {
+		t.Fatalf("managed RequestTo(nil) error = %v", err)
+	}
+}
+
+func apiVersionsRequestForClient(t *testing.T) *fmsg.MessageRequest {
+	t.Helper()
+	request, err := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := request.Message().(*fmsg.ApiVersionsRequest)
+	message.ClientSoftwareName = proto.String("test")
+	message.ClientSoftwareVersion = proto.String("test")
+	return request
 }
 
 func TestAuthenticateDoesNotExposeToken(t *testing.T) {
@@ -421,7 +484,50 @@ func TestNegotiationAndAuthenticationErrors(t *testing.T) {
 	if min(2, 1) != 1 {
 		t.Fatal("min() returned the wrong right value")
 	}
+	if min(1, 2) != 1 {
+		t.Fatal("min() returned the wrong left value")
+	}
 }
+
+func TestAuthenticationResponseTokenFailures(t *testing.T) {
+	authFailure := &testAuthenticator{authenticateErr: errTestAuthentication}
+	if _, _, err := authenticationResponseToken(context.Background(), authFailure, []byte("challenge")); !errors.Is(err, errTestAuthentication) {
+		t.Fatalf("authenticationResponseToken() error = %v", err)
+	}
+
+	complete := &testAuthenticator{tokens: [][]byte{nil}, completeAfter: 1}
+	if token, done, err := authenticationResponseToken(context.Background(), complete, nil); err != nil || token != nil || !done {
+		t.Fatalf("completed response = %q, %t, %v", token, done, err)
+	}
+
+	incomplete := &testAuthenticator{}
+	if _, _, err := authenticationResponseToken(context.Background(), incomplete, nil); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("missing response error = %v, want ErrAuthentication", err)
+	}
+	if err := authenticationError(nil, true); err != nil {
+		t.Fatalf("authenticationError(nil) = %v", err)
+	}
+}
+
+func TestCloseAllPreservesFirstFailureAndRunsEveryCloser(t *testing.T) {
+	first := errors.New("first close")
+	second := errors.New("second close")
+	calls := 0
+	close := closeAll(
+		nil,
+		func() error { calls++; return first },
+		func() error { calls++; return second },
+		func() error { calls++; return nil },
+	)
+	if err := close(); !errors.Is(err, first) {
+		t.Fatalf("closeAll() error = %v, want first error", err)
+	}
+	if calls != 3 {
+		t.Fatalf("close calls = %d, want 3", calls)
+	}
+}
+
+var errTestAuthentication = errors.New("test authentication failure")
 
 type testAuthenticator struct {
 	protocol        string

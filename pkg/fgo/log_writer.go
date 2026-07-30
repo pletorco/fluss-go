@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,15 +25,28 @@ const (
 	AssignmentRoundRobin BucketAssignment = "round-robin"
 )
 
+type LogWriteFormat string
+
+const (
+	LogWriteFormatAuto      LogWriteFormat = "auto"
+	LogWriteFormatArrow     LogWriteFormat = "arrow"
+	LogWriteFormatIndexed   LogWriteFormat = "indexed"
+	LogWriteFormatCompacted LogWriteFormat = "compacted"
+)
+
 type LogWriterConfig struct {
-	MaxBatchBytes   int
-	MaxBatchRecords int
-	MaxBuffered     int
-	Linger          time.Duration
-	Timeout         time.Duration
-	Acks            int32
-	Assignment      BucketAssignment
-	Partition       string
+	MaxBatchBytes    int
+	MaxBatchRecords  int
+	MaxBuffered      int
+	Linger           time.Duration
+	Timeout          time.Duration
+	Acks             int32
+	Assignment       BucketAssignment
+	Partition        string
+	Format           LogWriteFormat
+	ArrowCompression ArrowCompression
+
+	arrowCompressionSet bool
 }
 
 type LogWriterOption func(*LogWriterConfig) error
@@ -100,6 +114,45 @@ func WithLogPartition(partition string) LogWriterOption {
 	}
 }
 
+// WithLogPartitionSpec selects a partition using the table schema's partition-key order.
+func WithLogPartitionSpec(schema Schema, spec PartitionSpec) LogWriterOption {
+	return func(config *LogWriterConfig) error {
+		partition, err := schema.PartitionName(spec)
+		if err != nil {
+			return err
+		}
+		config.Partition = partition
+		return nil
+	}
+}
+
+// WithLogWriteFormat selects the server-supported encoding used by this writer.
+func WithLogWriteFormat(format LogWriteFormat) LogWriterOption {
+	return func(config *LogWriterConfig) error {
+		switch format {
+		case LogWriteFormatAuto, LogWriteFormatArrow, LogWriteFormatIndexed, LogWriteFormatCompacted:
+			config.Format = format
+			return nil
+		default:
+			return fmt.Errorf("%w: unsupported log write format %q", ErrInvalidConfig, format)
+		}
+	}
+}
+
+// WithLogArrowCompression selects the compression for Arrow log batches.
+func WithLogArrowCompression(compression ArrowCompression) LogWriterOption {
+	return func(config *LogWriterConfig) error {
+		switch compression {
+		case ArrowCompressionNone, ArrowCompressionLZ4, ArrowCompressionZSTD:
+			config.ArrowCompression = compression
+			config.arrowCompressionSet = true
+			return nil
+		default:
+			return fmt.Errorf("%w: unsupported Arrow compression %d", ErrInvalidConfig, compression)
+		}
+	}
+}
+
 type WriteResult struct {
 	Bucket     int32
 	BaseOffset int64
@@ -141,6 +194,14 @@ type logWriterBackend interface {
 }
 
 type clientLogWriterBackend struct{ client *Client }
+
+func (b clientLogWriterBackend) ensurePartition(
+	ctx context.Context,
+	path PhysicalTablePath,
+	partitionKeys []string,
+) error {
+	return b.client.ensureDynamicPartition(ctx, path, partitionKeys)
+}
 
 type logProduceRequest struct {
 	path        PhysicalTablePath
@@ -231,6 +292,7 @@ type LogWriter struct {
 	closed      bool
 	roundRobin  int
 	stickyIndex int
+	observer    MetricsObserver
 }
 
 type writerCommand struct {
@@ -240,13 +302,14 @@ type writerCommand struct {
 }
 
 type pendingWrite struct {
-	ctx     context.Context
-	row     Row
-	arrow   arrow.RecordBatch
-	changes []ChangeType
-	bucket  *int32
-	size    int
-	future  *WriteFuture
+	ctx      context.Context
+	row      Row
+	arrow    arrow.RecordBatch
+	changes  []ChangeType
+	bucket   *int32
+	size     int
+	queuedAt time.Time
+	future   *WriteFuture
 }
 
 type bucketBatch struct {
@@ -265,7 +328,11 @@ type logWriterLoop struct {
 }
 
 func (c *Client) NewLogWriter(ctx context.Context, table Table, options ...LogWriterOption) (*LogWriter, error) {
-	return newLogWriter(ctx, clientLogWriterBackend{client: c}, table, options...)
+	writer, err := newLogWriter(ctx, clientLogWriterBackend{client: c}, table, options...)
+	if err == nil {
+		writer.observer = c.observer
+	}
+	return writer, err
 }
 
 func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, options ...LogWriterOption) (*LogWriter, error) {
@@ -276,7 +343,13 @@ func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, op
 	if err != nil {
 		return nil, err
 	}
+	if err := validateLogWriterFormat(table, config); err != nil {
+		return nil, err
+	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	if err := ensureLogWriterPartition(ctx, backend, path, table.Schema.PartitionKey); err != nil {
+		return nil, err
+	}
 	physicalID, locations, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err
@@ -307,6 +380,37 @@ func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, op
 	return writer, nil
 }
 
+func validateLogWriterFormat(table Table, config LogWriterConfig) error {
+	if config.arrowCompressionSet &&
+		config.Format != LogWriteFormatAuto && config.Format != LogWriteFormatArrow {
+		return fmt.Errorf("%w: Arrow compression requires Arrow or auto format", ErrInvalidConfig)
+	}
+	configured := strings.TrimSpace(table.Properties["table.log.format"])
+	if configured != "" && config.Format != LogWriteFormatAuto &&
+		!strings.EqualFold(configured, string(config.Format)) {
+		return fmt.Errorf(
+			"%w: writer format %s does not match table.log.format %s",
+			ErrInvalidConfig, config.Format, configured,
+		)
+	}
+	return nil
+}
+
+func ensureLogWriterPartition(
+	ctx context.Context,
+	backend logWriterBackend,
+	path PhysicalTablePath,
+	partitionKeys []string,
+) error {
+	ensurer, ok := backend.(interface {
+		ensurePartition(context.Context, PhysicalTablePath, []string) error
+	})
+	if !ok {
+		return nil
+	}
+	return ensurer.ensurePartition(ctx, path, partitionKeys)
+}
+
 func validateLogWriterTable(table Table) error {
 	if err := table.RequireLog(); err != nil {
 		return err
@@ -323,7 +427,8 @@ func validateLogWriterTable(table Table) error {
 func logWriterConfig(options []LogWriterOption) (LogWriterConfig, error) {
 	config := LogWriterConfig{
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
-		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1, Assignment: AssignmentAuto,
+		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
+		Assignment: AssignmentAuto, Format: LogWriteFormatAuto,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -344,6 +449,12 @@ func (w *LogWriter) Append(ctx context.Context, row Row) *WriteFuture {
 		future.complete(WriteResult{Err: fmt.Errorf("%w: nil context", ErrInvalidConfig)})
 		return future
 	}
+	if w.config.Format == LogWriteFormatArrow {
+		future.complete(WriteResult{
+			Err: fmt.Errorf("%w: Arrow format requires AppendArrow", ErrInvalidConfig),
+		})
+		return future
+	}
 	if err := w.table.Schema.ValidateRow(row, nil); err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
@@ -353,7 +464,13 @@ func (w *LogWriter) Append(ctx context.Context, row Row) *WriteFuture {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
-	w.enqueue(ctx, &pendingWrite{ctx: ctx, row: append(Row(nil), row...), size: len(encoded) + 5, future: future})
+	item := &pendingWrite{
+		ctx: ctx, row: append(Row(nil), row...), size: len(encoded) + 5, future: future,
+	}
+	if w.observer != nil {
+		item.queuedAt = time.Now()
+	}
+	w.enqueue(ctx, item)
 	return future
 }
 
@@ -363,6 +480,21 @@ func (w *LogWriter) AppendArrow(ctx context.Context, bucket int32, batch arrow.R
 	future := newWriteFuture()
 	if ctx == nil || batch == nil {
 		future.complete(WriteResult{Err: fmt.Errorf("%w: context and Arrow batch are required", ErrInvalidConfig)})
+		return future
+	}
+	if w.config.Format == LogWriteFormatIndexed || w.config.Format == LogWriteFormatCompacted {
+		future.complete(WriteResult{
+			Err: fmt.Errorf("%w: %s format does not accept Arrow batches", ErrInvalidConfig, w.config.Format),
+		})
+		return future
+	}
+	expected, err := w.table.Schema.ArrowSchema()
+	if err != nil {
+		future.complete(WriteResult{Err: err})
+		return future
+	}
+	if !expected.Equal(batch.Schema()) {
+		future.complete(WriteResult{Err: fmt.Errorf("%w: Arrow batch schema does not match table", ErrInvalidSchema)})
 		return future
 	}
 	if !w.hasBucket(bucket) || int64(len(changes)) != batch.NumRows() {
@@ -375,10 +507,14 @@ func (w *LogWriter) AppendArrow(ctx context.Context, bucket int32, batch arrow.R
 			return future
 		}
 	}
-	w.enqueue(ctx, &pendingWrite{
+	item := &pendingWrite{
 		ctx: ctx, arrow: batch, changes: append([]ChangeType(nil), changes...),
 		bucket: &bucket, size: int(batch.NumRows()), future: future,
-	})
+	}
+	if w.observer != nil {
+		item.queuedAt = time.Now()
+	}
+	w.enqueue(ctx, item)
 	return future
 }
 
@@ -568,14 +704,25 @@ func (l *logWriterLoop) flushBucket(bucket int32) error {
 		l.writer.completeBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
 		return err
 	}
-	encoded, _, err := l.writer.encodeBatch(batch, l.sequences[bucket])
+	encoded, records, err := l.writer.encodeBatch(batch, l.sequences[bucket])
 	var baseOffset int64
+	started := metricStart(l.writer.observer)
 	if err == nil {
 		baseOffset, err = l.writer.backend.produce(context.Background(), logProduceRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 			records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
 		})
 	}
+	queueTime := time.Duration(0)
+	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {
+		queueTime = time.Since(batch.items[0].queuedAt)
+	}
+	observeMetric(l.writer.observer, MetricEvent{
+		Kind: MetricWriteBatch, Operation: MetricOperationLogWrite,
+		Duration: metricDuration(started), QueueTime: queueTime,
+		QueueSize: len(l.writer.commands), Records: int64(records), Bytes: int64(len(encoded)),
+		Failed: err != nil, ErrorClass: metricErrorClass(err),
+	})
 	if err != nil {
 		l.poisoned[bucket] = err
 		l.writer.completeBatch(batch, bucket, 0, err)
@@ -618,13 +765,13 @@ func (w *LogWriter) encodeBatch(batch *bucketBatch, sequence int32) ([]byte, int
 		encoded, err := EncodeArrowLogBatch(ArrowLogBatch{
 			Magic: 0, BaseOffset: -1, SchemaID: int16(w.table.SchemaID), WriterID: w.writerID,
 			BatchSequence: sequence, Record: item.arrow, Changes: item.changes,
-		}, ArrowCompressionNone, memory.DefaultAllocator)
+		}, w.config.ArrowCompression, memory.DefaultAllocator)
 		return encoded, len(item.changes), err
 	}
 	encoded, err := (LogBatch{
 		Magic: 0, BaseOffset: -1, SchemaID: int16(w.table.SchemaID), AppendOnly: true,
 		WriterID: w.writerID, BatchSequence: sequence, Records: batch.records,
-	}).EncodeRows(w.table.Schema, true)
+	}).EncodeRows(w.table.Schema, w.config.Format != LogWriteFormatIndexed)
 	return encoded, len(batch.records), err
 }
 

@@ -26,6 +26,46 @@ type LogicalField struct {
 	ID          int         `json:"field_id"`
 }
 
+type logicalTypeJSON struct {
+	Root      string         `json:"type"`
+	Nullable  *bool          `json:"nullable,omitempty"`
+	Length    int            `json:"length,omitempty"`
+	Precision int            `json:"precision,omitempty"`
+	Scale     int            `json:"scale,omitempty"`
+	Element   *LogicalType   `json:"element_type,omitempty"`
+	Key       *LogicalType   `json:"key_type,omitempty"`
+	Value     *LogicalType   `json:"value_type,omitempty"`
+	Fields    []LogicalField `json:"fields,omitempty"`
+}
+
+func (t LogicalType) MarshalJSON() ([]byte, error) {
+	encoded := logicalTypeJSON{
+		Root: t.Root, Length: t.Length, Precision: t.Precision, Scale: t.Scale,
+		Element: t.Element, Key: t.Key, Value: t.Value, Fields: t.Fields,
+	}
+	if !t.Nullable {
+		encoded.Nullable = new(bool)
+	}
+	return json.Marshal(encoded)
+}
+
+func (t *LogicalType) UnmarshalJSON(data []byte) error {
+	var encoded logicalTypeJSON
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		return err
+	}
+	nullable := true
+	if encoded.Nullable != nil {
+		nullable = *encoded.Nullable
+	}
+	*t = LogicalType{
+		Root: encoded.Root, Nullable: nullable, Length: encoded.Length,
+		Precision: encoded.Precision, Scale: encoded.Scale,
+		Element: encoded.Element, Key: encoded.Key, Value: encoded.Value, Fields: encoded.Fields,
+	}
+	return nil
+}
+
 func (t LogicalType) JSON() ([]byte, error) {
 	if err := t.Validate(); err != nil {
 		return nil, err

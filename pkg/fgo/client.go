@@ -59,15 +59,20 @@ func (e *AuthenticationError) Is(target error) bool { return target == ErrAuthen
 type Option func(*config) error
 
 type config struct {
-	seeds       []string
-	name        string
-	version     string
-	dialContext DialContextFunc
-	tlsConfig   *tls.Config
-	authFactory AuthenticatorFactory
-	timeout     time.Duration
-	limits      transport.Config
-	retry       RetryPolicy
+	seeds             []string
+	name              string
+	version           string
+	dialContext       DialContextFunc
+	tlsConfig         *tls.Config
+	authFactory       AuthenticatorFactory
+	timeout           time.Duration
+	limits            transport.Config
+	retry             RetryPolicy
+	observer          MetricsObserver
+	tokens            securityTokenSettings
+	dynamicPartitions *DynamicPartitionCreationConfig
+	snapshotProvider  SnapshotBatchProvider
+	remoteFiles       remoteFileSettings
 }
 
 // RetryPolicy bounds automatic retries of safe, read-only requests.
@@ -162,14 +167,29 @@ func WithRetryPolicy(policy RetryPolicy) Option {
 	}
 }
 
+func WithMetricsObserver(observer MetricsObserver) Option {
+	return func(c *config) error {
+		if observer == nil {
+			return fmt.Errorf("%w: nil metrics observer", ErrInvalidConfig)
+		}
+		c.observer = observer
+		return nil
+	}
+}
+
 type Client struct {
-	requester fmsg.Requester
-	close     func() error
-	manager   *connectionManager
-	router    *Router
-	serverID  int32
-	address   string
-	role      ServerRole
+	requester        fmsg.Requester
+	close            func() error
+	manager          *connectionManager
+	router           *Router
+	serverID         int32
+	address          string
+	role             ServerRole
+	observer         MetricsObserver
+	tokenManager     *securityTokenManager
+	partitionCreator *dynamicPartitionCreator
+	snapshotProvider SnapshotBatchProvider
+	remoteFiles      remoteFileSettings
 
 	mu         sync.RWMutex
 	closed     bool
@@ -180,6 +200,9 @@ type Client struct {
 func Open(ctx context.Context, options ...Option) (*Client, error) {
 	cfg := config{name: "fluss-go", version: "dev", timeout: 10 * time.Second, retry: RetryPolicy{MaxAttempts: 1, Backoff: func(int) time.Duration { return 0 }}}
 	for _, option := range options {
+		if option == nil {
+			return nil, fmt.Errorf("%w: nil client option", ErrInvalidConfig)
+		}
 		if err := option(&cfg); err != nil {
 			return nil, err
 		}
@@ -198,8 +221,21 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 		return nil, err
 	}
 	client.manager = manager
+	client.snapshotProvider = cfg.snapshotProvider
+	client.remoteFiles = cfg.remoteFiles
 	client.router = NewRouter(Node{ID: client.serverID, Address: client.address, Role: Coordinator}, client.fetchTableMetadata).
 		WithPhysicalMetadataFetcher(client.fetchPartitionMetadata)
+	if cfg.dynamicPartitions != nil {
+		client.partitionCreator = newDynamicPartitionCreator(client, *cfg.dynamicPartitions)
+	}
+	if cfg.tokens.enabled {
+		provider := cfg.tokens.provider
+		if provider == nil {
+			provider = clientSecurityTokenProvider{client: client}
+		}
+		client.tokenManager = newSecurityTokenManager(provider, cfg.tokens.config, cfg.tokens.receivers)
+		client.tokenManager.Start()
+	}
 	return client, nil
 }
 
@@ -210,6 +246,9 @@ func newClient(requester fmsg.Requester, close func() error) *Client {
 func (c *Client) Requester() fmsg.Requester { return c }
 
 func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
+	if request == nil {
+		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
+	}
 	if c.manager != nil {
 		return c.manager.request(ctx, Node{ID: c.serverID, Address: c.address, Role: c.role}, request)
 	}
@@ -219,6 +258,9 @@ func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 // RequestTo sends a raw request to the connection for node. It is intended for protocol helpers;
 // higher-level clients select the appropriate coordinator or tablet server from metadata.
 func (c *Client) RequestTo(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
+	if request == nil {
+		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
+	}
 	if c.manager == nil {
 		return nil, fmt.Errorf("%w: client does not manage server connections", ErrClosed)
 	}
@@ -256,27 +298,48 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 }
 
 func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
+	if request == nil {
+		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
+	}
+	var requestErr error
+	if c.observer != nil {
+		started := time.Now()
+		defer func() {
+			observeMetric(c.observer, MetricEvent{
+				Kind: MetricRequest, Operation: MetricOperationRPC, APIKey: request.APIKey(),
+				ServerRole: c.role, Duration: time.Since(started),
+				Failed: requestErr != nil, ErrorClass: metricErrorClass(requestErr),
+			})
+		}()
+	}
 	c.mu.RLock()
 	if c.closed {
 		c.mu.RUnlock()
-		return nil, ErrClosed
+		requestErr = ErrClosed
+		return nil, requestErr
 	}
 	version, ok := c.versions[request.APIKey()]
 	c.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("%w: %d", ErrUnsupportedAPI, request.APIKey())
+		requestErr = fmt.Errorf("%w: %d", ErrUnsupportedAPI, request.APIKey())
+		return nil, requestErr
 	}
 	if err := request.SetVersion(version); err != nil {
-		return nil, err
+		requestErr = err
+		return nil, requestErr
 	}
 	response, err := c.requester.Request(ctx, request)
 	if err != nil {
-		return nil, serverError(err, request.APIKey(), c.address)
+		requestErr = serverError(err, request.APIKey(), c.address)
+		return nil, requestErr
 	}
 	return response, nil
 }
 
 func (c *Client) Close() error {
+	if c.tokenManager != nil {
+		c.tokenManager.Stop()
+	}
 	if c.manager != nil {
 		return c.manager.Close()
 	}

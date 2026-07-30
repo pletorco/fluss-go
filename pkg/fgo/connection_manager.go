@@ -129,7 +129,12 @@ func (m *connectionManager) getNode(ctx context.Context, node Node) (*Client, er
 }
 
 func (m *connectionManager) open(ctx context.Context, address string, expectedRole ServerRole) (*Client, error) {
+	started := metricStart(m.cfg.observer)
 	conn, err := m.cfg.dialContext(ctx, "tcp", address)
+	observeMetric(m.cfg.observer, MetricEvent{
+		Kind: MetricRemoteIO, Operation: MetricOperationDial, ServerRole: expectedRole,
+		Duration: metricDuration(started), Failed: err != nil, ErrorClass: metricErrorClass(err),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("dial: %w", err)
 	}
@@ -147,6 +152,7 @@ func (m *connectionManager) open(ctx context.Context, address string, expectedRo
 		return nil, err
 	}
 	client := newClient(requester, requester.Close)
+	client.observer = m.cfg.observer
 	if err := client.negotiate(ctx, m.cfg.name, m.cfg.version); err != nil {
 		_ = client.shutdown()
 		return nil, err
@@ -202,7 +208,13 @@ func (m *connectionManager) request(ctx context.Context, node Node, request fmsg
 		}
 		m.remove(node.Address, node.Role, client)
 		_ = client.shutdown()
-		if err := waitRetry(ctx, m.cfg.retry.Backoff(attempt)); err != nil {
+		delay := m.cfg.retry.Backoff(attempt)
+		observeMetric(m.cfg.observer, MetricEvent{
+			Kind: MetricRetry, Operation: MetricOperationRPC, APIKey: request.APIKey(),
+			ServerRole: node.Role, Duration: delay, Attempt: attempt + 1,
+			Failed: true, ErrorClass: metricErrorClass(err),
+		})
+		if err := waitRetry(ctx, delay); err != nil {
 			return nil, err
 		}
 	}

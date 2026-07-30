@@ -52,6 +52,20 @@ func TestServerErrorCategoriesAndRetryability(t *testing.T) {
 	}
 }
 
+func TestPartitionNotExistsMapsToUnknownPartition(t *testing.T) {
+	err := ResponseError(
+		int32(fmsg.ErrorCodePartitionNotExists),
+		"partition is absent",
+		fmsg.APIKeyGetMetadata,
+	)
+	if !errors.Is(err, ErrUnknownPartition) {
+		t.Fatalf("error = %v, want ErrUnknownPartition", err)
+	}
+	if err := ResponseError(int32(fmsg.ErrorCodeNone), "", fmsg.APIKeyGetMetadata); err != nil {
+		t.Fatalf("ResponseError(NONE) = %v", err)
+	}
+}
+
 func TestServerErrorKeepsUnknownCodesInspectable(t *testing.T) {
 	err := serverError(&transport.RemoteError{Code: 999, Message: "future"}, fmsg.APIKeyLookup, "tablet:9123")
 	var server *ServerError

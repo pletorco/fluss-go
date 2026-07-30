@@ -18,6 +18,9 @@ type lookupCall struct {
 	tableID     int64
 	partitionID int64
 	keys        [][]byte
+	insert      bool
+	timeout     time.Duration
+	acks        int32
 }
 
 type fakeLookupBackend struct {
@@ -41,21 +44,21 @@ func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (int64,
 
 func (b *fakeLookupBackend) lookup(
 	ctx context.Context,
-	_ PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	keys [][]byte,
+	input lookupRequest,
 ) ([][]byte, error) {
-	if err := b.begin(ctx, lookupCall{bucket: bucket, tableID: tableID, partitionID: partitionID, keys: cloneBytesList(keys)}); err != nil {
+	if err := b.begin(ctx, lookupCall{
+		bucket: input.bucket, tableID: input.tableID, partitionID: input.partitionID,
+		keys: cloneBytesList(input.keys), insert: input.insertIfNotExist,
+		timeout: input.timeout, acks: input.acks,
+	}); err != nil {
 		return nil, err
 	}
 	defer b.end()
 	if b.lookupErr != nil {
 		return nil, b.lookupErr
 	}
-	values := make([][]byte, len(keys))
-	for index, key := range keys {
+	values := make([][]byte, len(input.keys))
+	for index, key := range input.keys {
 		values[index] = append([]byte(nil), b.values[string(key)]...)
 	}
 	return values, nil
@@ -181,6 +184,47 @@ func TestLookupClientPreservesInputAndNotFound(t *testing.T) {
 	_ = client.Close()
 }
 
+func TestLookupInsertIfNotExists(t *testing.T) {
+	table := lookupTable()
+	backend := lookupBackendFor(table, 0, 1)
+	key := PrimaryKey{"new", int32(1)}
+	putLookupValue(t, backend, table, key, Row{"new", int32(1), nil})
+	client, err := newLookupClient(
+		context.Background(), backend, table,
+		WithLookupInsertIfNotExists(2*time.Second, 1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const callers = 16
+	results := make(chan LookupResult, callers)
+	var wait sync.WaitGroup
+	for range callers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			results <- client.Lookup(context.Background(), key)[0]
+		}()
+	}
+	wait.Wait()
+	close(results)
+	for result := range results {
+		if result.Err != nil || !result.Found || result.Row[0] != "new" {
+			t.Fatalf("insert lookup result = %#v", result)
+		}
+	}
+	for _, call := range backend.calls {
+		if !call.insert || call.timeout != 2*time.Second || call.acks != 1 {
+			t.Fatalf("insert lookup call = %#v", call)
+		}
+	}
+	prefix := client.PrefixLookup(context.Background(), PrimaryKey{"new"})
+	if len(prefix) != 1 || !errors.Is(prefix[0].Err, ErrInvalidConfig) {
+		t.Fatalf("insert prefix result = %#v", prefix)
+	}
+	_ = client.Close()
+}
+
 func TestDecodeLookupValueRejectsInvalidEnvelope(t *testing.T) {
 	table := lookupTable()
 	if _, err := decodeLookupValue(table, []byte{1}); !errors.Is(err, ErrMalformedRow) {
@@ -276,6 +320,9 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 	table := lookupTable()
 	logTable := table
 	logTable.Kind = LogTable
+	requiredValue := table
+	requiredValue.Schema.Columns = append([]Column(nil), table.Schema.Columns...)
+	requiredValue.Schema.Columns[2].Nullable = false
 	for _, test := range []struct {
 		name    string
 		table   Table
@@ -285,7 +332,10 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 	}{
 		{"log table", logTable, lookupBackendFor(table, 0), nil, ErrTableKind},
 		{"nil option", table, lookupBackendFor(table, 0), []LookupOption{nil}, ErrInvalidConfig},
+		{"bad partition", table, lookupBackendFor(table, 0), []LookupOption{WithLookupPartition("   ")}, ErrInvalidConfig},
 		{"bad batch", table, lookupBackendFor(table, 0), []LookupOption{WithLookupBatch(0, 0)}, ErrInvalidConfig},
+		{"bad insert request", table, lookupBackendFor(table, 0), []LookupOption{WithLookupInsertIfNotExists(0, 2)}, ErrInvalidConfig},
+		{"required insert value", requiredValue, lookupBackendFor(requiredValue, 0), []LookupOption{WithLookupInsertIfNotExists(time.Second, -1)}, ErrInvalidSchema},
 		{"metadata", table, &fakeLookupBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", table, lookupBackendFor(table), nil, ErrMetadata},
 	} {
@@ -296,13 +346,18 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 			}
 		})
 	}
+	var config LookupConfig
+	if err := WithLookupPartition("day=2026-07-30")(&config); err != nil ||
+		config.Partition != "day=2026-07-30" {
+		t.Fatalf("WithLookupPartition() = %#v, %v", config, err)
+	}
 }
 
 func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 	table := lookupTable()
 	path := table.Path
 	pointValue := encodeLookupValue(t, table, Row{"a", int32(1), "one"})
-	var pointRequest *fmsg.LookupRequest
+	var pointRequests []*fmsg.LookupRequest
 	var prefixRequest *fmsg.PrefixLookupRequest
 	client := routedWriterClient(t,
 		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
@@ -323,7 +378,8 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 				if request.Version() != 1 {
 					t.Fatalf("Lookup version = %d", request.Version())
 				}
-				pointRequest = request.(*fmsg.MessageRequest).Message().(*fmsg.LookupRequest)
+				pointRequest := request.(*fmsg.MessageRequest).Message().(*fmsg.LookupRequest)
+				pointRequests = append(pointRequests, pointRequest)
 				message.BucketsResp = []*fmsg.PbLookupRespForBucket{{
 					BucketId: pointRequest.BucketsReq[0].BucketId,
 					Values:   []*fmsg.PbValue{{Values: pointValue}},
@@ -355,9 +411,21 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 	if result := lookup.PrefixLookup(context.Background(), PrimaryKey{"a"})[0]; result.Err != nil || len(result.Rows) != 1 {
 		t.Fatalf("prefix wire result = %#v", result)
 	}
-	if pointRequest.GetTableId() != table.ID || len(pointRequest.GetBucketsReq()[0].GetKeys()) != 1 ||
+	backend := clientLookupBackend{client: client}
+	if _, err := backend.lookup(context.Background(), lookupRequest{
+		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: table.ID, partitionID: -1,
+		keys: [][]byte{{1}}, insertIfNotExist: true, timeout: 2 * time.Second, acks: -1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(pointRequests) != 2 || pointRequests[0].InsertIfNotExists != nil ||
+		pointRequests[0].Acks != nil || pointRequests[0].TimeoutMs != nil ||
+		!pointRequests[1].GetInsertIfNotExists() || pointRequests[1].GetAcks() != -1 ||
+		pointRequests[1].GetTimeoutMs() != 2000 ||
+		pointRequests[1].GetTableId() != table.ID ||
+		len(pointRequests[1].GetBucketsReq()[0].GetKeys()) != 1 ||
 		prefixRequest.GetTableId() != table.ID {
-		t.Fatalf("requests = %#v / %#v", pointRequest, prefixRequest)
+		t.Fatalf("requests = %#v / %#v", pointRequests, prefixRequest)
 	}
 	_ = lookup.Close()
 }
@@ -389,7 +457,9 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 	tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
 	backend := clientLookupBackend{client: client}
 	path := PhysicalTablePath{TablePath: table.Path}
-	if _, err := backend.lookup(context.Background(), path, 0, table.ID, -1, [][]byte{{1}}); !errors.Is(err, ErrAuthorization) {
+	if _, err := backend.lookup(context.Background(), lookupRequest{
+		path: path, bucket: 0, tableID: table.ID, partitionID: -1, keys: [][]byte{{1}},
+	}); !errors.Is(err, ErrAuthorization) {
 		t.Fatalf("lookup body error = %v", err)
 	}
 	if _, err := backend.prefixLookup(context.Background(), path, 0, table.ID, -1, [][]byte{{1}}); !errors.Is(err, ErrValidation) {

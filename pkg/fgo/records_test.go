@@ -22,6 +22,14 @@ func TestSharedRecordModels(t *testing.T) {
 	if err := (PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "t"}, Partition: "day=2026-07-30"}).Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if got := (PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "t"}}).String(); got != "db.t" {
+		t.Fatalf("table path = %q", got)
+	}
+	if got := (PhysicalTablePath{
+		TablePath: TablePath{Database: "db", Table: "t"}, Partition: "day=2026-07-30",
+	}).String(); got != "db.t(p=day=2026-07-30)" {
+		t.Fatalf("partition path = %q", got)
+	}
 }
 
 func TestSharedRecordModelFailures(t *testing.T) {

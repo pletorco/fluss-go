@@ -95,6 +95,8 @@ func errorCategory(code fmsg.ErrorCode) error {
 		return ErrAuthentication
 	case fmsg.ErrorCodeAuthorizationException, fmsg.ErrorCodeSecurityDisabledException, fmsg.ErrorCodeSecurityTokenException:
 		return ErrAuthorization
+	case fmsg.ErrorCodePartitionNotExists:
+		return ErrUnknownPartition
 	case fmsg.ErrorCodeNotLeaderOrFollower, fmsg.ErrorCodeUnknownTableOrBucketException,
 		fmsg.ErrorCodeInvalidCoordinatorException, fmsg.ErrorCodeFencedLeaderEpochException,
 		fmsg.ErrorCodeLeaderNotAvailableException, fmsg.ErrorCodeServerNotExistException:
