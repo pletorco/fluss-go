@@ -356,7 +356,24 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 	}
 	message := request.Message().(*fmsg.AlterTableRequest)
 	message.TablePath, message.IgnoreIfNotExists = pbTablePath(path), proto.Bool(ignoreIfNotExists)
-	for _, change := range changes.Config {
+	if err := appendConfigChanges(message, changes.Config); err != nil {
+		return err
+	}
+	if err := appendAddedColumns(message, changes.Add); err != nil {
+		return err
+	}
+	if err := appendDroppedColumns(message, changes.Drop); err != nil {
+		return err
+	}
+	if err := appendRenamedColumns(message, changes.Rename); err != nil {
+		return err
+	}
+	_, err = c.requester.RequestCoordinator(ctx, request)
+	return err
+}
+
+func appendConfigChanges(message *fmsg.AlterTableRequest, changes []ConfigChange) error {
+	for _, change := range changes {
 		if change.Key == "" || change.Op < ConfigSet || change.Op > ConfigSubtract {
 			return fmt.Errorf("%w: invalid table config change", fgo.ErrInvalidConfig)
 		}
@@ -366,7 +383,11 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 		}
 		message.ConfigChanges = append(message.ConfigChanges, item)
 	}
-	for _, change := range changes.Add {
+	return nil
+}
+
+func appendAddedColumns(message *fmsg.AlterTableRequest, changes []AddColumn) error {
+	for _, change := range changes {
 		if change.Name == "" {
 			return fmt.Errorf("%w: add column name is empty", fgo.ErrInvalidConfig)
 		}
@@ -386,13 +407,21 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 			Comment: proto.String(change.Description), ColumnPositionType: proto.Int32(position),
 		})
 	}
-	for _, name := range changes.Drop {
+	return nil
+}
+
+func appendDroppedColumns(message *fmsg.AlterTableRequest, names []string) error {
+	for _, name := range names {
 		if name == "" {
 			return fmt.Errorf("%w: drop column name is empty", fgo.ErrInvalidConfig)
 		}
 		message.DropColumns = append(message.DropColumns, &fmsg.PbDropColumn{ColumnName: proto.String(name)})
 	}
-	for _, rename := range changes.Rename {
+	return nil
+}
+
+func appendRenamedColumns(message *fmsg.AlterTableRequest, renames []RenameColumn) error {
+	for _, rename := range renames {
 		if rename.Old == "" || rename.New == "" {
 			return fmt.Errorf("%w: rename column names are required", fgo.ErrInvalidConfig)
 		}
@@ -400,8 +429,7 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 			OldColumnName: proto.String(rename.Old), NewColumnName: proto.String(rename.New),
 		})
 	}
-	_, err = c.requester.RequestCoordinator(ctx, request)
-	return err
+	return nil
 }
 
 type PartitionSpec map[string]string
@@ -530,43 +558,59 @@ func (c *Client) ListOffsets(
 		return results
 	}
 	for index, bucket := range buckets {
-		results[index].Bucket = bucket
-		request, err := fmsg.NewRequest(fmsg.APIKeyListOffsets, 0)
-		if err != nil {
-			results[index].Err = err
-			continue
-		}
-		message := request.Message().(*fmsg.ListOffsetsRequest)
-		message.FollowerServerId = proto.Int32(-1)
-		message.TableId = proto.Int64(table.ID)
-		message.BucketId = []int32{bucket}
-		switch spec.Kind {
-		case fgo.ScanFromEarliest:
-			message.OffsetType = proto.Int32(0)
-		case fgo.ScanFromLatest:
-			message.OffsetType = proto.Int32(1)
-		case fgo.ScanFromTimestamp:
-			message.OffsetType = proto.Int32(2)
-			message.StartTimestamp = proto.Int64(spec.Timestamp.UnixMilli())
-		}
-		if partitionID >= 0 {
-			message.PartitionId = proto.Int64(partitionID)
-		}
-		response, err := c.requester.RequestBucket(ctx, partition, bucket, request)
-		if err != nil {
-			results[index].Err = err
-			continue
-		}
-		offsets, ok := response.Message().(*fmsg.ListOffsetsResponse)
-		if !ok || len(offsets.GetBucketsResp()) != 1 || offsets.GetBucketsResp()[0].GetBucketId() != bucket {
-			results[index].Err = fmt.Errorf("%w: ListOffsets omitted bucket %d", fgo.ErrValidation, bucket)
-			continue
-		}
-		item := offsets.GetBucketsResp()[0]
-		results[index].Offset = item.GetOffset()
-		results[index].Err = fgo.ResponseError(item.GetErrorCode(), item.GetErrorMessage(), fmsg.APIKeyListOffsets)
+		results[index] = c.listOffset(ctx, table.ID, partition, partitionID, bucket, spec)
 	}
 	return results
+}
+
+func (c *Client) listOffset(
+	ctx context.Context,
+	tableID int64,
+	partition fgo.PhysicalTablePath,
+	partitionID int64,
+	bucket int32,
+	spec fgo.ScanOffset,
+) OffsetResult {
+	result := OffsetResult{Bucket: bucket}
+	request, err := fmsg.NewRequest(fmsg.APIKeyListOffsets, 0)
+	if err != nil {
+		result.Err = err
+		return result
+	}
+	message := request.Message().(*fmsg.ListOffsetsRequest)
+	message.FollowerServerId = proto.Int32(-1)
+	message.TableId = proto.Int64(tableID)
+	message.BucketId = []int32{bucket}
+	applyOffsetSpec(message, spec)
+	if partitionID >= 0 {
+		message.PartitionId = proto.Int64(partitionID)
+	}
+	response, err := c.requester.RequestBucket(ctx, partition, bucket, request)
+	if err != nil {
+		result.Err = err
+		return result
+	}
+	offsets, ok := response.Message().(*fmsg.ListOffsetsResponse)
+	if !ok || len(offsets.GetBucketsResp()) != 1 || offsets.GetBucketsResp()[0].GetBucketId() != bucket {
+		result.Err = fmt.Errorf("%w: ListOffsets omitted bucket %d", fgo.ErrValidation, bucket)
+		return result
+	}
+	item := offsets.GetBucketsResp()[0]
+	result.Offset = item.GetOffset()
+	result.Err = fgo.ResponseError(item.GetErrorCode(), item.GetErrorMessage(), fmsg.APIKeyListOffsets)
+	return result
+}
+
+func applyOffsetSpec(message *fmsg.ListOffsetsRequest, spec fgo.ScanOffset) {
+	switch spec.Kind {
+	case fgo.ScanFromEarliest:
+		message.OffsetType = proto.Int32(0)
+	case fgo.ScanFromLatest:
+		message.OffsetType = proto.Int32(1)
+	case fgo.ScanFromTimestamp:
+		message.OffsetType = proto.Int32(2)
+		message.StartTimestamp = proto.Int64(spec.Timestamp.UnixMilli())
+	}
 }
 
 func partitionSpec(spec *fmsg.PbPartitionSpec) PartitionSpec {

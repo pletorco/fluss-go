@@ -44,14 +44,7 @@ func (b *fakeKVWriterBackend) initWriter(context.Context, PhysicalTablePath, int
 
 func (b *fakeKVWriterBackend) put(
 	_ context.Context,
-	path PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	targets []int32,
-	records []byte,
-	timeout time.Duration,
-	acks int32,
+	input kvPutRequest,
 ) (int64, error) {
 	if b.block != nil {
 		<-b.block
@@ -59,14 +52,14 @@ func (b *fakeKVWriterBackend) put(
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls = append(b.calls, putKVCall{
-		path: path, bucket: bucket, tableID: tableID, partitionID: partitionID,
-		targets: append([]int32(nil), targets...), records: append([]byte(nil), records...),
-		timeout: timeout, acks: acks,
+		path: input.path, bucket: input.bucket, tableID: input.tableID, partitionID: input.partitionID,
+		targets: append([]int32(nil), input.targets...), records: append([]byte(nil), input.records...),
+		timeout: input.timeout, acks: input.acks,
 	})
 	if b.putErr != nil {
 		return 0, b.putErr
 	}
-	batch, err := DecodeKVBatch(records)
+	batch, err := DecodeKVBatch(input.records)
 	if err != nil {
 		return 0, err
 	}
@@ -118,24 +111,9 @@ func TestKVWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
 	if err := writer.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, future := range []*WriteFuture{first, deleted, third} {
-		if result := future.Await(context.Background()); result.Err != nil || result.Bucket != 0 {
-			t.Fatalf("result = %#v", result)
-		}
-	}
+	assertKVFutures(t, first, deleted, third)
 	calls := backend.putCalls()
-	if len(calls) != 2 {
-		t.Fatalf("put calls = %d, want 2", len(calls))
-	}
-	for index, call := range calls {
-		batch, decodeErr := DecodeKVBatch(call.records)
-		if decodeErr != nil || batch.WriterID != 99 || batch.BatchSequence != int32(index) {
-			t.Fatalf("batch %d = %#v, %v", index, batch, decodeErr)
-		}
-		if call.tableID != 11 || call.partitionID != -1 || call.timeout != time.Second || call.acks != 1 {
-			t.Fatalf("call %d = %#v", index, call)
-		}
-	}
+	assertKVBatchCalls(t, calls)
 	firstBatch, _ := DecodeKVBatch(calls[0].records)
 	if len(firstBatch.Records) != 2 || firstBatch.Records[1].Value != nil {
 		t.Fatalf("upsert/delete batch = %#v", firstBatch)
@@ -146,6 +124,31 @@ func TestKVWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
 	}
 	if err := writer.Close(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertKVFutures(t *testing.T, futures ...*WriteFuture) {
+	t.Helper()
+	for _, future := range futures {
+		if result := future.Await(context.Background()); result.Err != nil || result.Bucket != 0 {
+			t.Fatalf("result = %#v", result)
+		}
+	}
+}
+
+func assertKVBatchCalls(t *testing.T, calls []putKVCall) {
+	t.Helper()
+	if len(calls) != 2 {
+		t.Fatalf("put calls = %d, want 2", len(calls))
+	}
+	for index, call := range calls {
+		batch, err := DecodeKVBatch(call.records)
+		if err != nil || batch.WriterID != 99 || batch.BatchSequence != int32(index) {
+			t.Fatalf("batch %d = %#v, %v", index, batch, err)
+		}
+		if call.tableID != 11 || call.partitionID != -1 || call.timeout != time.Second || call.acks != 1 {
+			t.Fatalf("call %d = %#v", index, call)
+		}
 	}
 }
 
@@ -373,7 +376,9 @@ func TestClientKVWriterBackendMessagesAndErrors(t *testing.T) {
 		return response, nil
 	})
 	backend := clientKVWriterBackend{client: client}
-	if _, err := backend.put(context.Background(), PhysicalTablePath{TablePath: path}, 0, 11, -1, nil, nil, time.Second, 1); !errors.Is(err, ErrStorage) {
+	if _, err := backend.put(context.Background(), kvPutRequest{
+		path: PhysicalTablePath{TablePath: path}, tableID: 11, partitionID: -1, timeout: time.Second, acks: 1,
+	}); !errors.Is(err, ErrStorage) {
 		t.Fatalf("PutKv server error = %v", err)
 	}
 }

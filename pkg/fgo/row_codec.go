@@ -134,35 +134,21 @@ func encodeRow(schema Schema, row Row, encoding rowEncoding) ([]byte, error) {
 		return nil, err
 	}
 	nullBytes := (len(schema.Columns) + 7) / 8
-	headerBytes := nullBytes
-	if encoding == indexedEncoding {
-		for _, column := range schema.Columns {
-			if !indexedFixed(logicalTypeForColumn(column)) {
-				headerBytes += 4
-			}
-		}
-	}
+	headerBytes := rowHeaderBytes(schema, encoding)
 	encoded := make([]byte, headerBytes)
 	lengthPosition := nullBytes
 	for i, column := range schema.Columns {
-		logicalType := logicalTypeForColumn(column)
 		if row[i] == nil {
 			encoded[i/8] |= 1 << (i % 8)
 			continue
 		}
-		var value []byte
-		var err error
-		if encoding == compactedEncoding {
-			value, err = appendCompactedValue(nil, logicalType, row[i])
-		} else {
-			value, err = appendIndexedValue(nil, logicalType, row[i])
-			if !indexedFixed(logicalType) {
-				binary.LittleEndian.PutUint32(encoded[lengthPosition:], uint32(len(value)))
-				lengthPosition += 4
-			}
-		}
+		value, err := encodeRowValue(logicalTypeForColumn(column), row[i], encoding)
 		if err != nil {
 			return nil, fmt.Errorf("fgo: column %q: %w", column.Name, err)
+		}
+		if encoding == indexedEncoding && !indexedFixed(logicalTypeForColumn(column)) {
+			binary.LittleEndian.PutUint32(encoded[lengthPosition:], uint32(len(value)))
+			lengthPosition += 4
 		}
 		if len(value) > maxRowBytes-len(encoded) {
 			return nil, fmt.Errorf("%w: row exceeds %d bytes", ErrMalformedRow, maxRowBytes)
@@ -172,19 +158,32 @@ func encodeRow(schema Schema, row Row, encoding rowEncoding) ([]byte, error) {
 	return encoded, nil
 }
 
+func rowHeaderBytes(schema Schema, encoding rowEncoding) int {
+	headerBytes := (len(schema.Columns) + 7) / 8
+	if encoding != indexedEncoding {
+		return headerBytes
+	}
+	for _, column := range schema.Columns {
+		if !indexedFixed(logicalTypeForColumn(column)) {
+			headerBytes += 4
+		}
+	}
+	return headerBytes
+}
+
+func encodeRowValue(logicalType LogicalType, value any, encoding rowEncoding) ([]byte, error) {
+	if encoding == compactedEncoding {
+		return appendCompactedValue(nil, logicalType, value)
+	}
+	return appendIndexedValue(nil, logicalType, value)
+}
+
 func decodeRow(schema Schema, encoded []byte, encoding rowEncoding) (Row, error) {
 	if err := schema.Validate(); err != nil {
 		return nil, err
 	}
 	nullBytes := (len(schema.Columns) + 7) / 8
-	headerBytes := nullBytes
-	if encoding == indexedEncoding {
-		for _, column := range schema.Columns {
-			if !indexedFixed(logicalTypeForColumn(column)) {
-				headerBytes += 4
-			}
-		}
-	}
+	headerBytes := rowHeaderBytes(schema, encoding)
 	if len(encoded) > maxRowBytes || len(encoded) < headerBytes {
 		return nil, fmt.Errorf("%w: invalid row length", ErrMalformedRow)
 	}
@@ -193,29 +192,15 @@ func decodeRow(schema Schema, encoded []byte, encoding rowEncoding) (Row, error)
 	for i, column := range schema.Columns {
 		logicalType := logicalTypeForColumn(column)
 		isNull := encoded[i/8]&(1<<(i%8)) != 0
-		length := -1
-		if encoding == indexedEncoding && !indexedFixed(logicalType) {
-			if !isNull {
-				length = int(binary.LittleEndian.Uint32(encoded[lengthPosition:]))
-				lengthPosition += 4
-			}
-		}
+		length, nextLengthPosition := indexedValueLength(encoded, lengthPosition, logicalType, encoding, isNull)
+		lengthPosition = nextLengthPosition
 		if isNull {
 			if !column.Nullable {
 				return nil, fmt.Errorf("%w: non-nullable column %q is null", ErrMalformedRow, column.Name)
 			}
 			continue
 		}
-		var (
-			value any
-			next  int
-			err   error
-		)
-		if encoding == compactedEncoding {
-			value, next, err = readCompactedValue(encoded, position, logicalType)
-		} else {
-			value, next, err = readIndexedValue(encoded, position, logicalType, length)
-		}
+		value, next, err := decodeRowValue(encoded, position, logicalType, encoding, length)
 		if err != nil {
 			return nil, fmt.Errorf("%w: column %q: %v", ErrMalformedRow, column.Name, err)
 		}
@@ -225,6 +210,32 @@ func decodeRow(schema Schema, encoded []byte, encoding rowEncoding) (Row, error)
 		return nil, fmt.Errorf("%w: trailing bytes", ErrMalformedRow)
 	}
 	return row, nil
+}
+
+func indexedValueLength(
+	encoded []byte,
+	position int,
+	logicalType LogicalType,
+	encoding rowEncoding,
+	isNull bool,
+) (int, int) {
+	if encoding != indexedEncoding || indexedFixed(logicalType) || isNull {
+		return -1, position
+	}
+	return int(binary.LittleEndian.Uint32(encoded[position:])), position + 4
+}
+
+func decodeRowValue(
+	encoded []byte,
+	position int,
+	logicalType LogicalType,
+	encoding rowEncoding,
+	length int,
+) (any, int, error) {
+	if encoding == compactedEncoding {
+		return readCompactedValue(encoded, position, logicalType)
+	}
+	return readIndexedValue(encoded, position, logicalType, length)
 }
 
 func nestedSchema(logicalType LogicalType) Schema {

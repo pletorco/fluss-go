@@ -76,7 +76,50 @@ func appendCompactedValue(dst []byte, logicalType LogicalType, value any) ([]byt
 }
 
 func readCompactedValue(encoded []byte, position int, logicalType LogicalType) (any, int, error) {
-	switch dataTypeForLogicalType(logicalType) {
+	kind := dataTypeForLogicalType(logicalType)
+	if compactedFixedWidth(kind) {
+		return readCompactedFixed(encoded, position, kind)
+	}
+	switch kind {
+	case IntType:
+		value, next, err := readVar(encoded, position, 5)
+		return int32(value), next, err
+	case BigIntType:
+		value, next, err := readVar(encoded, position, 10)
+		return int64(value), next, err
+	case StringType, CharType:
+		value, next, err := readLengthBytes(encoded, position)
+		return string(value), next, err
+	case BytesType, BinaryType:
+		return readLengthBytes(encoded, position)
+	case DateType, TimeType:
+		value, next, err := readVar(encoded, position, 5)
+		if err != nil {
+			return nil, 0, err
+		}
+		return temporalTime(kind, int32(value)), next, nil
+	case TimestampType, TimestampLTZType:
+		return readCompactedTimestamp(encoded, position, logicalType)
+	case DecimalType:
+		return readCompactedDecimal(encoded, position, logicalType)
+	case ArrayType, MapType, RowType:
+		return readCompactedNested(encoded, position, logicalType)
+	default:
+		return nil, 0, fmt.Errorf("unsupported compacted type %s", logicalType.Root)
+	}
+}
+
+func compactedFixedWidth(kind DataType) bool {
+	switch kind {
+	case BoolType, TinyIntType, SmallIntType, FloatType, DoubleType:
+		return true
+	default:
+		return false
+	}
+}
+
+func readCompactedFixed(encoded []byte, position int, kind DataType) (any, int, error) {
+	switch kind {
 	case BoolType:
 		value, next, err := readFixed(encoded, position, 1)
 		if err != nil || value[0] > 1 {
@@ -95,12 +138,6 @@ func readCompactedValue(encoded []byte, position int, logicalType LogicalType) (
 			return nil, 0, err
 		}
 		return int16(binary.LittleEndian.Uint16(value)), next, nil
-	case IntType:
-		value, next, err := readVar(encoded, position, 5)
-		return int32(value), next, err
-	case BigIntType:
-		value, next, err := readVar(encoded, position, 10)
-		return int64(value), next, err
 	case FloatType:
 		value, next, err := readFixed(encoded, position, 4)
 		if err != nil {
@@ -113,66 +150,54 @@ func readCompactedValue(encoded []byte, position int, logicalType LogicalType) (
 			return nil, 0, err
 		}
 		return math.Float64frombits(binary.LittleEndian.Uint64(value)), next, nil
-	case StringType, CharType:
-		value, next, err := readLengthBytes(encoded, position)
-		return string(value), next, err
-	case BytesType, BinaryType:
-		return readLengthBytes(encoded, position)
-	case DateType, TimeType:
-		value, next, err := readVar(encoded, position, 5)
+	default:
+		return nil, 0, fmt.Errorf("unsupported compacted fixed type %s", kind)
+	}
+}
+
+func readCompactedTimestamp(encoded []byte, position int, logicalType LogicalType) (any, int, error) {
+	millis, next, err := readVar(encoded, position, 10)
+	if err != nil {
+		return nil, 0, err
+	}
+	nanos := uint64(0)
+	if logicalType.Precision > 3 {
+		nanos, next, err = readVar(encoded, next, 5)
+		if err != nil || nanos > 999999 {
+			return nil, 0, errors.New("invalid timestamp nanos")
+		}
+	}
+	return timestampTime(dataTypeForLogicalType(logicalType), int64(millis), int32(nanos)), next, nil
+}
+
+func readCompactedDecimal(encoded []byte, position int, logicalType LogicalType) (any, int, error) {
+	if logicalType.Precision <= 18 {
+		value, next, err := readVar(encoded, position, 10)
 		if err != nil {
 			return nil, 0, err
 		}
-		return temporalTime(dataTypeForLogicalType(logicalType), int32(value)), next, nil
-	case TimestampType, TimestampLTZType:
-		millis, next, err := readVar(encoded, position, 10)
-		if err != nil {
-			return nil, 0, err
-		}
-		nanos := uint64(0)
-		if logicalType.Precision > 3 {
-			nanos, next, err = readVar(encoded, next, 5)
-			if err != nil || nanos > 999999 {
-				return nil, 0, errors.New("invalid timestamp nanos")
-			}
-		}
-		return timestampTime(dataTypeForLogicalType(logicalType), int64(millis), int32(nanos)), next, nil
-	case DecimalType:
-		var unscaled *big.Int
-		var next int
-		if logicalType.Precision <= 18 {
-			value, position, err := readVar(encoded, position, 10)
-			if err != nil {
-				return nil, 0, err
-			}
-			unscaled, next = big.NewInt(int64(value)), position
-		} else {
-			value, position, err := readLengthBytes(encoded, position)
-			if err != nil {
-				return nil, 0, err
-			}
-			unscaled, next = signedBigInt(value), position
-		}
-		return scaledRat(unscaled, logicalType.Scale), next, nil
+		return scaledRat(big.NewInt(int64(value)), logicalType.Scale), next, nil
+	}
+	value, next, err := readLengthBytes(encoded, position)
+	if err != nil {
+		return nil, 0, err
+	}
+	return scaledRat(signedBigInt(value), logicalType.Scale), next, nil
+}
+
+func readCompactedNested(encoded []byte, position int, logicalType LogicalType) (any, int, error) {
+	value, next, err := readLengthBytes(encoded, position)
+	if err != nil {
+		return nil, 0, err
+	}
+	switch dataTypeForLogicalType(logicalType) {
 	case ArrayType:
-		value, next, err := readLengthBytes(encoded, position)
-		if err != nil {
-			return nil, 0, err
-		}
 		array, err := decodeBinaryArray(*logicalType.Element, value, compactedEncoding)
 		return array, next, err
 	case MapType:
-		value, next, err := readLengthBytes(encoded, position)
-		if err != nil {
-			return nil, 0, err
-		}
 		mapped, err := decodeBinaryMap(logicalType, value, compactedEncoding)
 		return mapped, next, err
 	case RowType:
-		value, next, err := readLengthBytes(encoded, position)
-		if err != nil {
-			return nil, 0, err
-		}
 		row, err := decodeRow(nestedSchema(logicalType), value, compactedEncoding)
 		return row, next, err
 	default:
@@ -234,30 +259,40 @@ func appendIndexedValue(dst []byte, logicalType LogicalType, value any) ([]byte,
 }
 
 func readIndexedValue(encoded []byte, position int, logicalType LogicalType, length int) (any, int, error) {
-	kind := dataTypeForLogicalType(logicalType)
 	if !indexedFixed(logicalType) {
-		value, next, err := readFixed(encoded, position, length)
-		if err != nil {
-			return nil, 0, err
-		}
-		switch kind {
-		case StringType, CharType:
-			return string(value), next, nil
-		case BytesType, BinaryType:
-			return append([]byte(nil), value...), next, nil
-		case DecimalType:
-			return scaledRat(signedBigInt(value), logicalType.Scale), next, nil
-		case ArrayType:
-			decoded, err := decodeBinaryArray(*logicalType.Element, value, indexedEncoding)
-			return decoded, next, err
-		case MapType:
-			decoded, err := decodeBinaryMap(logicalType, value, indexedEncoding)
-			return decoded, next, err
-		case RowType:
-			decoded, err := decodeRow(nestedSchema(logicalType), value, indexedEncoding)
-			return decoded, next, err
-		}
+		return readIndexedVariable(encoded, position, logicalType, length)
 	}
+	return readIndexedFixed(encoded, position, logicalType)
+}
+
+func readIndexedVariable(encoded []byte, position int, logicalType LogicalType, length int) (any, int, error) {
+	value, next, err := readFixed(encoded, position, length)
+	if err != nil {
+		return nil, 0, err
+	}
+	switch dataTypeForLogicalType(logicalType) {
+	case StringType, CharType:
+		return string(value), next, nil
+	case BytesType, BinaryType:
+		return append([]byte(nil), value...), next, nil
+	case DecimalType:
+		return scaledRat(signedBigInt(value), logicalType.Scale), next, nil
+	case ArrayType:
+		decoded, err := decodeBinaryArray(*logicalType.Element, value, indexedEncoding)
+		return decoded, next, err
+	case MapType:
+		decoded, err := decodeBinaryMap(logicalType, value, indexedEncoding)
+		return decoded, next, err
+	case RowType:
+		decoded, err := decodeRow(nestedSchema(logicalType), value, indexedEncoding)
+		return decoded, next, err
+	default:
+		return nil, 0, fmt.Errorf("unsupported indexed variable type %s", logicalType.Root)
+	}
+}
+
+func readIndexedFixed(encoded []byte, position int, logicalType LogicalType) (any, int, error) {
+	kind := dataTypeForLogicalType(logicalType)
 	switch kind {
 	case IntType:
 		value, next, err := readFixed(encoded, position, 4)
@@ -278,19 +313,7 @@ func readIndexedValue(encoded []byte, position int, logicalType LogicalType, len
 		}
 		return temporalTime(kind, int32(binary.LittleEndian.Uint32(value))), next, nil
 	case TimestampType, TimestampLTZType:
-		width := indexedLength(logicalType)
-		value, next, err := readFixed(encoded, position, width)
-		if err != nil {
-			return nil, 0, err
-		}
-		nanos := int32(0)
-		if width == 12 {
-			nanos = int32(binary.LittleEndian.Uint32(value[8:]))
-			if nanos > 999999 {
-				return nil, 0, errors.New("invalid timestamp nanos")
-			}
-		}
-		return timestampTime(kind, int64(binary.LittleEndian.Uint64(value)), nanos), next, nil
+		return readIndexedTimestamp(encoded, position, logicalType)
 	case CharType:
 		value, next, err := readFixed(encoded, position, logicalType.Length)
 		return string(trimZero(value)), next, err
@@ -306,6 +329,23 @@ func readIndexedValue(encoded []byte, position int, logicalType LogicalType, len
 	default:
 		return readCompactedValue(encoded, position, logicalType)
 	}
+}
+
+func readIndexedTimestamp(encoded []byte, position int, logicalType LogicalType) (any, int, error) {
+	width := indexedLength(logicalType)
+	value, next, err := readFixed(encoded, position, width)
+	if err != nil {
+		return nil, 0, err
+	}
+	nanos := int32(0)
+	if width == 12 {
+		nanos = int32(binary.LittleEndian.Uint32(value[8:]))
+		if nanos > 999999 {
+			return nil, 0, errors.New("invalid timestamp nanos")
+		}
+	}
+	kind := dataTypeForLogicalType(logicalType)
+	return timestampTime(kind, int64(binary.LittleEndian.Uint64(value)), nanos), next, nil
 }
 
 func indexedFixed(logicalType LogicalType) bool {

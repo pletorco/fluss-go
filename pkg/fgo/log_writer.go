@@ -137,10 +137,20 @@ func (f *WriteFuture) Await(ctx context.Context) WriteResult {
 type logWriterBackend interface {
 	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
-	produce(context.Context, PhysicalTablePath, int32, int64, int64, []byte, time.Duration, int32) (int64, error)
+	produce(context.Context, logProduceRequest) (int64, error)
 }
 
 type clientLogWriterBackend struct{ client *Client }
+
+type logProduceRequest struct {
+	path        PhysicalTablePath
+	bucket      int32
+	tableID     int64
+	partitionID int64
+	records     []byte
+	timeout     time.Duration
+	acks        int32
+}
 
 func (b clientLogWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
 	if path.Partition == "" {
@@ -170,31 +180,25 @@ func (b clientLogWriterBackend) initWriter(ctx context.Context, path PhysicalTab
 
 func (b clientLogWriterBackend) produce(
 	ctx context.Context,
-	path PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	records []byte,
-	timeout time.Duration,
-	acks int32,
+	input logProduceRequest,
 ) (int64, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyProduceLog, 0)
 	if err != nil {
 		return 0, err
 	}
-	if timeout/time.Millisecond > math.MaxInt32 {
+	if input.timeout/time.Millisecond > math.MaxInt32 {
 		return 0, fmt.Errorf("%w: log timeout exceeds protocol range", ErrInvalidConfig)
 	}
 	message := request.Message().(*fmsg.ProduceLogRequest)
-	message.Acks = proto.Int32(acks)
-	message.TableId = proto.Int64(tableID)
-	message.TimeoutMs = proto.Int32(int32(timeout / time.Millisecond))
-	bucketRequest := &fmsg.PbProduceLogReqForBucket{BucketId: proto.Int32(bucket), Records: records}
-	if path.Partition != "" {
-		bucketRequest.PartitionId = proto.Int64(partitionID)
+	message.Acks = proto.Int32(input.acks)
+	message.TableId = proto.Int64(input.tableID)
+	message.TimeoutMs = proto.Int32(int32(input.timeout / time.Millisecond))
+	bucketRequest := &fmsg.PbProduceLogReqForBucket{BucketId: proto.Int32(input.bucket), Records: input.records}
+	if input.path.Partition != "" {
+		bucketRequest.PartitionId = proto.Int64(input.partitionID)
 	}
 	message.BucketsReq = []*fmsg.PbProduceLogReqForBucket{bucketRequest}
-	response, err := b.client.RequestBucket(ctx, path, bucket, request)
+	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
 	if err != nil {
 		return 0, err
 	}
@@ -202,8 +206,8 @@ func (b clientLogWriterBackend) produce(
 	if !ok {
 		return 0, fmt.Errorf("fgo: produce log: unexpected response %T", response.Message())
 	}
-	if len(produced.GetBucketsResp()) != 1 || produced.GetBucketsResp()[0].GetBucketId() != bucket {
-		return 0, fmt.Errorf("%w: produce response omitted bucket %d", ErrValidation, bucket)
+	if len(produced.GetBucketsResp()) != 1 || produced.GetBucketsResp()[0].GetBucketId() != input.bucket {
+		return 0, fmt.Errorf("%w: produce response omitted bucket %d", ErrValidation, input.bucket)
 	}
 	result := produced.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyProduceLog); err != nil {
@@ -251,31 +255,26 @@ type bucketBatch struct {
 	bytes   int
 }
 
+type logWriterLoop struct {
+	writer    *LogWriter
+	batches   map[int32]*bucketBatch
+	sequences map[int32]int32
+	poisoned  map[int32]error
+	timer     *time.Timer
+	timerC    <-chan time.Time
+}
+
 func (c *Client) NewLogWriter(ctx context.Context, table Table, options ...LogWriterOption) (*LogWriter, error) {
 	return newLogWriter(ctx, clientLogWriterBackend{client: c}, table, options...)
 }
 
 func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, options ...LogWriterOption) (*LogWriter, error) {
-	if err := table.RequireLog(); err != nil {
+	if err := validateLogWriterTable(table); err != nil {
 		return nil, err
 	}
-	if err := table.Schema.Validate(); err != nil {
+	config, err := logWriterConfig(options)
+	if err != nil {
 		return nil, err
-	}
-	if table.SchemaID < 0 || table.SchemaID > math.MaxInt16 {
-		return nil, fmt.Errorf("%w: schema ID exceeds log batch range", ErrInvalidSchema)
-	}
-	config := LogWriterConfig{
-		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
-		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1, Assignment: AssignmentAuto,
-	}
-	for _, option := range options {
-		if option == nil {
-			return nil, fmt.Errorf("%w: nil log writer option", ErrInvalidConfig)
-		}
-		if err := option(&config); err != nil {
-			return nil, err
-		}
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	physicalID, locations, err := backend.metadata(ctx, path)
@@ -306,6 +305,35 @@ func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, op
 	}
 	go writer.run()
 	return writer, nil
+}
+
+func validateLogWriterTable(table Table) error {
+	if err := table.RequireLog(); err != nil {
+		return err
+	}
+	if err := table.Schema.Validate(); err != nil {
+		return err
+	}
+	if table.SchemaID < 0 || table.SchemaID > math.MaxInt16 {
+		return fmt.Errorf("%w: schema ID exceeds log batch range", ErrInvalidSchema)
+	}
+	return nil
+}
+
+func logWriterConfig(options []LogWriterOption) (LogWriterConfig, error) {
+	config := LogWriterConfig{
+		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
+		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1, Assignment: AssignmentAuto,
+	}
+	for _, option := range options {
+		if option == nil {
+			return LogWriterConfig{}, fmt.Errorf("%w: nil log writer option", ErrInvalidConfig)
+		}
+		if err := option(&config); err != nil {
+			return LogWriterConfig{}, err
+		}
+	}
+	return config, nil
 }
 
 // Append queues one row. The returned future completes exactly once after acknowledgment or
@@ -429,130 +457,159 @@ func (w *LogWriter) Close(ctx context.Context) error {
 
 func (w *LogWriter) run() {
 	defer close(w.done)
-	batches := make(map[int32]*bucketBatch)
-	sequences := make(map[int32]int32)
-	poisoned := make(map[int32]error)
 	timer := time.NewTimer(w.config.Linger)
 	if !timer.Stop() {
 		<-timer.C
 	}
-	var timerChannel <-chan time.Time
-	armTimer := func() {
-		if timerChannel == nil && w.config.Linger > 0 {
-			timer.Reset(w.config.Linger)
-			timerChannel = timer.C
-		}
+	loop := &logWriterLoop{
+		writer: w, batches: make(map[int32]*bucketBatch), sequences: make(map[int32]int32),
+		poisoned: make(map[int32]error), timer: timer,
 	}
-	stopTimer := func() {
-		if timerChannel != nil && !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timerChannel = nil
-	}
-	flushBucket := func(bucket int32) error {
-		batch := batches[bucket]
-		if batch == nil || len(batch.items) == 0 {
-			return nil
-		}
-		delete(batches, bucket)
-		if err := poisoned[bucket]; err != nil {
-			w.completeBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
-			return err
-		}
-		encoded, count, err := w.encodeBatch(batch, sequences[bucket])
-		if err == nil {
-			var baseOffset int64
-			baseOffset, err = w.backend.produce(
-				context.Background(), w.path, bucket, w.tableID, w.partitionID,
-				encoded, w.config.Timeout, w.config.Acks,
-			)
-			if err == nil {
-				sequences[bucket]++
-				w.completeBatch(batch, bucket, baseOffset, nil)
-				return nil
-			}
-		}
-		poisoned[bucket] = err
-		w.completeBatch(batch, bucket, 0, err)
-		_ = count
-		return err
-	}
-	flushAll := func() error {
-		stopTimer()
-		var joined error
-		for _, bucket := range w.buckets {
-			joined = errors.Join(joined, flushBucket(bucket))
-		}
-		return joined
-	}
+	loop.run()
+}
+
+func (l *logWriterLoop) run() {
 	for {
 		select {
-		case command := <-w.commands:
+		case command := <-l.writer.commands:
 			switch {
 			case command.item != nil:
-				item := command.item
-				if err := item.ctx.Err(); err != nil {
-					item.future.complete(WriteResult{Err: err})
-					continue
-				}
-				bucket, err := w.assignBucket(item)
-				if err != nil {
-					item.future.complete(WriteResult{Err: err})
-					continue
-				}
-				if item.arrow != nil {
-					_ = flushBucket(bucket)
-					batches[bucket] = &bucketBatch{items: []*pendingWrite{item}}
-					_ = flushBucket(bucket)
-					continue
-				}
-				batch := batches[bucket]
-				if batch == nil {
-					batch = &bucketBatch{}
-					batches[bucket] = batch
-				}
-				if len(batch.items) > 0 && (len(batch.items) >= w.config.MaxBatchRecords || batch.bytes+item.size > w.config.MaxBatchBytes) {
-					_ = flushBucket(bucket)
-					if w.effectiveAssignment() == AssignmentSticky {
-						w.advanceSticky()
-						bucket, err = w.assignBucket(item)
-						if err != nil {
-							item.future.complete(WriteResult{Err: err})
-							continue
-						}
-					}
-					batch = batches[bucket]
-					if batch == nil {
-						batch = &bucketBatch{}
-						batches[bucket] = batch
-					}
-				}
-				batch.items = append(batch.items, item)
-				batch.records = append(batch.records, Record{Value: item.row, Change: Append, Offset: -1})
-				batch.bytes += item.size
-				if len(batch.items) >= w.config.MaxBatchRecords || batch.bytes >= w.config.MaxBatchBytes || w.config.Linger == 0 {
-					_ = flushBucket(bucket)
-					if w.effectiveAssignment() == AssignmentSticky {
-						w.advanceSticky()
-					}
-				} else {
-					armTimer()
-				}
+				l.add(command.item)
 			case command.flush != nil:
-				command.flush <- flushAll()
+				command.flush <- l.flushAll()
 			case command.close != nil:
-				command.close <- flushAll()
-				timer.Stop()
+				command.close <- l.flushAll()
+				l.timer.Stop()
 				return
 			}
-		case <-timerChannel:
-			timerChannel = nil
-			_ = flushAll()
+		case <-l.timerC:
+			l.timerC = nil
+			_ = l.flushAll()
 		}
 	}
+}
+
+func (l *logWriterLoop) add(item *pendingWrite) {
+	if err := item.ctx.Err(); err != nil {
+		item.future.complete(WriteResult{Err: err})
+		return
+	}
+	bucket, err := l.writer.assignBucket(item)
+	if err != nil {
+		item.future.complete(WriteResult{Err: err})
+		return
+	}
+	if item.arrow != nil {
+		_ = l.flushBucket(bucket)
+		l.batches[bucket] = &bucketBatch{items: []*pendingWrite{item}}
+		_ = l.flushBucket(bucket)
+		return
+	}
+	bucket, batch, ok := l.availableBatch(bucket, item)
+	if !ok {
+		return
+	}
+	batch.items = append(batch.items, item)
+	batch.records = append(batch.records, Record{Value: item.row, Change: Append, Offset: -1})
+	batch.bytes += item.size
+	if l.batchFull(batch) || l.writer.config.Linger == 0 {
+		_ = l.flushBucket(bucket)
+		if l.writer.effectiveAssignment() == AssignmentSticky {
+			l.writer.advanceSticky()
+		}
+		return
+	}
+	l.armTimer()
+}
+
+func (l *logWriterLoop) availableBatch(bucket int32, item *pendingWrite) (int32, *bucketBatch, bool) {
+	batch := l.batch(bucket)
+	if len(batch.items) == 0 || !l.batchFullWith(batch, item) {
+		return bucket, batch, true
+	}
+	_ = l.flushBucket(bucket)
+	if l.writer.effectiveAssignment() != AssignmentSticky {
+		return bucket, l.batch(bucket), true
+	}
+	l.writer.advanceSticky()
+	next, err := l.writer.assignBucket(item)
+	if err != nil {
+		item.future.complete(WriteResult{Err: err})
+		return 0, nil, false
+	}
+	return next, l.batch(next), true
+}
+
+func (l *logWriterLoop) batch(bucket int32) *bucketBatch {
+	batch := l.batches[bucket]
+	if batch == nil {
+		batch = &bucketBatch{}
+		l.batches[bucket] = batch
+	}
+	return batch
+}
+
+func (l *logWriterLoop) batchFull(batch *bucketBatch) bool {
+	return len(batch.items) >= l.writer.config.MaxBatchRecords || batch.bytes >= l.writer.config.MaxBatchBytes
+}
+
+func (l *logWriterLoop) batchFullWith(batch *bucketBatch, item *pendingWrite) bool {
+	return len(batch.items) >= l.writer.config.MaxBatchRecords ||
+		batch.bytes+item.size > l.writer.config.MaxBatchBytes
+}
+
+func (l *logWriterLoop) flushBucket(bucket int32) error {
+	batch := l.batches[bucket]
+	if batch == nil || len(batch.items) == 0 {
+		return nil
+	}
+	delete(l.batches, bucket)
+	if err := l.poisoned[bucket]; err != nil {
+		l.writer.completeBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
+		return err
+	}
+	encoded, _, err := l.writer.encodeBatch(batch, l.sequences[bucket])
+	var baseOffset int64
+	if err == nil {
+		baseOffset, err = l.writer.backend.produce(context.Background(), logProduceRequest{
+			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
+			records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+		})
+	}
+	if err != nil {
+		l.poisoned[bucket] = err
+		l.writer.completeBatch(batch, bucket, 0, err)
+		return err
+	}
+	l.sequences[bucket]++
+	l.writer.completeBatch(batch, bucket, baseOffset, nil)
+	return nil
+}
+
+func (l *logWriterLoop) flushAll() error {
+	l.stopTimer()
+	var joined error
+	for _, bucket := range l.writer.buckets {
+		joined = errors.Join(joined, l.flushBucket(bucket))
+	}
+	return joined
+}
+
+func (l *logWriterLoop) armTimer() {
+	if l.timerC == nil && l.writer.config.Linger > 0 {
+		l.timer.Reset(l.writer.config.Linger)
+		l.timerC = l.timer.C
+	}
+}
+
+func (l *logWriterLoop) stopTimer() {
+	if l.timerC != nil && !l.timer.Stop() {
+		select {
+		case <-l.timer.C:
+		default:
+		}
+	}
+	l.timerC = nil
 }
 
 func (w *LogWriter) encodeBatch(batch *bucketBatch, sequence int32) ([]byte, int, error) {
@@ -598,19 +655,9 @@ func (w *LogWriter) assignBucket(item *pendingWrite) (int32, error) {
 		return *item.bucket, nil
 	}
 	if len(w.table.Schema.BucketKey) != 0 {
-		values := make(PrimaryKey, len(w.table.Schema.BucketKey))
-		columns := w.table.Schema.columnsByName()
-		positions := make(map[string]int, len(w.table.Schema.Columns))
-		for index, column := range w.table.Schema.Columns {
-			positions[column.Name] = index
-		}
-		for index, name := range w.table.Schema.BucketKey {
-			_, ok := columns[name]
-			position, found := positions[name]
-			if !ok || !found || item.row[position] == nil {
-				return 0, fmt.Errorf("%w: invalid bucket key column %q", ErrInvalidRow, name)
-			}
-			values[index] = item.row[position]
+		values, err := w.bucketKeyValues(item.row)
+		if err != nil {
+			return 0, err
 		}
 		key, err := encodeKeyColumns(w.table.Schema, w.table.Schema.BucketKey, values)
 		if err != nil {
@@ -631,6 +678,22 @@ func (w *LogWriter) assignBucket(item *pendingWrite) (int32, error) {
 		w.stickyIndex = 0
 	}
 	return w.buckets[w.stickyIndex], nil
+}
+
+func (w *LogWriter) bucketKeyValues(row Row) (PrimaryKey, error) {
+	values := make(PrimaryKey, len(w.table.Schema.BucketKey))
+	positions := make(map[string]int, len(w.table.Schema.Columns))
+	for index, column := range w.table.Schema.Columns {
+		positions[column.Name] = index
+	}
+	for index, name := range w.table.Schema.BucketKey {
+		position, found := positions[name]
+		if !found || row[position] == nil {
+			return nil, fmt.Errorf("%w: invalid bucket key column %q", ErrInvalidRow, name)
+		}
+		values[index] = row[position]
+	}
+	return values, nil
 }
 
 func (w *LogWriter) advanceSticky() {

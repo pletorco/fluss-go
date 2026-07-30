@@ -60,12 +60,9 @@ func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompression, allo
 	if allocator == nil {
 		allocator = memory.DefaultAllocator
 	}
-	count := 0
-	if batch.Record != nil {
-		if batch.Record.NumRows() > int64(^uint32(0)>>1) {
-			return nil, fmt.Errorf("%w: too many Arrow rows", ErrMalformedRecordBatch)
-		}
-		count = int(batch.Record.NumRows())
+	count, err := arrowRecordCount(batch.Record)
+	if err != nil {
+		return nil, err
 	}
 	changes, err := arrowChanges(batch, count)
 	if err != nil {
@@ -78,14 +75,37 @@ func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompression, allo
 	if count == 0 && len(payload) != 0 {
 		return nil, fmt.Errorf("%w: empty Arrow batch has payload", ErrMalformedRecordBatch)
 	}
-	headerSize := logBatchV0HeaderSize
-	if batch.Magic == 1 {
-		headerSize = logBatchV1HeaderSize
-	}
+	headerSize := arrowHeaderSize(batch.Magic)
 	if len(payload) > maxRowBytes-headerSize-len(changes) {
 		return nil, fmt.Errorf("%w: Arrow batch exceeds limit", ErrMalformedRecordBatch)
 	}
 	encoded := make([]byte, headerSize, headerSize+len(changes)+len(payload))
+	crcOffset, schemaOffset := writeArrowHeader(encoded, batch, count)
+	encoded = append(encoded, changes...)
+	encoded = append(encoded, payload...)
+	binary.LittleEndian.PutUint32(encoded[8:], uint32(len(encoded)-12))
+	binary.LittleEndian.PutUint32(encoded[crcOffset:], crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli)))
+	return encoded, nil
+}
+
+func arrowRecordCount(record arrow.RecordBatch) (int, error) {
+	if record == nil {
+		return 0, nil
+	}
+	if record.NumRows() > int64(^uint32(0)>>1) {
+		return 0, fmt.Errorf("%w: too many Arrow rows", ErrMalformedRecordBatch)
+	}
+	return int(record.NumRows()), nil
+}
+
+func arrowHeaderSize(magic byte) int {
+	if magic == 1 {
+		return logBatchV1HeaderSize
+	}
+	return logBatchV0HeaderSize
+}
+
+func writeArrowHeader(encoded []byte, batch ArrowLogBatch, count int) (int, int) {
 	binary.LittleEndian.PutUint64(encoded, uint64(batch.BaseOffset))
 	encoded[12] = batch.Magic
 	binary.LittleEndian.PutUint64(encoded[13:], uint64(batch.CommitTime))
@@ -105,11 +125,7 @@ func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompression, allo
 	binary.LittleEndian.PutUint64(encoded[lastOffset+4:], uint64(batch.WriterID))
 	binary.LittleEndian.PutUint32(encoded[lastOffset+12:], uint32(batch.BatchSequence))
 	binary.LittleEndian.PutUint32(encoded[lastOffset+16:], uint32(count))
-	encoded = append(encoded, changes...)
-	encoded = append(encoded, payload...)
-	binary.LittleEndian.PutUint32(encoded[8:], uint32(len(encoded)-12))
-	binary.LittleEndian.PutUint32(encoded[crcOffset:], crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli)))
-	return encoded, nil
+	return crcOffset, schemaOffset
 }
 
 func DecodeArrowLogBatch(schema *arrow.Schema, encoded []byte, allocator memory.Allocator) (*ArrowLogBatch, error) {
@@ -137,35 +153,13 @@ func DecodeArrowLogBatch(schema *arrow.Schema, encoded []byte, allocator memory.
 	if count > maxRowBytes || changeBytes > len(encoded)-headerSize {
 		return nil, fmt.Errorf("%w: invalid Arrow record count", ErrMalformedRecordBatch)
 	}
-	position := headerSize
-	changes := make([]ChangeType, count)
-	if appendOnly {
-		for i := range changes {
-			changes[i] = Append
-		}
-	} else {
-		for i := range changes {
-			changes[i] = ChangeType(encoded[position+i])
-			if err := changes[i].Validate(); err != nil {
-				return nil, fmt.Errorf("%w: invalid Arrow change type", ErrMalformedRecordBatch)
-			}
-		}
-		position += count
+	changes, position, err := decodeArrowChanges(encoded, headerSize, count, appendOnly)
+	if err != nil {
+		return nil, err
 	}
-	var record arrow.RecordBatch
-	if count == 0 {
-		if position != len(encoded) {
-			return nil, fmt.Errorf("%w: empty Arrow batch has trailing bytes", ErrMalformedRecordBatch)
-		}
-	} else {
-		record, err = decodeArrowPayload(schema, encoded[position:], allocator)
-		if err != nil {
-			return nil, err
-		}
-		if record.NumRows() != int64(count) {
-			record.Release()
-			return nil, fmt.Errorf("%w: Arrow row count mismatch", ErrMalformedRecordBatch)
-		}
+	record, err := decodeArrowRecord(schema, encoded[position:], count, allocator)
+	if err != nil {
+		return nil, err
 	}
 	batch := &ArrowLogBatch{
 		Magic: magic, BaseOffset: int64(binary.LittleEndian.Uint64(encoded)),
@@ -179,6 +173,46 @@ func DecodeArrowLogBatch(schema *arrow.Schema, encoded []byte, allocator memory.
 		batch.LeaderEpoch = int32(binary.LittleEndian.Uint32(encoded[21:]))
 	}
 	return batch, nil
+}
+
+func decodeArrowChanges(encoded []byte, position, count int, appendOnly bool) ([]ChangeType, int, error) {
+	changes := make([]ChangeType, count)
+	if appendOnly {
+		for index := range changes {
+			changes[index] = Append
+		}
+		return changes, position, nil
+	}
+	for index := range changes {
+		changes[index] = ChangeType(encoded[position+index])
+		if err := changes[index].Validate(); err != nil {
+			return nil, position, fmt.Errorf("%w: invalid Arrow change type", ErrMalformedRecordBatch)
+		}
+	}
+	return changes, position + count, nil
+}
+
+func decodeArrowRecord(
+	schema *arrow.Schema,
+	payload []byte,
+	count int,
+	allocator memory.Allocator,
+) (arrow.RecordBatch, error) {
+	if count == 0 {
+		if len(payload) != 0 {
+			return nil, fmt.Errorf("%w: empty Arrow batch has trailing bytes", ErrMalformedRecordBatch)
+		}
+		return nil, nil
+	}
+	record, err := decodeArrowPayload(schema, payload, allocator)
+	if err != nil {
+		return nil, err
+	}
+	if record.NumRows() != int64(count) {
+		record.Release()
+		return nil, fmt.Errorf("%w: Arrow row count mismatch", ErrMalformedRecordBatch)
+	}
+	return record, nil
 }
 
 func arrowChanges(batch ArrowLogBatch, count int) ([]byte, error) {

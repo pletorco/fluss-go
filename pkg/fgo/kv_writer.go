@@ -81,10 +81,21 @@ func WithKVPartition(partition string) KVWriterOption {
 type kvWriterBackend interface {
 	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
-	put(context.Context, PhysicalTablePath, int32, int64, int64, []int32, []byte, time.Duration, int32) (int64, error)
+	put(context.Context, kvPutRequest) (int64, error)
 }
 
 type clientKVWriterBackend struct{ client *Client }
+
+type kvPutRequest struct {
+	path        PhysicalTablePath
+	bucket      int32
+	tableID     int64
+	partitionID int64
+	targets     []int32
+	records     []byte
+	timeout     time.Duration
+	acks        int32
+}
 
 func (b clientKVWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
 	return (clientLogWriterBackend{client: b.client}).metadata(ctx, path)
@@ -96,31 +107,24 @@ func (b clientKVWriterBackend) initWriter(ctx context.Context, path PhysicalTabl
 
 func (b clientKVWriterBackend) put(
 	ctx context.Context,
-	path PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	targets []int32,
-	records []byte,
-	timeout time.Duration,
-	acks int32,
+	input kvPutRequest,
 ) (int64, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyPutKv, 0)
 	if err != nil {
 		return 0, err
 	}
 	message := request.Message().(*fmsg.PutKvRequest)
-	message.Acks = proto.Int32(acks)
-	message.TableId = proto.Int64(tableID)
-	message.TimeoutMs = proto.Int32(int32(timeout / time.Millisecond))
-	message.TargetColumns = append([]int32(nil), targets...)
+	message.Acks = proto.Int32(input.acks)
+	message.TableId = proto.Int64(input.tableID)
+	message.TimeoutMs = proto.Int32(int32(input.timeout / time.Millisecond))
+	message.TargetColumns = append([]int32(nil), input.targets...)
 	message.AggMode = proto.Int32(0)
-	bucketRequest := &fmsg.PbPutKvReqForBucket{BucketId: proto.Int32(bucket), Records: records}
-	if partitionID >= 0 {
-		bucketRequest.PartitionId = proto.Int64(partitionID)
+	bucketRequest := &fmsg.PbPutKvReqForBucket{BucketId: proto.Int32(input.bucket), Records: input.records}
+	if input.partitionID >= 0 {
+		bucketRequest.PartitionId = proto.Int64(input.partitionID)
 	}
 	message.BucketsReq = []*fmsg.PbPutKvReqForBucket{bucketRequest}
-	response, err := b.client.RequestBucket(ctx, path, bucket, request)
+	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
 	if err != nil {
 		return 0, err
 	}
@@ -128,8 +132,8 @@ func (b clientKVWriterBackend) put(
 	if !ok {
 		return 0, fmt.Errorf("fgo: put KV: unexpected response %T", response.Message())
 	}
-	if len(put.GetBucketsResp()) != 1 || put.GetBucketsResp()[0].GetBucketId() != bucket {
-		return 0, fmt.Errorf("%w: put KV response omitted bucket %d", ErrValidation, bucket)
+	if len(put.GetBucketsResp()) != 1 || put.GetBucketsResp()[0].GetBucketId() != input.bucket {
+		return 0, fmt.Errorf("%w: put KV response omitted bucket %d", ErrValidation, input.bucket)
 	}
 	result := put.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyPutKv); err != nil {
@@ -175,43 +179,26 @@ type kvPendingBatch struct {
 	bytes   int
 }
 
+type kvWriterLoop struct {
+	writer    *KVWriter
+	batches   map[int32]*kvPendingBatch
+	sequences map[int32]int32
+	poisoned  map[int32]error
+	timer     *time.Timer
+	timerC    <-chan time.Time
+}
+
 func (c *Client) NewKVWriter(ctx context.Context, table Table, options ...KVWriterOption) (*KVWriter, error) {
 	return newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
 }
 
 func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, options ...KVWriterOption) (*KVWriter, error) {
-	if err := table.RequirePrimaryKey(); err != nil {
+	if err := validateKVWriterTable(table); err != nil {
 		return nil, err
 	}
-	if err := table.Schema.Validate(); err != nil {
+	config, err := kvWriterConfig(options)
+	if err != nil {
 		return nil, err
-	}
-	if table.SchemaID < 0 || table.SchemaID > math.MaxInt16 {
-		return nil, fmt.Errorf("%w: schema ID exceeds KV batch range", ErrInvalidSchema)
-	}
-	if len(table.Schema.PrimaryKey) == 0 {
-		return nil, fmt.Errorf("%w: primary-key table has no primary key", ErrInvalidSchema)
-	}
-	primary := make(map[string]bool, len(table.Schema.PrimaryKey))
-	for _, name := range table.Schema.PrimaryKey {
-		primary[name] = true
-	}
-	for _, name := range table.Schema.BucketKey {
-		if !primary[name] {
-			return nil, fmt.Errorf("%w: bucket key %q is not part of the primary key", ErrInvalidSchema, name)
-		}
-	}
-	config := KVWriterConfig{
-		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
-		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
-	}
-	for _, option := range options {
-		if option == nil {
-			return nil, fmt.Errorf("%w: nil KV writer option", ErrInvalidConfig)
-		}
-		if err := option(&config); err != nil {
-			return nil, err
-		}
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	physicalID, locations, err := backend.metadata(ctx, path)
@@ -239,6 +226,47 @@ func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, opti
 	}
 	go writer.run()
 	return writer, nil
+}
+
+func validateKVWriterTable(table Table) error {
+	if err := table.RequirePrimaryKey(); err != nil {
+		return err
+	}
+	if err := table.Schema.Validate(); err != nil {
+		return err
+	}
+	if table.SchemaID < 0 || table.SchemaID > math.MaxInt16 {
+		return fmt.Errorf("%w: schema ID exceeds KV batch range", ErrInvalidSchema)
+	}
+	if len(table.Schema.PrimaryKey) == 0 {
+		return fmt.Errorf("%w: primary-key table has no primary key", ErrInvalidSchema)
+	}
+	primary := make(map[string]bool, len(table.Schema.PrimaryKey))
+	for _, name := range table.Schema.PrimaryKey {
+		primary[name] = true
+	}
+	for _, name := range table.Schema.BucketKey {
+		if !primary[name] {
+			return fmt.Errorf("%w: bucket key %q is not part of the primary key", ErrInvalidSchema, name)
+		}
+	}
+	return nil
+}
+
+func kvWriterConfig(options []KVWriterOption) (KVWriterConfig, error) {
+	config := KVWriterConfig{
+		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
+		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
+	}
+	for _, option := range options {
+		if option == nil {
+			return KVWriterConfig{}, fmt.Errorf("%w: nil KV writer option", ErrInvalidConfig)
+		}
+		if err := option(&config); err != nil {
+			return KVWriterConfig{}, err
+		}
+	}
+	return config, nil
 }
 
 func (w *KVWriter) Upsert(ctx context.Context, row Row) *WriteFuture {
@@ -365,23 +393,30 @@ func (w *KVWriter) validatePartial(columns []string, values Row) ([]int32, error
 		selected[name] = true
 		targets[index] = positions[name]
 	}
+	if err := w.validatePartialSelection(selected); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
+func (w *KVWriter) validatePartialSelection(selected map[string]bool) error {
 	for _, name := range w.table.Schema.PrimaryKey {
 		if !selected[name] {
-			return nil, fmt.Errorf("%w: partial update omits primary key %q", ErrInvalidRow, name)
+			return fmt.Errorf("%w: partial update omits primary key %q", ErrInvalidRow, name)
 		}
 	}
 	for _, name := range w.table.Schema.AutoIncrement {
 		if selected[name] {
-			return nil, fmt.Errorf("%w: partial update includes auto-increment column %q", ErrInvalidRow, name)
+			return fmt.Errorf("%w: partial update includes auto-increment column %q", ErrInvalidRow, name)
 		}
 	}
 	for _, column := range w.table.Schema.Columns {
 		if !selected[column.Name] && !column.Nullable && !contains(w.table.Schema.PrimaryKey, column.Name) &&
 			!contains(w.table.Schema.AutoIncrement, column.Name) {
-			return nil, fmt.Errorf("%w: omitted column %q is not nullable", ErrInvalidRow, column.Name)
+			return fmt.Errorf("%w: omitted column %q is not nullable", ErrInvalidRow, column.Name)
 		}
 	}
-	return targets, nil
+	return nil
 }
 
 func rowValues(schema Schema, row Row, columns []string) map[string]any {
@@ -479,113 +514,140 @@ func (w *KVWriter) Close(ctx context.Context) error {
 
 func (w *KVWriter) run() {
 	defer close(w.done)
-	batches := make(map[int32]*kvPendingBatch)
-	sequences := make(map[int32]int32)
-	poisoned := make(map[int32]error)
 	timer := time.NewTimer(w.config.Linger)
 	if !timer.Stop() {
 		<-timer.C
 	}
-	var timerChannel <-chan time.Time
-	arm := func() {
-		if timerChannel == nil && w.config.Linger > 0 {
-			timer.Reset(w.config.Linger)
-			timerChannel = timer.C
-		}
+	loop := &kvWriterLoop{
+		writer: w, batches: make(map[int32]*kvPendingBatch), sequences: make(map[int32]int32),
+		poisoned: make(map[int32]error), timer: timer,
 	}
-	stop := func() {
-		if timerChannel != nil && !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timerChannel = nil
-	}
-	flushBucket := func(bucket int32) error {
-		batch := batches[bucket]
-		if batch == nil || len(batch.items) == 0 {
-			return nil
-		}
-		delete(batches, bucket)
-		if err := poisoned[bucket]; err != nil {
-			w.completeKVBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
-			return err
-		}
-		encoded, err := (KVBatch{
-			SchemaID: int16(w.table.SchemaID), WriterID: w.writerID,
-			BatchSequence: sequences[bucket], Records: batch.records,
-		}).Encode()
-		var logEnd int64
-		if err == nil {
-			logEnd, err = w.backend.put(
-				context.Background(), w.path, bucket, w.tableID, w.partitionID,
-				batch.targets, encoded, w.config.Timeout, w.config.Acks,
-			)
-		}
-		if err != nil {
-			poisoned[bucket] = err
-			w.completeKVBatch(batch, bucket, 0, err)
-			return err
-		}
-		sequences[bucket]++
-		w.completeKVBatch(batch, bucket, logEnd, nil)
-		return nil
-	}
-	flushAll := func() error {
-		stop()
-		var joined error
-		for _, bucket := range w.buckets {
-			joined = errors.Join(joined, flushBucket(bucket))
-		}
-		return joined
-	}
+	loop.run()
+}
+
+func (l *kvWriterLoop) run() {
 	for {
 		select {
-		case command := <-w.commands:
+		case command := <-l.writer.commands:
 			switch {
 			case command.item != nil:
-				item := command.item
-				if err := item.ctx.Err(); err != nil {
-					item.future.complete(WriteResult{Err: err})
-					continue
-				}
-				batch := batches[item.bucket]
-				if batch != nil && targetKey(batch.targets) != targetKey(item.targets) {
-					_ = flushBucket(item.bucket)
-					batch = nil
-				}
-				if batch == nil {
-					batch = &kvPendingBatch{targets: append([]int32(nil), item.targets...)}
-					batches[item.bucket] = batch
-				}
-				if len(batch.items) > 0 && (len(batch.items) >= w.config.MaxBatchRecords ||
-					batch.bytes+item.size > w.config.MaxBatchBytes) {
-					_ = flushBucket(item.bucket)
-					batch = &kvPendingBatch{targets: append([]int32(nil), item.targets...)}
-					batches[item.bucket] = batch
-				}
-				batch.items = append(batch.items, item)
-				batch.records = append(batch.records, item.record)
-				batch.bytes += item.size
-				if len(batch.items) >= w.config.MaxBatchRecords || batch.bytes >= w.config.MaxBatchBytes ||
-					w.config.Linger == 0 {
-					_ = flushBucket(item.bucket)
-				} else {
-					arm()
-				}
+				l.add(command.item)
 			case command.flush != nil:
-				command.flush <- flushAll()
+				command.flush <- l.flushAll()
 			case command.close != nil:
-				command.close <- flushAll()
-				timer.Stop()
+				command.close <- l.flushAll()
+				l.timer.Stop()
 				return
 			}
-		case <-timerChannel:
-			timerChannel = nil
-			_ = flushAll()
+		case <-l.timerC:
+			l.timerC = nil
+			_ = l.flushAll()
 		}
 	}
+}
+
+func (l *kvWriterLoop) add(item *pendingKVWrite) {
+	if err := item.ctx.Err(); err != nil {
+		item.future.complete(WriteResult{Err: err})
+		return
+	}
+	batch := l.compatibleBatch(item)
+	if len(batch.items) > 0 && l.batchFullWith(batch, item) {
+		_ = l.flushBucket(item.bucket)
+		batch = l.newBatch(item)
+	}
+	batch.items = append(batch.items, item)
+	batch.records = append(batch.records, item.record)
+	batch.bytes += item.size
+	if l.batchFull(batch) || l.writer.config.Linger == 0 {
+		_ = l.flushBucket(item.bucket)
+		return
+	}
+	l.armTimer()
+}
+
+func (l *kvWriterLoop) compatibleBatch(item *pendingKVWrite) *kvPendingBatch {
+	batch := l.batches[item.bucket]
+	if batch != nil && targetKey(batch.targets) != targetKey(item.targets) {
+		_ = l.flushBucket(item.bucket)
+		batch = nil
+	}
+	if batch == nil {
+		batch = l.newBatch(item)
+	}
+	return batch
+}
+
+func (l *kvWriterLoop) newBatch(item *pendingKVWrite) *kvPendingBatch {
+	batch := &kvPendingBatch{targets: append([]int32(nil), item.targets...)}
+	l.batches[item.bucket] = batch
+	return batch
+}
+
+func (l *kvWriterLoop) batchFull(batch *kvPendingBatch) bool {
+	return len(batch.items) >= l.writer.config.MaxBatchRecords || batch.bytes >= l.writer.config.MaxBatchBytes
+}
+
+func (l *kvWriterLoop) batchFullWith(batch *kvPendingBatch, item *pendingKVWrite) bool {
+	return len(batch.items) >= l.writer.config.MaxBatchRecords ||
+		batch.bytes+item.size > l.writer.config.MaxBatchBytes
+}
+
+func (l *kvWriterLoop) flushBucket(bucket int32) error {
+	batch := l.batches[bucket]
+	if batch == nil || len(batch.items) == 0 {
+		return nil
+	}
+	delete(l.batches, bucket)
+	if err := l.poisoned[bucket]; err != nil {
+		l.writer.completeKVBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
+		return err
+	}
+	encoded, err := (KVBatch{
+		SchemaID: int16(l.writer.table.SchemaID), WriterID: l.writer.writerID,
+		BatchSequence: l.sequences[bucket], Records: batch.records,
+	}).Encode()
+	var logEnd int64
+	if err == nil {
+		logEnd, err = l.writer.backend.put(context.Background(), kvPutRequest{
+			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
+			targets: batch.targets, records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+		})
+	}
+	if err != nil {
+		l.poisoned[bucket] = err
+		l.writer.completeKVBatch(batch, bucket, 0, err)
+		return err
+	}
+	l.sequences[bucket]++
+	l.writer.completeKVBatch(batch, bucket, logEnd, nil)
+	return nil
+}
+
+func (l *kvWriterLoop) flushAll() error {
+	l.stopTimer()
+	var joined error
+	for _, bucket := range l.writer.buckets {
+		joined = errors.Join(joined, l.flushBucket(bucket))
+	}
+	return joined
+}
+
+func (l *kvWriterLoop) armTimer() {
+	if l.timerC == nil && l.writer.config.Linger > 0 {
+		l.timer.Reset(l.writer.config.Linger)
+		l.timerC = l.timer.C
+	}
+}
+
+func (l *kvWriterLoop) stopTimer() {
+	if l.timerC != nil && !l.timer.Stop() {
+		select {
+		case <-l.timer.C:
+		default:
+		}
+	}
+	l.timerC = nil
 }
 
 func (w *KVWriter) completeKVBatch(batch *kvPendingBatch, bucket int32, logEnd int64, err error) {

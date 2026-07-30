@@ -49,44 +49,71 @@ func (t LogicalType) Validate() error {
 	case "BOOLEAN", "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "FLOAT", "DOUBLE", "DATE", "STRING", "BYTES":
 		return nil
 	case "CHAR", "BINARY":
-		if t.Length < 1 {
-			return fmt.Errorf("%w: %s length must be positive", ErrInvalidSchema, t.Root)
-		}
+		return t.validateLength()
 	case "DECIMAL":
-		if t.Precision < 1 || t.Precision > 38 || t.Scale < 0 || t.Scale > t.Precision {
-			return fmt.Errorf("%w: invalid DECIMAL precision or scale", ErrInvalidSchema)
-		}
+		return t.validateDecimal()
 	case "TIME_WITHOUT_TIME_ZONE", "TIMESTAMP_WITHOUT_TIME_ZONE", "TIMESTAMP_WITH_LOCAL_TIME_ZONE":
-		if t.Precision < 0 || t.Precision > 9 {
-			return fmt.Errorf("%w: invalid %s precision", ErrInvalidSchema, t.Root)
-		}
+		return t.validateTemporal()
 	case "ARRAY":
-		if t.Element == nil {
-			return fmt.Errorf("%w: ARRAY element type is required", ErrInvalidSchema)
-		}
-		return t.Element.Validate()
+		return t.validateArray()
 	case "MAP":
-		if t.Key == nil || t.Value == nil {
-			return fmt.Errorf("%w: MAP key and value types are required", ErrInvalidSchema)
-		}
-		if err := t.Key.Validate(); err != nil {
-			return err
-		}
-		return t.Value.Validate()
+		return t.validateMap()
 	case "ROW":
-		if len(t.Fields) == 0 {
-			return fmt.Errorf("%w: ROW fields are required", ErrInvalidSchema)
-		}
-		for _, field := range t.Fields {
-			if field.Name == "" {
-				return fmt.Errorf("%w: ROW field name is required", ErrInvalidSchema)
-			}
-			if err := field.Type.Validate(); err != nil {
-				return err
-			}
-		}
+		return t.validateRow()
 	default:
 		return fmt.Errorf("%w: unsupported logical type %q", ErrInvalidSchema, t.Root)
+	}
+}
+
+func (t LogicalType) validateLength() error {
+	if t.Length < 1 {
+		return fmt.Errorf("%w: %s length must be positive", ErrInvalidSchema, t.Root)
+	}
+	return nil
+}
+
+func (t LogicalType) validateDecimal() error {
+	if t.Precision < 1 || t.Precision > 38 || t.Scale < 0 || t.Scale > t.Precision {
+		return fmt.Errorf("%w: invalid DECIMAL precision or scale", ErrInvalidSchema)
+	}
+	return nil
+}
+
+func (t LogicalType) validateTemporal() error {
+	if t.Precision < 0 || t.Precision > 9 {
+		return fmt.Errorf("%w: invalid %s precision", ErrInvalidSchema, t.Root)
+	}
+	return nil
+}
+
+func (t LogicalType) validateArray() error {
+	if t.Element == nil {
+		return fmt.Errorf("%w: ARRAY element type is required", ErrInvalidSchema)
+	}
+	return t.Element.Validate()
+}
+
+func (t LogicalType) validateMap() error {
+	if t.Key == nil || t.Value == nil {
+		return fmt.Errorf("%w: MAP key and value types are required", ErrInvalidSchema)
+	}
+	if err := t.Key.Validate(); err != nil {
+		return err
+	}
+	return t.Value.Validate()
+}
+
+func (t LogicalType) validateRow() error {
+	if len(t.Fields) == 0 {
+		return fmt.Errorf("%w: ROW fields are required", ErrInvalidSchema)
+	}
+	for _, field := range t.Fields {
+		if field.Name == "" {
+			return fmt.Errorf("%w: ROW field name is required", ErrInvalidSchema)
+		}
+		if err := field.Type.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

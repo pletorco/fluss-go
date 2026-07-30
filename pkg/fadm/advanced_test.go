@@ -13,190 +13,244 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestAdvancedAdminOperations(t *testing.T) {
-	path := fgo.TablePath{Database: "db", Table: "users"}
-	physical := fgo.PhysicalTablePath{TablePath: path, Partition: "region=kr"}
-	acl := ACL{
-		ResourceName: "db", ResourceType: 1, PrincipalName: "alice",
-		PrincipalType: "USER", Host: "*", Operation: 2, Permission: 3,
+func advancedACLResponse(t *testing.T, message any, response fmsg.Response, acl ACL) {
+	t.Helper()
+	switch message := message.(type) {
+	case *fmsg.CreateAclsRequest:
+		if len(message.GetAcl()) != 2 || message.GetAcl()[0].GetPrincipalName() != "alice" {
+			t.Fatalf("CreateAcls request = %#v", message)
+		}
+		response.Message().(*fmsg.CreateAclsResponse).AclRes = []*fmsg.PbCreateAclRespInfo{
+			{Acl: message.GetAcl()[0]},
+			{
+				Acl: message.GetAcl()[1], ErrorCode: proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower)),
+				ErrorMessage: proto.String("moved"),
+			},
+		}
+	case *fmsg.ListAclsRequest:
+		if message.GetAclFilter().GetResourceName() != "db" {
+			t.Fatalf("ListAcls request = %#v", message)
+		}
+		response.Message().(*fmsg.ListAclsResponse).Acl = []*fmsg.PbAclInfo{acl.message()}
+	case *fmsg.DropAclsRequest:
+		if len(message.GetAclFilter()) != 1 {
+			t.Fatalf("DropAcls request = %#v", message)
+		}
+		response.Message().(*fmsg.DropAclsResponse).FilterResults = []*fmsg.PbDropAclsFilterResult{{
+			MatchingAcls: []*fmsg.PbDropAclsMatchingAcl{{Acl: acl.message()}},
+		}}
 	}
-	filterName := "db"
-	filter := ACLFilter{
-		ResourceName: &filterName, ResourceType: 1, Operation: 2, Permission: 3,
+}
+
+func advancedConfigResponse(t *testing.T, message any, response fmsg.Response) {
+	t.Helper()
+	switch message := message.(type) {
+	case *fmsg.DescribeClusterConfigsRequest:
+		response.Message().(*fmsg.DescribeClusterConfigsResponse).Configs = []*fmsg.PbDescribeConfig{{
+			ConfigKey: proto.String("cluster.config"), ConfigValue: proto.String("value"),
+			ConfigSource: proto.String("dynamic"),
+		}}
+	case *fmsg.AlterClusterConfigsRequest:
+		if len(message.GetAlterConfigs()) != 2 || message.GetAlterConfigs()[0].GetConfigValue() != "value" {
+			t.Fatalf("AlterClusterConfigs request = %#v", message)
+		}
+	case *fmsg.AddServerTagRequest:
+		if len(message.GetServerIds()) != 2 || message.GetServerTag() != 7 {
+			t.Fatalf("AddServerTag request = %#v", message)
+		}
+	case *fmsg.RemoveServerTagRequest:
+		if len(message.GetServerIds()) != 1 || message.GetServerTag() != 7 {
+			t.Fatalf("RemoveServerTag request = %#v", message)
+		}
 	}
-	var progressCalls atomic.Int32
-	seen := make(map[fmsg.APIKey]int)
-	tokenBytes := []byte("secret-token")
-	fake := &fakeRequester{}
-	fake.coordinator = func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+}
+
+func advancedRebalanceResponse(
+	t *testing.T,
+	message any,
+	response fmsg.Response,
+	progressCalls *atomic.Int32,
+) {
+	t.Helper()
+	switch message := message.(type) {
+	case *fmsg.RebalanceRequest:
+		if len(message.GetGoals()) != 2 {
+			t.Fatalf("Rebalance request = %#v", message)
+		}
+		response.Message().(*fmsg.RebalanceResponse).RebalanceId = proto.String("rebalance-1")
+	case *fmsg.ListRebalanceProgressRequest:
+		call := progressCalls.Add(1)
+		if message.GetRebalanceId() != "rebalance-1" {
+			t.Fatalf("ListRebalanceProgress request = %#v", message)
+		}
+		status := int32(1)
+		if call == 2 {
+			status = 0
+		}
+		item := response.Message().(*fmsg.ListRebalanceProgressResponse)
+		item.RebalanceId, item.RebalanceStatus = proto.String("rebalance-1"), proto.Int32(status)
+		item.TableProgress = []*fmsg.PbRebalanceProgressForTable{{
+			TableId: proto.Int64(12),
+			BucketsProgress: []*fmsg.PbRebalanceProgressForBucket{{
+				RebalanceStatus: proto.Int32(status),
+				RebalancePlan: &fmsg.PbRebalancePlanForBucket{
+					PartitionId: proto.Int64(4), BucketId: proto.Int32(2),
+					OriginalLeader: proto.Int32(1), NewLeader: proto.Int32(3),
+					OriginalReplicas: []int32{1, 2}, NewReplicas: []int32{2, 3},
+				},
+			}},
+		}}
+	case *fmsg.CancelRebalanceRequest:
+		if message.GetRebalanceId() != "rebalance-1" {
+			t.Fatalf("CancelRebalance request = %#v", message)
+		}
+	}
+}
+
+func advancedProducerResponse(t *testing.T, message any, response fmsg.Response) {
+	t.Helper()
+	switch message := message.(type) {
+	case *fmsg.RegisterProducerOffsetsRequest:
+		if message.GetProducerId() != "producer-1" || message.GetTtlMs() != 5000 ||
+			len(message.GetTableOffsets()) != 1 || len(message.GetTableOffsets()[0].GetBucketOffsets()) != 2 {
+			t.Fatalf("RegisterProducerOffsets request = %#v", message)
+		}
+		response.Message().(*fmsg.RegisterProducerOffsetsResponse).Result = proto.Int32(0)
+	case *fmsg.GetProducerOffsetsRequest:
+		if message.GetProducerId() != "producer-1" {
+			t.Fatalf("GetProducerOffsets request = %#v", message)
+		}
+		result := response.Message().(*fmsg.GetProducerOffsetsResponse)
+		result.ProducerId, result.ExpirationTime = proto.String("producer-1"), proto.Int64(2000)
+		result.TableOffsets = []*fmsg.PbProducerTableOffsets{{
+			TableId: proto.Int64(12),
+			BucketOffsets: []*fmsg.PbBucketOffset{
+				{BucketId: proto.Int32(0), LogEndOffset: proto.Int64(10)},
+				{PartitionId: proto.Int64(4), BucketId: proto.Int32(1), LogEndOffset: proto.Int64(20)},
+			},
+		}}
+	case *fmsg.DeleteProducerOffsetsRequest:
+		if message.GetProducerId() != "producer-1" {
+			t.Fatalf("DeleteProducerOffsets request = %#v", message)
+		}
+	}
+}
+
+func advancedSnapshotResponse(t *testing.T, message any, response fmsg.Response) {
+	t.Helper()
+	switch message := message.(type) {
+	case *fmsg.GetLatestKvSnapshotsRequest:
+		if message.GetTablePath().GetTableName() != "users" || message.GetPartitionName() != "region=kr" {
+			t.Fatalf("GetLatestKvSnapshots request = %#v", message)
+		}
+		latest := response.Message().(*fmsg.GetLatestKvSnapshotsResponse)
+		latest.TableId, latest.PartitionId = proto.Int64(12), proto.Int64(4)
+		latest.LatestSnapshots = []*fmsg.PbKvSnapshot{
+			{BucketId: proto.Int32(0), SnapshotId: proto.Int64(30), LogOffset: proto.Int64(40)},
+			{BucketId: proto.Int32(1)},
+		}
+	case *fmsg.GetKvSnapshotMetadataRequest:
+		if message.GetTableId() != 12 || message.GetPartitionId() != 4 ||
+			message.GetBucketId() != 0 || message.GetSnapshotId() != 30 {
+			t.Fatalf("GetKvSnapshotMetadata request = %#v", message)
+		}
+		metadata := response.Message().(*fmsg.GetKvSnapshotMetadataResponse)
+		metadata.LogOffset = proto.Int64(40)
+		metadata.SnapshotFiles = []*fmsg.PbRemotePathAndLocalFile{{
+			RemotePath: proto.String("s3://bucket/1"), LocalFileName: proto.String("1.sst"),
+		}}
+	case *fmsg.AcquireKvSnapshotLeaseRequest:
+		if message.GetLeaseId() != "lease-1" || message.GetLeaseDurationMs() != 3000 ||
+			len(message.GetSnapshotsToLease()) != 2 ||
+			len(message.GetSnapshotsToLease()[0].GetBucketSnapshots()) != 2 {
+			t.Fatalf("AcquireKvSnapshotLease request = %#v", message)
+		}
+		response.Message().(*fmsg.AcquireKvSnapshotLeaseResponse).UnavailableSnapshots =
+			[]*fmsg.PbKvSnapshotLeaseForTable{{
+				TableId: proto.Int64(13),
+				BucketSnapshots: []*fmsg.PbKvSnapshotLeaseForBucket{{
+					BucketId: proto.Int32(2), SnapshotId: proto.Int64(32),
+				}},
+			}}
+	case *fmsg.ReleaseKvSnapshotLeaseRequest:
+		if message.GetLeaseId() != "lease-1" || len(message.GetBucketsToRelease()) != 2 ||
+			message.GetBucketsToRelease()[0].GetPartitionId() != 4 {
+			t.Fatalf("ReleaseKvSnapshotLease request = %#v", message)
+		}
+	case *fmsg.DropKvSnapshotLeaseRequest:
+		if message.GetLeaseId() != "lease-1" {
+			t.Fatalf("DropKvSnapshotLease request = %#v", message)
+		}
+	}
+}
+
+func advancedStorageResponse(t *testing.T, message any, response fmsg.Response, tokenBytes []byte) {
+	t.Helper()
+	switch message := message.(type) {
+	case *fmsg.GetFileSystemSecurityTokenRequest:
+		token := response.Message().(*fmsg.GetFileSystemSecurityTokenResponse)
+		token.Schema, token.Token, token.ExpirationTime = proto.String("hadoop"), tokenBytes, proto.Int64(3000)
+		token.AdditionInfo = []*fmsg.PbKeyValue{{
+			Key: proto.String("service"), Value: proto.String("filesystem"),
+		}}
+	case *fmsg.GetLakeSnapshotRequest:
+		if message.GetTablePath().GetTableName() != "users" || message.GetSnapshotId() != 44 ||
+			!message.GetReadable() {
+			t.Fatalf("GetLakeSnapshot request = %#v", message)
+		}
+		snapshot := response.Message().(*fmsg.GetLakeSnapshotResponse)
+		snapshot.TableId, snapshot.SnapshotId = proto.Int64(12), proto.Int64(44)
+		snapshot.BucketSnapshots = []*fmsg.PbLakeSnapshotForBucket{
+			{
+				PartitionId: proto.Int64(4), PartitionName: proto.String("region=kr"),
+				BucketId: proto.Int32(0), LogOffset: proto.Int64(50),
+			},
+			{BucketId: proto.Int32(1), LogOffset: proto.Int64(60)},
+		}
+	}
+}
+
+func advancedCoordinator(
+	t *testing.T,
+	seen map[fmsg.APIKey]int,
+	acl ACL,
+	progressCalls *atomic.Int32,
+	tokenBytes []byte,
+) func(context.Context, fmsg.Request) (fmsg.Response, error) {
+	return func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		seen[request.APIKey()]++
 		response, err := fmsg.NewResponse(request.APIKey(), request.Version())
 		if err != nil {
 			t.Fatal(err)
 		}
-		switch message := request.(*fmsg.MessageRequest).Message().(type) {
-		case *fmsg.CreateAclsRequest:
-			if len(message.GetAcl()) != 2 || message.GetAcl()[0].GetPrincipalName() != "alice" {
-				t.Fatalf("CreateAcls request = %#v", message)
-			}
-			response.Message().(*fmsg.CreateAclsResponse).AclRes = []*fmsg.PbCreateAclRespInfo{
-				{Acl: message.GetAcl()[0]},
-				{
-					Acl: message.GetAcl()[1], ErrorCode: proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower)),
-					ErrorMessage: proto.String("moved"),
-				},
-			}
-		case *fmsg.ListAclsRequest:
-			if message.GetAclFilter().GetResourceName() != "db" {
-				t.Fatalf("ListAcls request = %#v", message)
-			}
-			response.Message().(*fmsg.ListAclsResponse).Acl = []*fmsg.PbAclInfo{acl.message()}
-		case *fmsg.DropAclsRequest:
-			if len(message.GetAclFilter()) != 1 {
-				t.Fatalf("DropAcls request = %#v", message)
-			}
-			response.Message().(*fmsg.DropAclsResponse).FilterResults = []*fmsg.PbDropAclsFilterResult{{
-				MatchingAcls: []*fmsg.PbDropAclsMatchingAcl{{Acl: acl.message()}},
-			}}
-		case *fmsg.DescribeClusterConfigsRequest:
-			response.Message().(*fmsg.DescribeClusterConfigsResponse).Configs = []*fmsg.PbDescribeConfig{{
-				ConfigKey: proto.String("cluster.config"), ConfigValue: proto.String("value"),
-				ConfigSource: proto.String("dynamic"),
-			}}
-		case *fmsg.AlterClusterConfigsRequest:
-			if len(message.GetAlterConfigs()) != 2 || message.GetAlterConfigs()[0].GetConfigValue() != "value" {
-				t.Fatalf("AlterClusterConfigs request = %#v", message)
-			}
-		case *fmsg.AddServerTagRequest:
-			if len(message.GetServerIds()) != 2 || message.GetServerTag() != 7 {
-				t.Fatalf("AddServerTag request = %#v", message)
-			}
-		case *fmsg.RemoveServerTagRequest:
-			if len(message.GetServerIds()) != 1 || message.GetServerTag() != 7 {
-				t.Fatalf("RemoveServerTag request = %#v", message)
-			}
-		case *fmsg.RebalanceRequest:
-			if len(message.GetGoals()) != 2 {
-				t.Fatalf("Rebalance request = %#v", message)
-			}
-			response.Message().(*fmsg.RebalanceResponse).RebalanceId = proto.String("rebalance-1")
-		case *fmsg.ListRebalanceProgressRequest:
-			call := progressCalls.Add(1)
-			if message.GetRebalanceId() != "rebalance-1" {
-				t.Fatalf("ListRebalanceProgress request = %#v", message)
-			}
-			status := int32(1)
-			if call == 2 {
-				status = 0
-			}
-			item := response.Message().(*fmsg.ListRebalanceProgressResponse)
-			item.RebalanceId, item.RebalanceStatus = proto.String("rebalance-1"), proto.Int32(status)
-			item.TableProgress = []*fmsg.PbRebalanceProgressForTable{{
-				TableId: proto.Int64(12),
-				BucketsProgress: []*fmsg.PbRebalanceProgressForBucket{{
-					RebalanceStatus: proto.Int32(status),
-					RebalancePlan: &fmsg.PbRebalancePlanForBucket{
-						PartitionId: proto.Int64(4), BucketId: proto.Int32(2),
-						OriginalLeader: proto.Int32(1), NewLeader: proto.Int32(3),
-						OriginalReplicas: []int32{1, 2}, NewReplicas: []int32{2, 3},
-					},
-				}},
-			}}
-		case *fmsg.CancelRebalanceRequest:
-			if message.GetRebalanceId() != "rebalance-1" {
-				t.Fatalf("CancelRebalance request = %#v", message)
-			}
-		case *fmsg.RegisterProducerOffsetsRequest:
-			if message.GetProducerId() != "producer-1" || message.GetTtlMs() != 5000 ||
-				len(message.GetTableOffsets()) != 1 || len(message.GetTableOffsets()[0].GetBucketOffsets()) != 2 {
-				t.Fatalf("RegisterProducerOffsets request = %#v", message)
-			}
-			response.Message().(*fmsg.RegisterProducerOffsetsResponse).Result = proto.Int32(0)
-		case *fmsg.GetProducerOffsetsRequest:
-			if message.GetProducerId() != "producer-1" {
-				t.Fatalf("GetProducerOffsets request = %#v", message)
-			}
-			result := response.Message().(*fmsg.GetProducerOffsetsResponse)
-			result.ProducerId, result.ExpirationTime = proto.String("producer-1"), proto.Int64(2000)
-			result.TableOffsets = []*fmsg.PbProducerTableOffsets{{
-				TableId: proto.Int64(12),
-				BucketOffsets: []*fmsg.PbBucketOffset{
-					{BucketId: proto.Int32(0), LogEndOffset: proto.Int64(10)},
-					{PartitionId: proto.Int64(4), BucketId: proto.Int32(1), LogEndOffset: proto.Int64(20)},
-				},
-			}}
-		case *fmsg.DeleteProducerOffsetsRequest:
-			if message.GetProducerId() != "producer-1" {
-				t.Fatalf("DeleteProducerOffsets request = %#v", message)
-			}
-		case *fmsg.GetLatestKvSnapshotsRequest:
-			if message.GetTablePath().GetTableName() != "users" || message.GetPartitionName() != "region=kr" {
-				t.Fatalf("GetLatestKvSnapshots request = %#v", message)
-			}
-			latest := response.Message().(*fmsg.GetLatestKvSnapshotsResponse)
-			latest.TableId, latest.PartitionId = proto.Int64(12), proto.Int64(4)
-			latest.LatestSnapshots = []*fmsg.PbKvSnapshot{
-				{BucketId: proto.Int32(0), SnapshotId: proto.Int64(30), LogOffset: proto.Int64(40)},
-				{BucketId: proto.Int32(1)},
-			}
-		case *fmsg.GetKvSnapshotMetadataRequest:
-			if message.GetTableId() != 12 || message.GetPartitionId() != 4 ||
-				message.GetBucketId() != 0 || message.GetSnapshotId() != 30 {
-				t.Fatalf("GetKvSnapshotMetadata request = %#v", message)
-			}
-			metadata := response.Message().(*fmsg.GetKvSnapshotMetadataResponse)
-			metadata.LogOffset = proto.Int64(40)
-			metadata.SnapshotFiles = []*fmsg.PbRemotePathAndLocalFile{{
-				RemotePath: proto.String("s3://bucket/1"), LocalFileName: proto.String("1.sst"),
-			}}
-		case *fmsg.AcquireKvSnapshotLeaseRequest:
-			if message.GetLeaseId() != "lease-1" || message.GetLeaseDurationMs() != 3000 ||
-				len(message.GetSnapshotsToLease()) != 2 ||
-				len(message.GetSnapshotsToLease()[0].GetBucketSnapshots()) != 2 {
-				t.Fatalf("AcquireKvSnapshotLease request = %#v", message)
-			}
-			response.Message().(*fmsg.AcquireKvSnapshotLeaseResponse).UnavailableSnapshots =
-				[]*fmsg.PbKvSnapshotLeaseForTable{{
-					TableId: proto.Int64(13),
-					BucketSnapshots: []*fmsg.PbKvSnapshotLeaseForBucket{{
-						BucketId: proto.Int32(2), SnapshotId: proto.Int64(32),
-					}},
-				}}
-		case *fmsg.ReleaseKvSnapshotLeaseRequest:
-			if message.GetLeaseId() != "lease-1" || len(message.GetBucketsToRelease()) != 2 ||
-				message.GetBucketsToRelease()[0].GetPartitionId() != 4 {
-				t.Fatalf("ReleaseKvSnapshotLease request = %#v", message)
-			}
-		case *fmsg.DropKvSnapshotLeaseRequest:
-			if message.GetLeaseId() != "lease-1" {
-				t.Fatalf("DropKvSnapshotLease request = %#v", message)
-			}
-		case *fmsg.GetFileSystemSecurityTokenRequest:
-			token := response.Message().(*fmsg.GetFileSystemSecurityTokenResponse)
-			token.Schema, token.Token, token.ExpirationTime = proto.String("hadoop"), tokenBytes, proto.Int64(3000)
-			token.AdditionInfo = []*fmsg.PbKeyValue{{
-				Key: proto.String("service"), Value: proto.String("filesystem"),
-			}}
-		case *fmsg.GetLakeSnapshotRequest:
-			if message.GetTablePath().GetTableName() != "users" || message.GetSnapshotId() != 44 ||
-				!message.GetReadable() {
-				t.Fatalf("GetLakeSnapshot request = %#v", message)
-			}
-			snapshot := response.Message().(*fmsg.GetLakeSnapshotResponse)
-			snapshot.TableId, snapshot.SnapshotId = proto.Int64(12), proto.Int64(44)
-			snapshot.BucketSnapshots = []*fmsg.PbLakeSnapshotForBucket{
-				{
-					PartitionId: proto.Int64(4), PartitionName: proto.String("region=kr"),
-					BucketId: proto.Int32(0), LogOffset: proto.Int64(50),
-				},
-				{BucketId: proto.Int32(1), LogOffset: proto.Int64(60)},
-			}
+		message := request.(*fmsg.MessageRequest).Message()
+		switch request.APIKey() {
+		case fmsg.APIKeyCreateAcls, fmsg.APIKeyListAcls, fmsg.APIKeyDropAcls:
+			advancedACLResponse(t, message, response, acl)
+		case fmsg.APIKeyDescribeClusterConfigs, fmsg.APIKeyAlterClusterConfigs,
+			fmsg.APIKeyAddServerTag, fmsg.APIKeyRemoveServerTag:
+			advancedConfigResponse(t, message, response)
+		case fmsg.APIKeyRebalance, fmsg.APIKeyListRebalanceProgress, fmsg.APIKeyCancelRebalance:
+			advancedRebalanceResponse(t, message, response, progressCalls)
+		case fmsg.APIKeyRegisterProducerOffsets, fmsg.APIKeyGetProducerOffsets, fmsg.APIKeyDeleteProducerOffsets:
+			advancedProducerResponse(t, message, response)
+		case fmsg.APIKeyGetLatestKvSnapshots, fmsg.APIKeyGetKvSnapshotMetadata,
+			fmsg.APIKeyAcquireKvSnapshotLease, fmsg.APIKeyReleaseKvSnapshotLease, fmsg.APIKeyDropKvSnapshotLease:
+			advancedSnapshotResponse(t, message, response)
+		case fmsg.APIKeyGetFilesystemSecurityToken, fmsg.APIKeyGetLakeSnapshot:
+			advancedStorageResponse(t, message, response, tokenBytes)
 		default:
 			t.Fatalf("unexpected coordinator request %T", message)
 		}
 		return response, nil
 	}
-	fake.bucket = func(
+}
+
+func advancedStatsBucket(
+	t *testing.T,
+	physical fgo.PhysicalTablePath,
+) func(context.Context, fgo.PhysicalTablePath, int32, fmsg.Request) (fmsg.Response, error) {
+	return func(
 		_ context.Context,
 		gotPath fgo.PhysicalTablePath,
 		bucket int32,
@@ -221,9 +275,41 @@ func TestAdvancedAdminOperations(t *testing.T) {
 		response.Message().(*fmsg.GetTableStatsResponse).BucketsResp = []*fmsg.PbTableStatsRespForBucket{item}
 		return response, nil
 	}
+}
+
+func TestAdvancedAdminOperations(t *testing.T) {
+	path := fgo.TablePath{Database: "db", Table: "users"}
+	physical := fgo.PhysicalTablePath{TablePath: path, Partition: "region=kr"}
+	acl := ACL{
+		ResourceName: "db", ResourceType: 1, PrincipalName: "alice",
+		PrincipalType: "USER", Host: "*", Operation: 2, Permission: 3,
+	}
+	filterName := "db"
+	filter := ACLFilter{
+		ResourceName: &filterName, ResourceType: 1, Operation: 2, Permission: 3,
+	}
+	var progressCalls atomic.Int32
+	seen := make(map[fmsg.APIKey]int)
+	tokenBytes := []byte("secret-token")
+	fake := &fakeRequester{
+		coordinator: advancedCoordinator(t, seen, acl, &progressCalls, tokenBytes),
+		bucket:      advancedStatsBucket(t, physical),
+	}
 	client := newClient(fake)
 	ctx := context.Background()
 
+	exerciseACLAndConfig(t, ctx, client, acl, filter)
+	exerciseRebalance(t, ctx, client, &progressCalls)
+	exerciseProducerOffsets(t, ctx, client)
+	exerciseSnapshots(t, ctx, client, path)
+	exerciseStorageAndStats(t, ctx, client, path, physical, tokenBytes)
+	if len(seen) != 20 {
+		t.Fatalf("advanced coordinator APIs seen = %#v", seen)
+	}
+}
+
+func exerciseACLAndConfig(t *testing.T, ctx context.Context, client *Client, acl ACL, filter ACLFilter) {
+	t.Helper()
 	created, err := client.CreateACLs(ctx, acl, acl)
 	if err != nil || len(created) != 2 || created[0].Err != nil ||
 		!errors.Is(created[1].Err, fgo.ErrMetadata) {
@@ -255,6 +341,10 @@ func TestAdvancedAdminOperations(t *testing.T) {
 	if err := client.RemoveServerTag(ctx, []int32{1}, 7); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func exerciseRebalance(t *testing.T, ctx context.Context, client *Client, progressCalls *atomic.Int32) {
+	t.Helper()
 	id, err := client.StartRebalance(ctx, 1, 2)
 	if err != nil || id != "rebalance-1" {
 		t.Fatalf("StartRebalance() = %q, %v", id, err)
@@ -270,6 +360,10 @@ func TestAdvancedAdminOperations(t *testing.T) {
 	if err := client.CancelRebalance(ctx, id); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func exerciseProducerOffsets(t *testing.T, ctx context.Context, client *Client) {
+	t.Helper()
 	tables := []ProducerTableOffsets{{
 		TableID: 12,
 		Offsets: []ProducerBucketOffset{
@@ -289,6 +383,10 @@ func TestAdvancedAdminOperations(t *testing.T) {
 	if err := client.DeleteProducerOffsets(ctx, "producer-1"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func exerciseSnapshots(t *testing.T, ctx context.Context, client *Client, path fgo.TablePath) {
+	t.Helper()
 	latest, err := client.LatestKVSnapshots(ctx, path, "region=kr")
 	if err != nil || latest.PartitionID != 4 || !latest.Snapshots[0].Available || latest.Snapshots[1].Available {
 		t.Fatalf("LatestKVSnapshots() = %#v, %v", latest, err)
@@ -315,6 +413,17 @@ func TestAdvancedAdminOperations(t *testing.T) {
 	if err := client.DropKVSnapshotLease(ctx, "lease-1"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func exerciseStorageAndStats(
+	t *testing.T,
+	ctx context.Context,
+	client *Client,
+	path fgo.TablePath,
+	physical fgo.PhysicalTablePath,
+	tokenBytes []byte,
+) {
+	t.Helper()
 	token, err := client.FileSystemSecurityToken(ctx)
 	if err != nil || token.Schema != "hadoop" || token.AdditionalInfo["service"] != "filesystem" {
 		t.Fatalf("FileSystemSecurityToken() = %#v, %v", token, err)
@@ -334,9 +443,6 @@ func TestAdvancedAdminOperations(t *testing.T) {
 	if len(stats) != 2 || stats[0].RowCount != 100 || stats[0].Err != nil ||
 		!errors.Is(stats[1].Err, fgo.ErrMetadata) {
 		t.Fatalf("TableStats() = %#v", stats)
-	}
-	if len(seen) != 20 {
-		t.Fatalf("advanced coordinator APIs seen = %#v", seen)
 	}
 }
 

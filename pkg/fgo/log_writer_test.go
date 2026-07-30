@@ -46,13 +46,7 @@ func (b *fakeLogWriterBackend) initWriter(context.Context, PhysicalTablePath, in
 
 func (b *fakeLogWriterBackend) produce(
 	_ context.Context,
-	path PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	records []byte,
-	timeout time.Duration,
-	acks int32,
+	input logProduceRequest,
 ) (int64, error) {
 	if b.block != nil {
 		<-b.block
@@ -60,8 +54,8 @@ func (b *fakeLogWriterBackend) produce(
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls = append(b.calls, producedLog{
-		path: path, bucket: bucket, tableID: tableID, partitionID: partitionID,
-		records: append([]byte(nil), records...), timeout: timeout, acks: acks,
+		path: input.path, bucket: input.bucket, tableID: input.tableID, partitionID: input.partitionID,
+		records: append([]byte(nil), input.records...), timeout: input.timeout, acks: input.acks,
 	})
 	if b.produceErr != nil {
 		return 0, b.produceErr
@@ -136,27 +130,37 @@ func TestLogWriterBatchesRowsAndAdvancesSequences(t *testing.T) {
 	if err := writer.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	assertLogFutures(t, futures)
+	calls := backend.produced()
+	assertLogBatchCalls(t, calls)
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertLogFutures(t *testing.T, futures []*WriteFuture) {
+	t.Helper()
 	for index, future := range futures {
 		result := future.Await(context.Background())
 		if result.Err != nil || result.Bucket != 0 || result.Records != 1 {
 			t.Fatalf("result %d = %#v", index, result)
 		}
 	}
-	calls := backend.produced()
+}
+
+func assertLogBatchCalls(t *testing.T, calls []producedLog) {
+	t.Helper()
 	if len(calls) != 3 {
 		t.Fatalf("produce calls = %d, want 3", len(calls))
 	}
 	for index, call := range calls {
-		batch, decodeErr := DecodeLogBatchRows(logWriterTable().Schema, call.records, true)
-		if decodeErr != nil || batch.WriterID != 42 || batch.BatchSequence != int32(index) {
-			t.Fatalf("batch %d = %#v, %v", index, batch, decodeErr)
+		batch, err := DecodeLogBatchRows(logWriterTable().Schema, call.records, true)
+		if err != nil || batch.WriterID != 42 || batch.BatchSequence != int32(index) {
+			t.Fatalf("batch %d = %#v, %v", index, batch, err)
 		}
 		if call.tableID != 9 || call.partitionID != -1 || call.timeout != time.Second || call.acks != 1 {
 			t.Fatalf("request %d = %#v", index, call)
 		}
-	}
-	if err := writer.Close(context.Background()); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -408,10 +412,15 @@ func TestClientLogWriterBackendResponseErrors(t *testing.T) {
 		},
 	)
 	backend := clientLogWriterBackend{client: client}
-	if _, err := backend.produce(context.Background(), path, 0, 9, -1, []byte{1}, time.Second, 1); !errors.Is(err, ErrMetadata) {
+	if _, err := backend.produce(context.Background(), logProduceRequest{
+		path: path, tableID: 9, partitionID: -1, records: []byte{1}, timeout: time.Second, acks: 1,
+	}); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("server error = %v", err)
 	}
-	if _, err := backend.produce(context.Background(), path, 0, 9, -1, nil, time.Duration(int64(^uint32(0)))*time.Millisecond, 1); !errors.Is(err, ErrInvalidConfig) {
+	if _, err := backend.produce(context.Background(), logProduceRequest{
+		path: path, tableID: 9, partitionID: -1,
+		timeout: time.Duration(int64(^uint32(0))) * time.Millisecond, acks: 1,
+	}); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("timeout error = %v", err)
 	}
 
@@ -423,7 +432,9 @@ func TestClientLogWriterBackendResponseErrors(t *testing.T) {
 	if _, err := backend.initWriter(context.Background(), path, 0); err == nil {
 		t.Fatal("unexpected init response succeeded")
 	}
-	if _, err := backend.produce(context.Background(), path, 0, 9, -1, nil, time.Second, 1); err == nil {
+	if _, err := backend.produce(context.Background(), logProduceRequest{
+		path: path, tableID: 9, partitionID: -1, timeout: time.Second, acks: 1,
+	}); err == nil {
 		t.Fatal("unexpected produce response succeeded")
 	}
 
@@ -432,7 +443,9 @@ func TestClientLogWriterBackendResponseErrors(t *testing.T) {
 		response.Message().(*fmsg.ProduceLogResponse).BucketsResp = []*fmsg.PbProduceLogRespForBucket{}
 		return response, nil
 	})
-	if _, err := backend.produce(context.Background(), path, 0, 9, -1, nil, time.Second, 1); !errors.Is(err, ErrValidation) {
+	if _, err := backend.produce(context.Background(), logProduceRequest{
+		path: path, tableID: 9, partitionID: -1, timeout: time.Second, acks: 1,
+	}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("omitted bucket error = %v", err)
 	}
 }

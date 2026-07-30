@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+type rowFixture struct {
+	name   string
+	hex    string
+	encode func(Schema, Row) ([]byte, error)
+	decode func(Schema, []byte) (Row, error)
+}
+
 func TestCompactedRowRoundTrip(t *testing.T) {
 	schema := Schema{Columns: []Column{
 		{Name: "flag", Type: BoolType},
@@ -48,12 +55,7 @@ func TestCompactedPrimaryKeyMatchesJavaFixture(t *testing.T) {
 func TestRowsMatchJava091Fixtures(t *testing.T) {
 	schema := java091FixtureSchema()
 	want := Row{int32(42), "fluss", []any{int32(1), nil, int32(-2)}, Row{int32(7), "go"}}
-	fixtures := []struct {
-		name   string
-		hex    string
-		encode func(Schema, Row) ([]byte, error)
-		decode func(Schema, []byte) (Row, error)
-	}{
+	fixtures := []rowFixture{
 		{
 			name:   "compacted",
 			hex:    "002a05666c7573731803000000020000000100000000000000feffffff0000000005000702676f",
@@ -69,25 +71,30 @@ func TestRowsMatchJava091Fixtures(t *testing.T) {
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
-			javaBytes, err := hex.DecodeString(fixture.hex)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := fixture.decode(schema, javaBytes)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("decoded Java fixture = %#v", got)
-			}
-			goBytes, err := fixture.encode(schema, want)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(goBytes, javaBytes) {
-				t.Fatalf("Go fixture = %x, Java fixture = %x", goBytes, javaBytes)
-			}
+			assertRowFixture(t, schema, want, fixture)
 		})
+	}
+}
+
+func assertRowFixture(t *testing.T, schema Schema, want Row, fixture rowFixture) {
+	t.Helper()
+	javaBytes, err := hex.DecodeString(fixture.hex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := fixture.decode(schema, javaBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("decoded Java fixture = %#v", got)
+	}
+	goBytes, err := fixture.encode(schema, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(goBytes, javaBytes) {
+		t.Fatalf("Go fixture = %x, Java fixture = %x", goBytes, javaBytes)
 	}
 }
 
@@ -429,24 +436,25 @@ func assertArrayValues(t *testing.T, got, want []any) {
 		t.Fatalf("array length = %d, want %d", len(got), len(want))
 	}
 	for i := range want {
-		switch want := want[i].(type) {
-		case []byte:
-			if !bytes.Equal(got[i].([]byte), want) {
-				t.Fatalf("array[%d] = %v, want %v", i, got[i], want)
-			}
-		case *big.Rat:
-			if got[i].(*big.Rat).Cmp(want) != 0 {
-				t.Fatalf("array[%d] = %v, want %v", i, got[i], want)
-			}
-		case time.Time:
-			if !got[i].(time.Time).Equal(want) {
-				t.Fatalf("array[%d] = %v, want %v", i, got[i], want)
-			}
-		default:
-			if !reflect.DeepEqual(got[i], want) {
-				t.Fatalf("array[%d] = %#v, want %#v", i, got[i], want)
-			}
+		if !arrayValueEqual(got[i], want[i]) {
+			t.Fatalf("array[%d] = %#v, want %#v", i, got[i], want[i])
 		}
+	}
+}
+
+func arrayValueEqual(got, want any) bool {
+	switch want := want.(type) {
+	case []byte:
+		value, ok := got.([]byte)
+		return ok && bytes.Equal(value, want)
+	case *big.Rat:
+		value, ok := got.(*big.Rat)
+		return ok && value.Cmp(want) == 0
+	case time.Time:
+		value, ok := got.(time.Time)
+		return ok && value.Equal(want)
+	default:
+		return reflect.DeepEqual(got, want)
 	}
 }
 

@@ -139,10 +139,20 @@ type scannerFetch struct {
 type logScannerBackend interface {
 	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
 	listOffset(context.Context, PhysicalTablePath, int32, int64, int64, ScanOffset) (int64, error)
-	fetch(context.Context, PhysicalTablePath, int32, int64, int64, int64, []int32, LogScannerConfig) (scannerFetch, error)
+	fetch(context.Context, logFetchRequest) (scannerFetch, error)
 }
 
 type clientLogScannerBackend struct{ client *Client }
+
+type logFetchRequest struct {
+	path        PhysicalTablePath
+	bucket      int32
+	tableID     int64
+	partitionID int64
+	offset      int64
+	projection  []int32
+	config      LogScannerConfig
+}
 
 func (b clientLogScannerBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
 	if path.Partition == "" {
@@ -203,13 +213,7 @@ func (b clientLogScannerBackend) listOffset(
 
 func (b clientLogScannerBackend) fetch(
 	ctx context.Context,
-	path PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	offset int64,
-	projection []int32,
-	config LogScannerConfig,
+	input logFetchRequest,
 ) (scannerFetch, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyFetchLog, 0)
 	if err != nil {
@@ -217,21 +221,21 @@ func (b clientLogScannerBackend) fetch(
 	}
 	message := request.Message().(*fmsg.FetchLogRequest)
 	message.FollowerServerId = proto.Int32(-1)
-	message.MaxBytes = proto.Int32(config.MaxBytes)
-	message.MaxWaitMs = proto.Int32(int32(config.MaxWait / time.Millisecond))
-	message.MinBytes = proto.Int32(config.MinBytes)
+	message.MaxBytes = proto.Int32(input.config.MaxBytes)
+	message.MaxWaitMs = proto.Int32(int32(input.config.MaxWait / time.Millisecond))
+	message.MinBytes = proto.Int32(input.config.MinBytes)
 	bucketRequest := &fmsg.PbFetchLogReqForBucket{
-		BucketId: proto.Int32(bucket), FetchOffset: proto.Int64(offset),
-		MaxFetchBytes: proto.Int32(config.MaxBucketBytes),
+		BucketId: proto.Int32(input.bucket), FetchOffset: proto.Int64(input.offset),
+		MaxFetchBytes: proto.Int32(input.config.MaxBucketBytes),
 	}
-	if partitionID >= 0 {
-		bucketRequest.PartitionId = proto.Int64(partitionID)
+	if input.partitionID >= 0 {
+		bucketRequest.PartitionId = proto.Int64(input.partitionID)
 	}
 	message.TablesReq = []*fmsg.PbFetchLogReqForTable{{
-		TableId: proto.Int64(tableID), ProjectionPushdownEnabled: proto.Bool(len(projection) != 0),
-		ProjectedFields: projection, BucketsReq: []*fmsg.PbFetchLogReqForBucket{bucketRequest},
+		TableId: proto.Int64(input.tableID), ProjectionPushdownEnabled: proto.Bool(len(input.projection) != 0),
+		ProjectedFields: input.projection, BucketsReq: []*fmsg.PbFetchLogReqForBucket{bucketRequest},
 	}}
-	response, err := b.client.RequestBucket(ctx, path, bucket, request)
+	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
 	if err != nil {
 		return scannerFetch{}, err
 	}
@@ -239,9 +243,9 @@ func (b clientLogScannerBackend) fetch(
 	if !ok {
 		return scannerFetch{}, fmt.Errorf("fgo: fetch log: unexpected response %T", response.Message())
 	}
-	if len(fetched.GetTablesResp()) != 1 || fetched.GetTablesResp()[0].GetTableId() != tableID ||
+	if len(fetched.GetTablesResp()) != 1 || fetched.GetTablesResp()[0].GetTableId() != input.tableID ||
 		len(fetched.GetTablesResp()[0].GetBucketsResp()) != 1 ||
-		fetched.GetTablesResp()[0].GetBucketsResp()[0].GetBucketId() != bucket {
+		fetched.GetTablesResp()[0].GetBucketsResp()[0].GetBucketId() != input.bucket {
 		return scannerFetch{}, fmt.Errorf("%w: fetch response omitted table or bucket", ErrValidation)
 	}
 	result := fetched.GetTablesResp()[0].GetBucketsResp()[0]
@@ -290,16 +294,9 @@ func newLogScanner(
 	if err := start.Validate(); err != nil {
 		return nil, err
 	}
-	config := LogScannerConfig{
-		MaxBytes: 16 << 20, MaxBucketBytes: 1 << 20, MinBytes: 1, MaxWait: 500 * time.Millisecond,
-	}
-	for _, option := range options {
-		if option == nil {
-			return nil, fmt.Errorf("%w: nil log scanner option", ErrInvalidConfig)
-		}
-		if err := option(&config); err != nil {
-			return nil, err
-		}
+	config, err := scannerConfig(options)
+	if err != nil {
+		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	physicalID, locations, err := backend.metadata(ctx, path)
@@ -321,28 +318,59 @@ func newLogScanner(
 	if path.Partition != "" {
 		scanner.partitionID = physicalID
 	}
-	if len(config.Projection) != 0 {
-		scanner.schema, err = projectSchema(table.Schema, config.Projection)
-		if err != nil {
-			return nil, err
-		}
-		positions := make(map[string]int32, len(table.Schema.Columns))
-		for index, column := range table.Schema.Columns {
-			positions[column.Name] = int32(index)
-		}
-		scanner.projection = make([]int32, len(config.Projection))
-		for index, name := range config.Projection {
-			scanner.projection[index] = positions[name]
-		}
+	if err := scanner.configureProjection(); err != nil {
+		return nil, err
 	}
-	for _, bucket := range buckets {
-		offset, err := scanner.resolveOffset(ctx, bucket, start)
-		if err != nil {
-			return nil, fmt.Errorf("fgo: initialize bucket %d: %w", bucket, err)
-		}
-		scanner.offset[bucket] = offset
+	if err := scanner.initializeOffsets(ctx, start); err != nil {
+		return nil, err
 	}
 	return scanner, nil
+}
+
+func scannerConfig(options []LogScannerOption) (LogScannerConfig, error) {
+	config := LogScannerConfig{
+		MaxBytes: 16 << 20, MaxBucketBytes: 1 << 20, MinBytes: 1, MaxWait: 500 * time.Millisecond,
+	}
+	for _, option := range options {
+		if option == nil {
+			return LogScannerConfig{}, fmt.Errorf("%w: nil log scanner option", ErrInvalidConfig)
+		}
+		if err := option(&config); err != nil {
+			return LogScannerConfig{}, err
+		}
+	}
+	return config, nil
+}
+
+func (s *LogScanner) configureProjection() error {
+	if len(s.config.Projection) == 0 {
+		return nil
+	}
+	schema, err := projectSchema(s.table.Schema, s.config.Projection)
+	if err != nil {
+		return err
+	}
+	positions := make(map[string]int32, len(s.table.Schema.Columns))
+	for index, column := range s.table.Schema.Columns {
+		positions[column.Name] = int32(index)
+	}
+	s.schema = schema
+	s.projection = make([]int32, len(s.config.Projection))
+	for index, name := range s.config.Projection {
+		s.projection[index] = positions[name]
+	}
+	return nil
+}
+
+func (s *LogScanner) initializeOffsets(ctx context.Context, start ScanOffset) error {
+	for _, bucket := range s.buckets {
+		offset, err := s.resolveOffset(ctx, bucket, start)
+		if err != nil {
+			return fmt.Errorf("fgo: initialize bucket %d: %w", bucket, err)
+		}
+		s.offset[bucket] = offset
+	}
+	return nil
 }
 
 func (s *LogScanner) Schema() Schema { return s.schema }
@@ -379,16 +407,10 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 	}
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
-	s.mu.RLock()
-	if s.closed {
-		s.mu.RUnlock()
-		return ScanResult{}, ErrClosed
+	offsets, err := s.offsetSnapshot()
+	if err != nil {
+		return ScanResult{}, err
 	}
-	offsets := make(map[int32]int64, len(s.offset))
-	for bucket, offset := range s.offset {
-		offsets[bucket] = offset
-	}
-	s.mu.RUnlock()
 	if len(offsets) == 0 {
 		return ScanResult{}, fmt.Errorf("%w: scanner has no subscriptions", ErrInvalidConfig)
 	}
@@ -402,37 +424,78 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 		if !subscribed {
 			continue
 		}
-		fetched, err := s.backend.fetch(requestCtx, s.path, bucket, s.tableID, s.partitionID, offset, s.projection, s.config)
-		if err != nil {
-			if ctx.Err() != nil {
-				result.Release()
-				return ScanResult{}, ctx.Err()
-			}
-			s.mu.RLock()
-			closed := s.closed
-			s.mu.RUnlock()
-			if closed {
-				result.Release()
-				return ScanResult{}, ErrClosed
-			}
-			result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
-			continue
+		if err := s.pollBucket(requestCtx, ctx, bucket, offset, &result); err != nil {
+			result.Release()
+			return ScanResult{}, err
 		}
-		next, rows, arrows, err := decodeFetchedLog(s.schema, bucket, offset, fetched.records)
-		if err != nil {
-			result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
-			continue
-		}
-		result.Records = append(result.Records, rows...)
-		result.ArrowBatches = append(result.ArrowBatches, arrows...)
-		result.HighWatermark[bucket] = fetched.highWatermark
-		s.mu.Lock()
-		if current, ok := s.offset[bucket]; ok && current == offset {
-			s.offset[bucket] = next
-		}
-		s.mu.Unlock()
 	}
 	return result, nil
+}
+
+func (s *LogScanner) offsetSnapshot() (map[int32]int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return nil, ErrClosed
+	}
+	offsets := make(map[int32]int64, len(s.offset))
+	for bucket, offset := range s.offset {
+		offsets[bucket] = offset
+	}
+	return offsets, nil
+}
+
+func (s *LogScanner) pollBucket(
+	requestCtx context.Context,
+	callerCtx context.Context,
+	bucket int32,
+	offset int64,
+	result *ScanResult,
+) error {
+	fetched, err := s.backend.fetch(requestCtx, logFetchRequest{
+		path: s.path, bucket: bucket, tableID: s.tableID, partitionID: s.partitionID,
+		offset: offset, projection: s.projection, config: s.config,
+	})
+	if err != nil {
+		return s.recordFetchError(callerCtx, bucket, err, result)
+	}
+	next, rows, arrows, err := decodeFetchedLog(s.schema, bucket, offset, fetched.records)
+	if err != nil {
+		result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
+		return nil
+	}
+	result.Records = append(result.Records, rows...)
+	result.ArrowBatches = append(result.ArrowBatches, arrows...)
+	result.HighWatermark[bucket] = fetched.highWatermark
+	s.advanceOffset(bucket, offset, next)
+	return nil
+}
+
+func (s *LogScanner) recordFetchError(
+	ctx context.Context,
+	bucket int32,
+	fetchErr error,
+	result *ScanResult,
+) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	s.mu.RLock()
+	closed := s.closed
+	s.mu.RUnlock()
+	if closed {
+		return ErrClosed
+	}
+	result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: fetchErr})
+	return nil
+}
+
+func (s *LogScanner) advanceOffset(bucket int32, previous, next int64) {
+	s.mu.Lock()
+	if current, ok := s.offset[bucket]; ok && current == previous {
+		s.offset[bucket] = next
+	}
+	s.mu.Unlock()
 }
 
 func (s *LogScanner) Close() error {
@@ -470,43 +533,68 @@ func decodeFetchedLog(
 	var rows []ScanRecord
 	var arrows []ScanArrowBatch
 	for len(encoded) != 0 {
-		if len(encoded) < 12 {
+		size, err := fetchedBatchSize(encoded)
+		if err != nil {
 			releaseScanArrows(arrows)
-			return fetchOffset, nil, nil, fmt.Errorf("%w: truncated fetched batch", ErrMalformedRecordBatch)
-		}
-		size := 12 + int(binary.LittleEndian.Uint32(encoded[8:]))
-		if size < logBatchV0HeaderSize || size > len(encoded) {
-			releaseScanArrows(arrows)
-			return fetchOffset, nil, nil, fmt.Errorf("%w: invalid fetched batch size", ErrMalformedRecordBatch)
+			return fetchOffset, nil, nil, err
 		}
 		payload := encoded[:size]
-		batch, rowErr := DecodeLogBatchRows(schema, payload, true)
-		if rowErr == nil {
-			for _, record := range batch.Records {
-				rows = append(rows, ScanRecord{Bucket: bucket, Record: record})
-			}
-			if len(batch.Records) != 0 {
-				next = batch.BaseOffset + int64(len(batch.Records))
-			}
-		} else {
-			arrowSchema, schemaErr := schema.ArrowSchema()
-			if schemaErr != nil {
-				releaseScanArrows(arrows)
-				return fetchOffset, nil, nil, schemaErr
-			}
-			arrowBatch, arrowErr := DecodeArrowLogBatch(arrowSchema, payload, memory.DefaultAllocator)
-			if arrowErr != nil {
-				releaseScanArrows(arrows)
-				return fetchOffset, nil, nil, errors.Join(rowErr, arrowErr)
-			}
-			if arrowBatch.Record.NumRows() != 0 {
-				next = arrowBatch.BaseOffset + arrowBatch.Record.NumRows()
-			}
-			arrows = append(arrows, ScanArrowBatch{Bucket: bucket, Batch: *arrowBatch})
+		batchNext, batchRows, arrowBatch, err := decodeFetchedBatch(schema, bucket, next, payload)
+		if err != nil {
+			releaseScanArrows(arrows)
+			return fetchOffset, nil, nil, err
+		}
+		next = batchNext
+		rows = append(rows, batchRows...)
+		if arrowBatch != nil {
+			arrows = append(arrows, *arrowBatch)
 		}
 		encoded = encoded[size:]
 	}
 	return next, rows, arrows, nil
+}
+
+func fetchedBatchSize(encoded []byte) (int, error) {
+	if len(encoded) < 12 {
+		return 0, fmt.Errorf("%w: truncated fetched batch", ErrMalformedRecordBatch)
+	}
+	size := 12 + int(binary.LittleEndian.Uint32(encoded[8:]))
+	if size < logBatchV0HeaderSize || size > len(encoded) {
+		return 0, fmt.Errorf("%w: invalid fetched batch size", ErrMalformedRecordBatch)
+	}
+	return size, nil
+}
+
+func decodeFetchedBatch(
+	schema Schema,
+	bucket int32,
+	current int64,
+	payload []byte,
+) (int64, []ScanRecord, *ScanArrowBatch, error) {
+	batch, rowErr := DecodeLogBatchRows(schema, payload, true)
+	if rowErr == nil {
+		rows := make([]ScanRecord, len(batch.Records))
+		for index, record := range batch.Records {
+			rows[index] = ScanRecord{Bucket: bucket, Record: record}
+		}
+		if len(batch.Records) != 0 {
+			current = batch.BaseOffset + int64(len(batch.Records))
+		}
+		return current, rows, nil, nil
+	}
+	arrowSchema, err := schema.ArrowSchema()
+	if err != nil {
+		return current, nil, nil, err
+	}
+	arrowBatch, err := DecodeArrowLogBatch(arrowSchema, payload, memory.DefaultAllocator)
+	if err != nil {
+		return current, nil, nil, errors.Join(rowErr, err)
+	}
+	if arrowBatch.Record.NumRows() != 0 {
+		current = arrowBatch.BaseOffset + arrowBatch.Record.NumRows()
+	}
+	result := &ScanArrowBatch{Bucket: bucket, Batch: *arrowBatch}
+	return current, nil, result, nil
 }
 
 func releaseScanArrows(batches []ScanArrowBatch) {

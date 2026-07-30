@@ -75,28 +75,43 @@ func (s Schema) Validate() error {
 	if len(s.Columns) == 0 {
 		return fmt.Errorf("%w: schema has no columns", ErrInvalidSchema)
 	}
+	columns, err := s.validateColumns()
+	if err != nil {
+		return err
+	}
+	for _, keys := range [][]string{s.PrimaryKey, s.BucketKey, s.PartitionKey} {
+		if err := validateSchemaKeys(columns, keys); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s Schema) validateColumns() (map[string]Column, error) {
 	columns := make(map[string]Column, len(s.Columns))
 	for _, column := range s.Columns {
 		if column.Name == "" || strings.TrimSpace(column.Name) != column.Name {
-			return fmt.Errorf("%w: invalid column name", ErrInvalidSchema)
+			return nil, fmt.Errorf("%w: invalid column name", ErrInvalidSchema)
 		}
 		if _, exists := columns[column.Name]; exists {
-			return fmt.Errorf("%w: duplicate column %q", ErrInvalidSchema, column.Name)
+			return nil, fmt.Errorf("%w: duplicate column %q", ErrInvalidSchema, column.Name)
 		}
 		if column.LogicalType != nil {
 			if err := column.LogicalType.Validate(); err != nil {
-				return err
+				return nil, err
 			}
 		} else if err := column.Type.Validate(); err != nil {
-			return err
+			return nil, err
 		}
 		columns[column.Name] = column
 	}
-	for _, keys := range [][]string{s.PrimaryKey, s.BucketKey, s.PartitionKey} {
-		for _, key := range keys {
-			if _, exists := columns[key]; !exists {
-				return fmt.Errorf("%w: key column %q does not exist", ErrInvalidSchema, key)
-			}
+	return columns, nil
+}
+
+func validateSchemaKeys(columns map[string]Column, keys []string) error {
+	for _, key := range keys {
+		if _, exists := columns[key]; !exists {
+			return fmt.Errorf("%w: key column %q does not exist", ErrInvalidSchema, key)
 		}
 	}
 	return nil
@@ -355,79 +370,59 @@ func validLogicalValue(logicalType LogicalType, value any) bool {
 	if value == nil {
 		return logicalType.Nullable
 	}
-	switch dataTypeForLogicalType(logicalType) {
-	case BoolType:
-		_, ok := value.(bool)
-		return ok
-	case IntType:
-		_, ok := value.(int32)
-		return ok
-	case TinyIntType:
-		_, ok := value.(int8)
-		return ok
-	case SmallIntType:
-		_, ok := value.(int16)
-		return ok
-	case BigIntType:
-		_, ok := value.(int64)
-		return ok
-	case FloatType:
-		_, ok := value.(float32)
-		return ok
-	case DoubleType:
-		_, ok := value.(float64)
-		return ok
-	case StringType, CharType:
-		_, ok := value.(string)
-		return ok
-	case BinaryType, BytesType:
-		_, ok := value.([]byte)
-		return ok
-	case DecimalType:
-		_, ok := value.(*big.Rat)
-		return ok
-	case DateType, TimeType, TimestampType, TimestampLTZType:
-		_, ok := value.(time.Time)
-		return ok
+	kind := dataTypeForLogicalType(logicalType)
+	switch kind {
 	case ArrayType:
-		values, ok := value.([]any)
-		if !ok || logicalType.Element == nil {
-			return false
-		}
-		for _, element := range values {
-			if !validLogicalValue(*logicalType.Element, element) {
-				return false
-			}
-		}
-		return true
+		return validLogicalArray(logicalType.Element, value)
 	case MapType:
-		if logicalType.Key == nil || logicalType.Value == nil {
-			return false
-		}
-		entries, ok := mapEntries(value)
-		if !ok {
-			return false
-		}
-		for _, entry := range entries {
-			if !validLogicalValue(*logicalType.Key, entry.Key) || !validLogicalValue(*logicalType.Value, entry.Value) {
-				return false
-			}
-		}
-		return true
+		return validLogicalMap(logicalType.Key, logicalType.Value, value)
 	case RowType:
-		row, ok := value.(Row)
-		if !ok || len(row) != len(logicalType.Fields) {
-			return false
-		}
-		for i, field := range logicalType.Fields {
-			if !validLogicalValue(field.Type, row[i]) {
-				return false
-			}
-		}
-		return true
+		return validLogicalRow(logicalType.Fields, value)
 	default:
+		return validUntypedValue(kind, value)
+	}
+}
+
+func validLogicalArray(elementType *LogicalType, value any) bool {
+	values, ok := value.([]any)
+	if !ok || elementType == nil {
 		return false
 	}
+	for _, element := range values {
+		if !validLogicalValue(*elementType, element) {
+			return false
+		}
+	}
+	return true
+}
+
+func validLogicalMap(keyType, valueType *LogicalType, value any) bool {
+	if keyType == nil || valueType == nil {
+		return false
+	}
+	entries, ok := mapEntries(value)
+	if !ok {
+		return false
+	}
+	for _, entry := range entries {
+		if !validLogicalValue(*keyType, entry.Key) || !validLogicalValue(*valueType, entry.Value) {
+			return false
+		}
+	}
+	return true
+}
+
+func validLogicalRow(fields []LogicalField, value any) bool {
+	row, ok := value.(Row)
+	if !ok || len(row) != len(fields) {
+		return false
+	}
+	for index, field := range fields {
+		if !validLogicalValue(field.Type, row[index]) {
+			return false
+		}
+	}
+	return true
 }
 
 func mapEntries(value any) (Map, bool) {

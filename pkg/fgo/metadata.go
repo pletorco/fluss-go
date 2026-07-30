@@ -208,46 +208,62 @@ func (r *Router) RefreshPhysical(ctx context.Context, path PhysicalTablePath) er
 		}
 	}
 	key := physicalTableKey(path)
+	flight, owner, err := r.beginPartitionRefresh(ctx, key)
+	if err != nil || !owner {
+		return err
+	}
+	partition, fetchUsed, err := r.fetchPhysicalMetadata(ctx, path, key)
+	return r.finishPartitionRefresh(path, key, flight, partition, fetchUsed, err)
+}
+
+func (r *Router) beginPartitionRefresh(
+	ctx context.Context,
+	key string,
+) (*partitionMetadataFlight, bool, error) {
 	r.mu.Lock()
 	if flight := r.partitionFlights[key]; flight != nil {
 		r.mu.Unlock()
 		select {
 		case <-flight.done:
-			return flight.err
+			return nil, false, flight.err
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, false, ctx.Err()
 		}
 	}
 	flight := &partitionMetadataFlight{done: make(chan struct{})}
 	r.partitionFlights[key] = flight
-	fetch := r.fetchPartition
 	r.mu.Unlock()
+	return flight, true, nil
+}
 
-	var partition PartitionMetadata
-	var err error
+func (r *Router) fetchPhysicalMetadata(
+	ctx context.Context,
+	path PhysicalTablePath,
+	key string,
+) (PartitionMetadata, bool, error) {
+	fetch := r.fetchPartition
 	if fetch == nil {
-		err = r.Refresh(ctx, path.TablePath)
-	} else {
-		partition, err = fetch(ctx, path)
-		if err == nil && physicalTableKey(partition.Path) != key {
-			err = fmt.Errorf("%w: refresh returned %s for %s", ErrUnknownPartition, partition.Path, path)
-		}
+		return PartitionMetadata{}, false, r.Refresh(ctx, path.TablePath)
 	}
+	partition, err := fetch(ctx, path)
+	if err == nil && physicalTableKey(partition.Path) != key {
+		err = fmt.Errorf("%w: refresh returned %s for %s", ErrUnknownPartition, partition.Path, path)
+	}
+	return partition, true, err
+}
+
+func (r *Router) finishPartitionRefresh(
+	path PhysicalTablePath,
+	key string,
+	flight *partitionMetadataFlight,
+	partition PartitionMetadata,
+	fetchUsed bool,
+	err error,
+) error {
 	r.mu.Lock()
-	if err == nil && fetch != nil {
-		next := cloneMetadata(r.metadata)
-		table, ok := next.Tables[path.TablePath]
-		if !ok {
-			err = fmt.Errorf("%w: %s", ErrUnknownTable, path.TablePath)
-		} else {
-			if table.Partitions == nil {
-				table.Partitions = make(map[string]PartitionMetadata)
-			}
-			table.Partitions[key] = clonePartitionMetadata(partition)
-			next.Tables[path.TablePath] = table
-			applyPartitionServers(&next, partition)
-			r.metadata = next
-		}
+	defer r.mu.Unlock()
+	if err == nil && fetchUsed {
+		err = r.applyPhysicalMetadata(path, key, partition)
 	}
 	if err == nil && !r.hasPartition(path) {
 		err = fmt.Errorf("%w: %s", ErrUnknownPartition, path)
@@ -255,8 +271,23 @@ func (r *Router) RefreshPhysical(ctx context.Context, path PhysicalTablePath) er
 	flight.err = err
 	delete(r.partitionFlights, key)
 	close(flight.done)
-	r.mu.Unlock()
 	return err
+}
+
+func (r *Router) applyPhysicalMetadata(path PhysicalTablePath, key string, partition PartitionMetadata) error {
+	next := cloneMetadata(r.metadata)
+	table, ok := next.Tables[path.TablePath]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrUnknownTable, path.TablePath)
+	}
+	if table.Partitions == nil {
+		table.Partitions = make(map[string]PartitionMetadata)
+	}
+	table.Partitions[key] = clonePartitionMetadata(partition)
+	next.Tables[path.TablePath] = table
+	applyPartitionServers(&next, partition)
+	r.metadata = next
+	return nil
 }
 
 func (r *Router) Invalidate(path TablePath) {

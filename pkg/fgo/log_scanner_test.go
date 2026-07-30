@@ -56,18 +56,12 @@ func (b *fakeLogScannerBackend) listOffset(
 
 func (b *fakeLogScannerBackend) fetch(
 	ctx context.Context,
-	_ PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	offset int64,
-	projection []int32,
-	config LogScannerConfig,
+	input logFetchRequest,
 ) (scannerFetch, error) {
 	b.mu.Lock()
 	b.calls = append(b.calls, scannerFetchCall{
-		bucket: bucket, offset: offset, tableID: tableID, partitionID: partitionID,
-		projection: append([]int32(nil), projection...), config: config,
+		bucket: input.bucket, offset: input.offset, tableID: input.tableID, partitionID: input.partitionID,
+		projection: append([]int32(nil), input.projection...), config: input.config,
 	})
 	b.mu.Unlock()
 	if b.block != nil {
@@ -77,7 +71,7 @@ func (b *fakeLogScannerBackend) fetch(
 			return scannerFetch{}, ctx.Err()
 		}
 	}
-	return b.fetches[bucket], b.fetchErr[bucket]
+	return b.fetches[input.bucket], b.fetchErr[input.bucket]
 }
 
 func (b *fakeLogScannerBackend) fetchCalls() []scannerFetchCall {
@@ -405,8 +399,9 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 	if _, err := backend.listOffset(context.Background(), path, 0, 9, -1, Latest()); !errors.Is(err, ErrAuthorization) {
 		t.Fatalf("ListOffsets error = %v", err)
 	}
-	if _, err := backend.fetch(context.Background(), path, 0, 9, -1, 0, nil, LogScannerConfig{
-		MaxBytes: 1, MaxBucketBytes: 1,
+	if _, err := backend.fetch(context.Background(), logFetchRequest{
+		path: path, tableID: 9, partitionID: -1,
+		config: LogScannerConfig{MaxBytes: 1, MaxBucketBytes: 1},
 	}); !errors.Is(err, ErrRecord) {
 		t.Fatalf("FetchLog error = %v", err)
 	}

@@ -199,6 +199,38 @@ func readArrayElement(encoded []byte, slot int, logicalType LogicalType, encodin
 	if slot < 0 || arraySlotSize(logicalType) > len(encoded)-slot {
 		return nil, errors.New("truncated array slot")
 	}
+	if arrayPrimitive(kind) {
+		return readArrayPrimitive(encoded, slot, kind)
+	}
+	switch kind {
+	case DateType, TimeType:
+		return temporalTime(kind, int32(binary.LittleEndian.Uint32(encoded[slot:]))), nil
+	case DecimalType:
+		return readArrayDecimal(encoded, slot, logicalType)
+	case TimestampType, TimestampLTZType:
+		return readArrayTimestamp(encoded, slot, logicalType)
+	case StringType, CharType:
+		value, err := unpackedArrayBytes(encoded, slot)
+		return string(value), err
+	case BytesType, BinaryType:
+		return unpackedArrayBytes(encoded, slot)
+	case ArrayType, MapType, RowType:
+		return readArrayNested(encoded, slot, logicalType, encoding)
+	default:
+		return nil, fmt.Errorf("unsupported array element type %s", logicalType.Root)
+	}
+}
+
+func arrayPrimitive(kind DataType) bool {
+	switch kind {
+	case BoolType, TinyIntType, SmallIntType, IntType, FloatType, BigIntType, DoubleType:
+		return true
+	default:
+		return false
+	}
+}
+
+func readArrayPrimitive(encoded []byte, slot int, kind DataType) (any, error) {
 	switch kind {
 	case BoolType:
 		if encoded[slot] > 1 {
@@ -211,58 +243,55 @@ func readArrayElement(encoded []byte, slot int, logicalType LogicalType, encodin
 		return int16(binary.LittleEndian.Uint16(encoded[slot:])), nil
 	case IntType:
 		return int32(binary.LittleEndian.Uint32(encoded[slot:])), nil
-	case DateType, TimeType:
-		return temporalTime(kind, int32(binary.LittleEndian.Uint32(encoded[slot:]))), nil
 	case FloatType:
 		return math.Float32frombits(binary.LittleEndian.Uint32(encoded[slot:])), nil
 	case BigIntType:
 		return int64(binary.LittleEndian.Uint64(encoded[slot:])), nil
 	case DoubleType:
 		return math.Float64frombits(binary.LittleEndian.Uint64(encoded[slot:])), nil
-	case DecimalType:
-		if logicalType.Precision <= 18 {
-			return scaledRat(big.NewInt(int64(binary.LittleEndian.Uint64(encoded[slot:]))), logicalType.Scale), nil
-		}
-		value, err := arrayVariable(encoded, slot)
-		if err != nil {
-			return nil, err
-		}
-		return scaledRat(signedBigInt(value), logicalType.Scale), nil
-	case TimestampType, TimestampLTZType:
-		if logicalType.Precision <= 3 {
-			return timestampTime(kind, int64(binary.LittleEndian.Uint64(encoded[slot:])), 0), nil
-		}
-		offset, nanos := offsetSize(encoded, slot)
-		value, _, err := readFixed(encoded, offset, 8)
-		if err != nil || nanos > 999999 {
-			return nil, errors.New("invalid timestamp array value")
-		}
-		return timestampTime(kind, int64(binary.LittleEndian.Uint64(value)), int32(nanos)), nil
-	case StringType, CharType:
-		value, err := unpackedArrayBytes(encoded, slot)
-		return string(value), err
-	case BytesType, BinaryType:
-		return unpackedArrayBytes(encoded, slot)
+	default:
+		return nil, fmt.Errorf("unsupported array primitive %s", kind)
+	}
+}
+
+func readArrayDecimal(encoded []byte, slot int, logicalType LogicalType) (any, error) {
+	if logicalType.Precision <= 18 {
+		return scaledRat(big.NewInt(int64(binary.LittleEndian.Uint64(encoded[slot:]))), logicalType.Scale), nil
+	}
+	value, err := arrayVariable(encoded, slot)
+	if err != nil {
+		return nil, err
+	}
+	return scaledRat(signedBigInt(value), logicalType.Scale), nil
+}
+
+func readArrayTimestamp(encoded []byte, slot int, logicalType LogicalType) (any, error) {
+	kind := dataTypeForLogicalType(logicalType)
+	if logicalType.Precision <= 3 {
+		return timestampTime(kind, int64(binary.LittleEndian.Uint64(encoded[slot:])), 0), nil
+	}
+	offset, nanos := offsetSize(encoded, slot)
+	value, _, err := readFixed(encoded, offset, 8)
+	if err != nil || nanos > 999999 {
+		return nil, errors.New("invalid timestamp array value")
+	}
+	return timestampTime(kind, int64(binary.LittleEndian.Uint64(value)), int32(nanos)), nil
+}
+
+func readArrayNested(encoded []byte, slot int, logicalType LogicalType, encoding rowEncoding) (any, error) {
+	value, err := arrayVariable(encoded, slot)
+	if err != nil {
+		return nil, err
+	}
+	switch dataTypeForLogicalType(logicalType) {
 	case ArrayType:
-		value, err := arrayVariable(encoded, slot)
-		if err != nil {
-			return nil, err
-		}
 		return decodeBinaryArray(*logicalType.Element, value, encoding)
 	case MapType:
-		value, err := arrayVariable(encoded, slot)
-		if err != nil {
-			return nil, err
-		}
 		return decodeBinaryMap(logicalType, value, encoding)
 	case RowType:
-		value, err := arrayVariable(encoded, slot)
-		if err != nil {
-			return nil, err
-		}
 		return decodeRow(nestedSchema(logicalType), value, encoding)
 	default:
-		return nil, fmt.Errorf("unsupported array element type %s", logicalType.Root)
+		return nil, fmt.Errorf("unsupported nested array element type %s", logicalType.Root)
 	}
 }
 

@@ -54,106 +54,105 @@ func arrowField(name string, logicalType LogicalType) (arrow.Field, error) {
 }
 
 func arrowType(logicalType LogicalType) (arrow.DataType, error) {
-	switch dataTypeForLogicalType(logicalType) {
-	case BoolType:
-		return arrow.FixedWidthTypes.Boolean, nil
-	case TinyIntType:
-		return arrow.PrimitiveTypes.Int8, nil
-	case SmallIntType:
-		return arrow.PrimitiveTypes.Int16, nil
-	case IntType:
-		return arrow.PrimitiveTypes.Int32, nil
-	case BigIntType:
-		return arrow.PrimitiveTypes.Int64, nil
-	case FloatType:
-		return arrow.PrimitiveTypes.Float32, nil
-	case DoubleType:
-		return arrow.PrimitiveTypes.Float64, nil
-	case CharType, StringType:
-		return arrow.BinaryTypes.String, nil
+	kind := dataTypeForLogicalType(logicalType)
+	if primitive, ok := arrowPrimitiveTypes()[kind]; ok {
+		return primitive, nil
+	}
+	switch kind {
 	case BinaryType:
-		if logicalType.Length < 1 {
-			return nil, fmt.Errorf("BINARY length is required")
-		}
-		return &arrow.FixedSizeBinaryType{ByteWidth: logicalType.Length}, nil
-	case BytesType:
-		return arrow.BinaryTypes.Binary, nil
+		return arrowBinaryType(logicalType)
 	case DecimalType:
-		if logicalType.Precision < 1 || logicalType.Precision > 38 {
-			return nil, fmt.Errorf("DECIMAL precision must be in [1, 38]")
-		}
-		return &arrow.Decimal128Type{Precision: int32(logicalType.Precision), Scale: int32(logicalType.Scale)}, nil
-	case DateType:
-		return arrow.FixedWidthTypes.Date32, nil
+		return arrowDecimalType(logicalType)
 	case TimeType:
 		return arrowTimeType(logicalType.Precision)
 	case TimestampType, TimestampLTZType:
 		return &arrow.TimestampType{Unit: arrowUnit(logicalType.Precision)}, nil
 	case ArrayType:
-		if logicalType.Element == nil {
-			return nil, fmt.Errorf("ARRAY element type is required")
-		}
-		element, err := arrowField("element", *logicalType.Element)
-		if err != nil {
-			return nil, err
-		}
-		return arrow.ListOfField(element), nil
+		return arrowArrayType(logicalType)
 	case MapType:
-		if logicalType.Key == nil || logicalType.Value == nil {
-			return nil, fmt.Errorf("MAP key and value types are required")
-		}
-		key, err := arrowField("key", *logicalType.Key)
-		if err != nil {
-			return nil, err
-		}
-		key.Nullable = false
-		value, err := arrowField("value", *logicalType.Value)
-		if err != nil {
-			return nil, err
-		}
-		return arrow.MapOfFields(key, value), nil
+		return arrowMapType(logicalType)
 	case RowType:
-		fields := make([]arrow.Field, len(logicalType.Fields))
-		for i, field := range logicalType.Fields {
-			nested, err := arrowField(field.Name, field.Type)
-			if err != nil {
-				return nil, fmt.Errorf("invalid ROW field %q: %w", field.Name, err)
-			}
-			fields[i] = nested
-		}
-		return arrow.StructOf(fields...), nil
+		return arrowRowType(logicalType)
 	default:
 		return nil, fmt.Errorf("unsupported Arrow conversion %s", logicalType.Root)
 	}
 }
 
+func arrowBinaryType(logicalType LogicalType) (arrow.DataType, error) {
+	if logicalType.Length < 1 {
+		return nil, fmt.Errorf("BINARY length is required")
+	}
+	return &arrow.FixedSizeBinaryType{ByteWidth: logicalType.Length}, nil
+}
+
+func arrowDecimalType(logicalType LogicalType) (arrow.DataType, error) {
+	if logicalType.Precision < 1 || logicalType.Precision > 38 {
+		return nil, fmt.Errorf("DECIMAL precision must be in [1, 38]")
+	}
+	return &arrow.Decimal128Type{Precision: int32(logicalType.Precision), Scale: int32(logicalType.Scale)}, nil
+}
+
+func arrowArrayType(logicalType LogicalType) (arrow.DataType, error) {
+	if logicalType.Element == nil {
+		return nil, fmt.Errorf("ARRAY element type is required")
+	}
+	element, err := arrowField("element", *logicalType.Element)
+	if err != nil {
+		return nil, err
+	}
+	return arrow.ListOfField(element), nil
+}
+
+func arrowMapType(logicalType LogicalType) (arrow.DataType, error) {
+	if logicalType.Key == nil || logicalType.Value == nil {
+		return nil, fmt.Errorf("MAP key and value types are required")
+	}
+	key, err := arrowField("key", *logicalType.Key)
+	if err != nil {
+		return nil, err
+	}
+	key.Nullable = false
+	value, err := arrowField("value", *logicalType.Value)
+	if err != nil {
+		return nil, err
+	}
+	return arrow.MapOfFields(key, value), nil
+}
+
+func arrowRowType(logicalType LogicalType) (arrow.DataType, error) {
+	fields := make([]arrow.Field, len(logicalType.Fields))
+	for index, field := range logicalType.Fields {
+		nested, err := arrowField(field.Name, field.Type)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ROW field %q: %w", field.Name, err)
+		}
+		fields[index] = nested
+	}
+	return arrow.StructOf(fields...), nil
+}
+
+func arrowPrimitiveTypes() map[DataType]arrow.DataType {
+	return map[DataType]arrow.DataType{
+		BoolType: arrow.FixedWidthTypes.Boolean, TinyIntType: arrow.PrimitiveTypes.Int8,
+		SmallIntType: arrow.PrimitiveTypes.Int16, IntType: arrow.PrimitiveTypes.Int32,
+		BigIntType: arrow.PrimitiveTypes.Int64, FloatType: arrow.PrimitiveTypes.Float32,
+		DoubleType: arrow.PrimitiveTypes.Float64, CharType: arrow.BinaryTypes.String,
+		StringType: arrow.BinaryTypes.String, BytesType: arrow.BinaryTypes.Binary,
+		DateType: arrow.FixedWidthTypes.Date32,
+	}
+}
+
 func logicalTypeFromArrow(field arrow.Field) (LogicalType, error) {
 	logicalType := LogicalType{Nullable: field.Nullable}
+	if root, ok := primitiveLogicalRoot(field.Type); ok {
+		logicalType.Root = root
+		return logicalType, logicalType.Validate()
+	}
 	switch dataType := field.Type.(type) {
-	case *arrow.BooleanType:
-		logicalType.Root = "BOOLEAN"
-	case *arrow.Int8Type:
-		logicalType.Root = "TINYINT"
-	case *arrow.Int16Type:
-		logicalType.Root = "SMALLINT"
-	case *arrow.Int32Type:
-		logicalType.Root = "INTEGER"
-	case *arrow.Int64Type:
-		logicalType.Root = "BIGINT"
-	case *arrow.Float32Type:
-		logicalType.Root = "FLOAT"
-	case *arrow.Float64Type:
-		logicalType.Root = "DOUBLE"
-	case *arrow.StringType:
-		logicalType.Root = "STRING"
-	case *arrow.BinaryType:
-		logicalType.Root = "BYTES"
 	case *arrow.FixedSizeBinaryType:
 		logicalType.Root, logicalType.Length = "BINARY", dataType.ByteWidth
 	case *arrow.Decimal128Type:
 		logicalType.Root, logicalType.Precision, logicalType.Scale = "DECIMAL", int(dataType.Precision), int(dataType.Scale)
-	case *arrow.Date32Type:
-		logicalType.Root = "DATE"
 	case *arrow.Time32Type:
 		logicalType.Root, logicalType.Precision = "TIME_WITHOUT_TIME_ZONE", precisionForUnit(dataType.Unit)
 	case *arrow.Time64Type:
@@ -161,36 +160,77 @@ func logicalTypeFromArrow(field arrow.Field) (LogicalType, error) {
 	case *arrow.TimestampType:
 		logicalType.Root, logicalType.Precision = "TIMESTAMP_WITHOUT_TIME_ZONE", precisionForUnit(dataType.Unit)
 	case *arrow.ListType:
-		element, err := logicalTypeFromArrow(dataType.ElemField())
-		if err != nil {
-			return LogicalType{}, err
-		}
-		logicalType.Root, logicalType.Element = "ARRAY", &element
+		return logicalArrayFromArrow(field.Nullable, dataType)
 	case *arrow.MapType:
-		key, err := logicalTypeFromArrow(dataType.KeyField())
-		if err != nil {
-			return LogicalType{}, err
-		}
-		key.Nullable = false
-		value, err := logicalTypeFromArrow(dataType.ItemField())
-		if err != nil {
-			return LogicalType{}, err
-		}
-		logicalType.Root, logicalType.Key, logicalType.Value = "MAP", &key, &value
+		return logicalMapFromArrow(field.Nullable, dataType)
 	case *arrow.StructType:
-		logicalType.Root = "ROW"
-		logicalType.Fields = make([]LogicalField, len(dataType.Fields()))
-		for i, nested := range dataType.Fields() {
-			nestedType, err := logicalTypeFromArrow(nested)
-			if err != nil {
-				return LogicalType{}, err
-			}
-			logicalType.Fields[i] = LogicalField{Name: nested.Name, Type: nestedType}
-		}
+		return logicalRowFromArrow(field.Nullable, dataType)
 	default:
 		return LogicalType{}, fmt.Errorf("%w: unsupported Arrow type %s", ErrInvalidSchema, field.Type)
 	}
 	return logicalType, logicalType.Validate()
+}
+
+func logicalArrayFromArrow(nullable bool, dataType *arrow.ListType) (LogicalType, error) {
+	element, err := logicalTypeFromArrow(dataType.ElemField())
+	if err != nil {
+		return LogicalType{}, err
+	}
+	logicalType := LogicalType{Root: "ARRAY", Nullable: nullable, Element: &element}
+	return logicalType, logicalType.Validate()
+}
+
+func logicalMapFromArrow(nullable bool, dataType *arrow.MapType) (LogicalType, error) {
+	key, err := logicalTypeFromArrow(dataType.KeyField())
+	if err != nil {
+		return LogicalType{}, err
+	}
+	key.Nullable = false
+	value, err := logicalTypeFromArrow(dataType.ItemField())
+	if err != nil {
+		return LogicalType{}, err
+	}
+	logicalType := LogicalType{Root: "MAP", Nullable: nullable, Key: &key, Value: &value}
+	return logicalType, logicalType.Validate()
+}
+
+func logicalRowFromArrow(nullable bool, dataType *arrow.StructType) (LogicalType, error) {
+	logicalType := LogicalType{Root: "ROW", Nullable: nullable, Fields: make([]LogicalField, len(dataType.Fields()))}
+	for index, nested := range dataType.Fields() {
+		nestedType, err := logicalTypeFromArrow(nested)
+		if err != nil {
+			return LogicalType{}, err
+		}
+		logicalType.Fields[index] = LogicalField{Name: nested.Name, Type: nestedType}
+	}
+	return logicalType, logicalType.Validate()
+}
+
+func primitiveLogicalRoot(dataType arrow.DataType) (string, bool) {
+	switch dataType.(type) {
+	case *arrow.BooleanType:
+		return "BOOLEAN", true
+	case *arrow.Int8Type:
+		return "TINYINT", true
+	case *arrow.Int16Type:
+		return "SMALLINT", true
+	case *arrow.Int32Type:
+		return "INTEGER", true
+	case *arrow.Int64Type:
+		return "BIGINT", true
+	case *arrow.Float32Type:
+		return "FLOAT", true
+	case *arrow.Float64Type:
+		return "DOUBLE", true
+	case *arrow.StringType:
+		return "STRING", true
+	case *arrow.BinaryType:
+		return "BYTES", true
+	case *arrow.Date32Type:
+		return "DATE", true
+	default:
+		return "", false
+	}
 }
 
 func arrowTimeType(precision int) (arrow.DataType, error) {

@@ -368,44 +368,43 @@ func (c *LookupClient) runPointLookups(ctx context.Context, groups map[int32][]l
 	sem := make(chan struct{}, c.config.MaxConcurrent)
 	for bucket, inputs := range groups {
 		for start := 0; start < len(inputs); start += c.config.MaxBatchKeys {
-			end := start + c.config.MaxBatchKeys
-			if end > len(inputs) {
-				end = len(inputs)
-			}
-			chunk := append([]lookupInput(nil), inputs[start:end]...)
+			chunk := lookupChunk(inputs, start, c.config.MaxBatchKeys)
 			wait.Add(1)
 			go func(bucket int32) {
 				defer wait.Done()
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-ctx.Done():
-					setPointErrors(chunk, results, ctx.Err())
-					return
-				}
-				encoded := make([][]byte, len(chunk))
-				for index := range chunk {
-					encoded[index] = chunk[index].encoded
-				}
-				values, err := c.backend.lookup(ctx, c.path, bucket, c.tableID, c.partitionID, encoded)
-				if err != nil {
-					setPointErrors(chunk, results, err)
-					return
-				}
-				for index, value := range values {
-					if value == nil {
-						results[chunk[index].index].Err = ErrNotFound
-						continue
-					}
-					row, err := decodeLookupValue(c.table, value)
-					results[chunk[index].index].Row = row
-					results[chunk[index].index].Found = err == nil
-					results[chunk[index].index].Err = err
-				}
+				c.runPointChunk(ctx, sem, bucket, chunk, results)
 			}(bucket)
 		}
 	}
 	wait.Wait()
+}
+
+func (c *LookupClient) runPointChunk(
+	ctx context.Context,
+	sem chan struct{},
+	bucket int32,
+	chunk []lookupInput,
+	results []LookupResult,
+) {
+	if !acquireLookupSlot(ctx, sem) {
+		setPointErrors(chunk, results, ctx.Err())
+		return
+	}
+	defer func() { <-sem }()
+	values, err := c.backend.lookup(ctx, c.path, bucket, c.tableID, c.partitionID, encodedLookupInputs(chunk))
+	if err != nil {
+		setPointErrors(chunk, results, err)
+		return
+	}
+	for index, value := range values {
+		result := &results[chunk[index].index]
+		if value == nil {
+			result.Err = ErrNotFound
+			continue
+		}
+		result.Row, result.Err = decodeLookupValue(c.table, value)
+		result.Found = result.Err == nil
+	}
 }
 
 func (c *LookupClient) runPrefixLookups(
@@ -417,44 +416,70 @@ func (c *LookupClient) runPrefixLookups(
 	sem := make(chan struct{}, c.config.MaxConcurrent)
 	for bucket, inputs := range groups {
 		for start := 0; start < len(inputs); start += c.config.MaxBatchKeys {
-			end := start + c.config.MaxBatchKeys
-			if end > len(inputs) {
-				end = len(inputs)
-			}
-			chunk := append([]lookupInput(nil), inputs[start:end]...)
+			chunk := lookupChunk(inputs, start, c.config.MaxBatchKeys)
 			wait.Add(1)
 			go func(bucket int32) {
 				defer wait.Done()
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-ctx.Done():
-					setPrefixErrors(chunk, results, ctx.Err())
-					return
-				}
-				encoded := make([][]byte, len(chunk))
-				for index := range chunk {
-					encoded[index] = chunk[index].encoded
-				}
-				values, err := c.backend.prefixLookup(ctx, c.path, bucket, c.tableID, c.partitionID, encoded)
-				if err != nil {
-					setPrefixErrors(chunk, results, err)
-					return
-				}
-				for index, rows := range values {
-					for _, value := range rows {
-						row, err := decodeLookupValue(c.table, value)
-						if err != nil {
-							results[chunk[index].index].Err = err
-							break
-						}
-						results[chunk[index].index].Rows = append(results[chunk[index].index].Rows, row)
-					}
-				}
+				c.runPrefixChunk(ctx, sem, bucket, chunk, results)
 			}(bucket)
 		}
 	}
 	wait.Wait()
+}
+
+func (c *LookupClient) runPrefixChunk(
+	ctx context.Context,
+	sem chan struct{},
+	bucket int32,
+	chunk []lookupInput,
+	results []PrefixLookupResult,
+) {
+	if !acquireLookupSlot(ctx, sem) {
+		setPrefixErrors(chunk, results, ctx.Err())
+		return
+	}
+	defer func() { <-sem }()
+	values, err := c.backend.prefixLookup(ctx, c.path, bucket, c.tableID, c.partitionID, encodedLookupInputs(chunk))
+	if err != nil {
+		setPrefixErrors(chunk, results, err)
+		return
+	}
+	for index, rows := range values {
+		result := &results[chunk[index].index]
+		for _, value := range rows {
+			row, err := decodeLookupValue(c.table, value)
+			if err != nil {
+				result.Err = err
+				break
+			}
+			result.Rows = append(result.Rows, row)
+		}
+	}
+}
+
+func lookupChunk(inputs []lookupInput, start, maximum int) []lookupInput {
+	end := start + maximum
+	if end > len(inputs) {
+		end = len(inputs)
+	}
+	return append([]lookupInput(nil), inputs[start:end]...)
+}
+
+func acquireLookupSlot(ctx context.Context, sem chan struct{}) bool {
+	select {
+	case sem <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func encodedLookupInputs(inputs []lookupInput) [][]byte {
+	encoded := make([][]byte, len(inputs))
+	for index := range inputs {
+		encoded[index] = inputs[index].encoded
+	}
+	return encoded
 }
 
 func decodeLookupValue(table Table, value []byte) (Row, error) {

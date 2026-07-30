@@ -33,47 +33,18 @@ func TestFluss091Integration(t *testing.T) {
 	saslAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_SASL_COORDINATOR_PORT", "19223"))
 
 	t.Run("protocol negotiation and role", func(t *testing.T) {
-		verifyProtocolRegistry(t, map[string]fgo.ServerRole{
-			plainAddress: fgo.Coordinator,
-			net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_0_PORT", "19124")): fgo.TabletServer,
-			net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_1_PORT", "19125")): fgo.TabletServer,
-			net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_2_PORT", "19126")): fgo.TabletServer,
-		})
+		verifyProtocolRegistry(t, protocolEndpoints(plainAddress))
 	})
 
 	client := openClient(t, []string{"127.0.0.1:1", plainAddress})
 	defer client.Close()
 
 	t.Run("plaintext bootstrap failover", func(t *testing.T) {
-		admin, err := fadm.New(client)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := admin.DatabaseExists(context.Background(), "fluss_go_missing"); err != nil {
-			t.Fatal(err)
-		}
+		testPlaintextBootstrap(t, client)
 	})
 
 	t.Run("SASL PLAIN", func(t *testing.T) {
-		username, password := os.Getenv("FLUSS_SASL_USERNAME"), os.Getenv("FLUSS_SASL_PASSWORD")
-		authenticated := openClient(t, []string{saslAddress}, fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)))
-		defer authenticated.Close()
-		admin, err := fadm.New(authenticated)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := admin.ListDatabases(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, err = fgo.Open(ctx,
-			fgo.WithSeedBrokers(saslAddress),
-			fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password+"-wrong")),
-		)
-		if !errors.Is(err, fgo.ErrAuthentication) || strings.Contains(fmt.Sprint(err), password) {
-			t.Fatalf("invalid credential error = %v", err)
-		}
+		testSASLPlain(t, saslAddress)
 	})
 
 	database := fmt.Sprintf("go_it_%d", time.Now().UnixNano())
@@ -95,11 +66,7 @@ func TestFluss091Integration(t *testing.T) {
 	}()
 
 	t.Run("catalog", func(t *testing.T) {
-		createTables(t, admin, logPath, kvPath)
-		tables, err := admin.ListTables(context.Background(), database)
-		if err != nil || len(tables) != 2 {
-			t.Fatalf("ListTables() = %#v, %v", tables, err)
-		}
+		testCatalog(t, admin, database, logPath, kvPath)
 	})
 
 	t.Run("append and scan", func(t *testing.T) {
@@ -113,6 +80,58 @@ func TestFluss091Integration(t *testing.T) {
 	t.Run("multi-node routing and leader failover", func(t *testing.T) {
 		testLeaderFailover(t, client, logPath)
 	})
+}
+
+func protocolEndpoints(plainAddress string) map[string]fgo.ServerRole {
+	return map[string]fgo.ServerRole{
+		plainAddress: fgo.Coordinator,
+		net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_0_PORT", "19124")): fgo.TabletServer,
+		net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_1_PORT", "19125")): fgo.TabletServer,
+		net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_2_PORT", "19126")): fgo.TabletServer,
+	}
+}
+
+func testPlaintextBootstrap(t *testing.T, client *fgo.Client) {
+	t.Helper()
+	admin, err := fadm.New(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.DatabaseExists(context.Background(), "fluss_go_missing"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testSASLPlain(t *testing.T, address string) {
+	t.Helper()
+	username, password := os.Getenv("FLUSS_SASL_USERNAME"), os.Getenv("FLUSS_SASL_PASSWORD")
+	authenticated := openClient(t, []string{address}, fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)))
+	defer authenticated.Close()
+	admin, err := fadm.New(authenticated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.ListDatabases(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = fgo.Open(ctx,
+		fgo.WithSeedBrokers(address),
+		fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password+"-wrong")),
+	)
+	if !errors.Is(err, fgo.ErrAuthentication) || strings.Contains(fmt.Sprint(err), password) {
+		t.Fatalf("invalid credential error = %v", err)
+	}
+}
+
+func testCatalog(t *testing.T, admin *fadm.Client, database string, logPath, kvPath fgo.TablePath) {
+	t.Helper()
+	createTables(t, admin, logPath, kvPath)
+	tables, err := admin.ListTables(context.Background(), database)
+	if err != nil || len(tables) != 2 {
+		t.Fatalf("ListTables() = %#v, %v", tables, err)
+	}
 }
 
 func requireEnvironment(t *testing.T) {
@@ -137,41 +156,52 @@ func verifyProtocolRegistry(t *testing.T, endpoints map[string]fgo.ServerRole) {
 	t.Helper()
 	server := make(map[fmsg.APIKey][2]int32)
 	for address, expectedRole := range endpoints {
-		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rpc, err := transport.New(conn, transport.Config{})
-		if err != nil {
-			conn.Close()
-			t.Fatal(err)
-		}
-		request, err := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
-		if err != nil {
-			rpc.Close()
-			t.Fatal(err)
-		}
-		message := request.Message().(*fmsg.ApiVersionsRequest)
-		message.ClientSoftwareName, message.ClientSoftwareVersion = proto.String("fluss-go-integration"), proto.String("0.1")
-		response, err := rpc.Request(context.Background(), request)
-		if err != nil {
-			rpc.Close()
-			t.Fatal(err)
-		}
-		versions := response.Message().(*fmsg.ApiVersionsResponse)
-		if got := fgo.ServerRole(versions.GetServerType()); got != expectedRole {
-			rpc.Close()
-			t.Fatalf("%s server role = %d, want %d", address, got, expectedRole)
-		}
-		for _, version := range versions.GetApiVersions() {
-			server[fmsg.APIKey(version.GetApiKey())] = [2]int32{
-				version.GetMinVersion(), version.GetMaxVersion(),
-			}
-		}
-		if err := rpc.Close(); err != nil {
-			t.Fatal(err)
-		}
+		mergeVersions(server, endpointVersions(t, address, expectedRole))
 	}
+	verifyLocalVersions(t, server)
+}
+
+func endpointVersions(t *testing.T, address string, expectedRole fgo.ServerRole) map[fmsg.APIKey][2]int32 {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rpc, err := transport.New(conn, transport.Config{})
+	if err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	defer rpc.Close()
+	request, err := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := request.Message().(*fmsg.ApiVersionsRequest)
+	message.ClientSoftwareName, message.ClientSoftwareVersion = proto.String("fluss-go-integration"), proto.String("0.1")
+	response, err := rpc.Request(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions := response.Message().(*fmsg.ApiVersionsResponse)
+	if got := fgo.ServerRole(versions.GetServerType()); got != expectedRole {
+		t.Fatalf("%s server role = %d, want %d", address, got, expectedRole)
+	}
+	result := make(map[fmsg.APIKey][2]int32)
+	for _, version := range versions.GetApiVersions() {
+		result[fmsg.APIKey(version.GetApiKey())] = [2]int32{version.GetMinVersion(), version.GetMaxVersion()}
+	}
+	return result
+}
+
+func mergeVersions(target, source map[fmsg.APIKey][2]int32) {
+	for key, versions := range source {
+		target[key] = versions
+	}
+}
+
+func verifyLocalVersions(t *testing.T, server map[fmsg.APIKey][2]int32) {
+	t.Helper()
 	for _, local := range fmsg.APIKeys() {
 		if !local.Public {
 			continue
@@ -320,11 +350,7 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 		{"team-a", int32(2), "bob"},
 		{"team-b", int32(1), "carol"},
 	}
-	for index, row := range rows {
-		if result := writer.Upsert(ctx, row).Await(ctx); result.Err != nil {
-			t.Fatalf("upsert %d: %v", index, result.Err)
-		}
-	}
+	upsertRows(t, ctx, writer, rows)
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -333,6 +359,21 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 		t.Fatal(err)
 	}
 	defer lookup.Close()
+	testPointAndPrefixLookup(t, ctx, lookup)
+	deleteLookupRow(t, ctx, client, table, lookup)
+}
+
+func upsertRows(t *testing.T, ctx context.Context, writer *fgo.KVWriter, rows []fgo.Row) {
+	t.Helper()
+	for index, row := range rows {
+		if result := writer.Upsert(ctx, row).Await(ctx); result.Err != nil {
+			t.Fatalf("upsert %d: %v", index, result.Err)
+		}
+	}
+}
+
+func testPointAndPrefixLookup(t *testing.T, ctx context.Context, lookup *fgo.LookupClient) {
+	t.Helper()
 	points := lookup.Lookup(ctx, fgo.PrimaryKey{"team-a", int32(1)}, fgo.PrimaryKey{"team-b", int32(1)})
 	for index, point := range points {
 		if point.Err != nil {
@@ -347,6 +388,16 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	if len(prefix) != 1 || prefix[0].Err != nil || len(prefix[0].Rows) != 2 {
 		t.Fatalf("prefix lookup = %#v", prefix)
 	}
+}
+
+func deleteLookupRow(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	lookup *fgo.LookupClient,
+) {
+	t.Helper()
 	deleteWriter, err := client.NewKVWriter(ctx, table, fgo.WithKVLinger(0))
 	if err != nil {
 		t.Fatal(err)
@@ -381,24 +432,26 @@ func testLeaderFailover(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		leaders, err := tryMetadataLeaders(client, path)
-		if err == nil && len(leaders) == len(before) {
-			changed := false
-			valid := true
-			for bucket, leader := range leaders {
-				if leader == stopped {
-					valid = false
-				}
-				if before[bucket] != leader {
-					changed = true
-				}
-			}
-			if valid && changed {
-				return
-			}
+		if err == nil && leadersMoved(before, leaders, stopped) {
+			return
 		}
 		time.Sleep(time.Second)
 	}
 	t.Fatalf("leaders did not move away from tablet %d; before=%#v", stopped, before)
+}
+
+func leadersMoved(before, after map[int32]int32, stopped int32) bool {
+	if len(after) != len(before) {
+		return false
+	}
+	changed := false
+	for bucket, leader := range after {
+		if leader == stopped {
+			return false
+		}
+		changed = changed || before[bucket] != leader
+	}
+	return changed
 }
 
 func metadataLeaders(t *testing.T, client *fgo.Client, path fgo.TablePath) map[int32]int32 {

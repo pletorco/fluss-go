@@ -75,31 +75,39 @@ func DecodeKVBatch(encoded []byte) (KVBatch, error) {
 	batch := KVBatch{SchemaID: int16(binary.LittleEndian.Uint16(encoded[9:])), WriterID: int64(binary.LittleEndian.Uint64(encoded[12:])), BatchSequence: int32(binary.LittleEndian.Uint32(encoded[20:])), Records: make([]KVRecord, 0, count)}
 	position := kvBatchHeaderSize
 	for range count {
-		if len(encoded)-position < 4 {
-			return KVBatch{}, fmt.Errorf("%w: truncated KV record", ErrMalformedRecordBatch)
-		}
-		length := int(binary.LittleEndian.Uint32(encoded[position:]))
-		position += 4
-		if length < 1 || length > len(encoded)-position {
-			return KVBatch{}, fmt.Errorf("%w: invalid KV record length", ErrMalformedRecordBatch)
-		}
-		bodyEnd := position + length
-		keyLength, keyStart, err := readVar(encoded[:bodyEnd], position, 5)
-		if err != nil || keyLength > uint64(bodyEnd-keyStart) {
-			return KVBatch{}, fmt.Errorf("%w: invalid KV key length", ErrMalformedRecordBatch)
-		}
-		keyEnd := keyStart + int(keyLength)
-		record := KVRecord{Key: append([]byte(nil), encoded[keyStart:keyEnd]...)}
-		if keyEnd != bodyEnd {
-			record.Value = append([]byte(nil), encoded[keyEnd:bodyEnd]...)
+		record, next, err := decodeKVRecord(encoded, position)
+		if err != nil {
+			return KVBatch{}, err
 		}
 		batch.Records = append(batch.Records, record)
-		position = bodyEnd
+		position = next
 	}
 	if position != len(encoded) {
 		return KVBatch{}, fmt.Errorf("%w: trailing KV bytes", ErrMalformedRecordBatch)
 	}
 	return batch, nil
+}
+
+func decodeKVRecord(encoded []byte, position int) (KVRecord, int, error) {
+	if len(encoded)-position < 4 {
+		return KVRecord{}, position, fmt.Errorf("%w: truncated KV record", ErrMalformedRecordBatch)
+	}
+	length := int(binary.LittleEndian.Uint32(encoded[position:]))
+	position += 4
+	if length < 1 || length > len(encoded)-position {
+		return KVRecord{}, position, fmt.Errorf("%w: invalid KV record length", ErrMalformedRecordBatch)
+	}
+	bodyEnd := position + length
+	keyLength, keyStart, err := readVar(encoded[:bodyEnd], position, 5)
+	if err != nil || keyLength > uint64(bodyEnd-keyStart) {
+		return KVRecord{}, position, fmt.Errorf("%w: invalid KV key length", ErrMalformedRecordBatch)
+	}
+	keyEnd := keyStart + int(keyLength)
+	record := KVRecord{Key: append([]byte(nil), encoded[keyStart:keyEnd]...)}
+	if keyEnd != bodyEnd {
+		record.Value = append([]byte(nil), encoded[keyEnd:bodyEnd]...)
+	}
+	return record, bodyEnd, nil
 }
 
 // LogBatch encodes compacted or indexed row records. Magic 0 and 1 use the Fluss 0.9.1 layouts.
@@ -171,25 +179,9 @@ func (b LogBatch) EncodeRows(schema Schema, compacted bool) ([]byte, error) {
 // DecodeLogBatchRows decodes a single Fluss v0 or v1 row-oriented log batch. It validates the
 // CRC before allocating records and returns the schema ID advertised by the batch.
 func DecodeLogBatchRows(schema Schema, encoded []byte, compacted bool) (LogBatch, error) {
-	if len(encoded) < 13 || len(encoded) > maxRowBytes {
-		return LogBatch{}, fmt.Errorf("%w: invalid log batch length", ErrMalformedRecordBatch)
-	}
-	magic := encoded[12]
-	headerSize := logBatchV0HeaderSize
-	if magic == 1 {
-		headerSize = logBatchV1HeaderSize
-	} else if magic != 0 {
-		return LogBatch{}, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, magic)
-	}
-	if len(encoded) < headerSize || int(binary.LittleEndian.Uint32(encoded[8:])) != len(encoded)-12 {
-		return LogBatch{}, fmt.Errorf("%w: invalid log batch size", ErrMalformedRecordBatch)
-	}
-	crcOffset, schemaOffset := 21, 25
-	if magic == 1 {
-		crcOffset, schemaOffset = 25, 29
-	}
-	if binary.LittleEndian.Uint32(encoded[crcOffset:]) != crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli)) {
-		return LogBatch{}, fmt.Errorf("%w: invalid log batch checksum", ErrMalformedRecordBatch)
+	magic, headerSize, schemaOffset, err := logBatchHeader(encoded)
+	if err != nil {
+		return LogBatch{}, err
 	}
 	lastOffset := schemaOffset + 3
 	count := int(binary.LittleEndian.Uint32(encoded[lastOffset+16:]))
@@ -206,34 +198,70 @@ func DecodeLogBatchRows(schema Schema, encoded []byte, compacted bool) (LogBatch
 	}
 	position := headerSize
 	for index := 0; index < count; index++ {
-		if len(encoded)-position < 5 {
-			return LogBatch{}, fmt.Errorf("%w: truncated log record", ErrMalformedRecordBatch)
-		}
-		length := int(binary.LittleEndian.Uint32(encoded[position:]))
-		position += 4
-		if length < 1 || length > len(encoded)-position {
-			return LogBatch{}, fmt.Errorf("%w: invalid log record length", ErrMalformedRecordBatch)
-		}
-		change := ChangeType(encoded[position])
-		if err := change.Validate(); err != nil {
-			return LogBatch{}, fmt.Errorf("%w: invalid log change type", ErrMalformedRecordBatch)
-		}
-		bodyEnd := position + length
-		var row Row
-		var err error
-		if compacted {
-			row, err = DecodeCompactedRow(schema, encoded[position+1:bodyEnd])
-		} else {
-			row, err = DecodeIndexedRow(schema, encoded[position+1:bodyEnd])
-		}
+		record, next, err := decodeLogRecord(schema, batch, encoded, position, index, compacted)
 		if err != nil {
 			return LogBatch{}, err
 		}
-		batch.Records = append(batch.Records, Record{Value: row, Change: change, Offset: batch.BaseOffset + int64(index), Timestamp: time.UnixMilli(batch.CommitTime)})
-		position = bodyEnd
+		batch.Records = append(batch.Records, record)
+		position = next
 	}
 	if position != len(encoded) {
 		return LogBatch{}, fmt.Errorf("%w: trailing log bytes", ErrMalformedRecordBatch)
 	}
 	return batch, nil
+}
+
+func logBatchHeader(encoded []byte) (byte, int, int, error) {
+	if len(encoded) < 13 || len(encoded) > maxRowBytes {
+		return 0, 0, 0, fmt.Errorf("%w: invalid log batch length", ErrMalformedRecordBatch)
+	}
+	magic := encoded[12]
+	headerSize, crcOffset, schemaOffset := logBatchV0HeaderSize, 21, 25
+	if magic == 1 {
+		headerSize, crcOffset, schemaOffset = logBatchV1HeaderSize, 25, 29
+	} else if magic != 0 {
+		return 0, 0, 0, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, magic)
+	}
+	if len(encoded) < headerSize || int(binary.LittleEndian.Uint32(encoded[8:])) != len(encoded)-12 {
+		return 0, 0, 0, fmt.Errorf("%w: invalid log batch size", ErrMalformedRecordBatch)
+	}
+	checksum := crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli))
+	if binary.LittleEndian.Uint32(encoded[crcOffset:]) != checksum {
+		return 0, 0, 0, fmt.Errorf("%w: invalid log batch checksum", ErrMalformedRecordBatch)
+	}
+	return magic, headerSize, schemaOffset, nil
+}
+
+func decodeLogRecord(
+	schema Schema,
+	batch LogBatch,
+	encoded []byte,
+	position, index int,
+	compacted bool,
+) (Record, int, error) {
+	if len(encoded)-position < 5 {
+		return Record{}, position, fmt.Errorf("%w: truncated log record", ErrMalformedRecordBatch)
+	}
+	length := int(binary.LittleEndian.Uint32(encoded[position:]))
+	position += 4
+	if length < 1 || length > len(encoded)-position {
+		return Record{}, position, fmt.Errorf("%w: invalid log record length", ErrMalformedRecordBatch)
+	}
+	change := ChangeType(encoded[position])
+	if err := change.Validate(); err != nil {
+		return Record{}, position, fmt.Errorf("%w: invalid log change type", ErrMalformedRecordBatch)
+	}
+	bodyEnd := position + length
+	var row Row
+	var err error
+	if compacted {
+		row, err = DecodeCompactedRow(schema, encoded[position+1:bodyEnd])
+	} else {
+		row, err = DecodeIndexedRow(schema, encoded[position+1:bodyEnd])
+	}
+	record := Record{
+		Value: row, Change: change, Offset: batch.BaseOffset + int64(index),
+		Timestamp: time.UnixMilli(batch.CommitTime),
+	}
+	return record, bodyEnd, err
 }

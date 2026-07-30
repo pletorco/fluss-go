@@ -412,21 +412,9 @@ func (c *Client) RegisterProducerOffsets(
 	message := request.Message().(*fmsg.RegisterProducerOffsetsRequest)
 	message.ProducerId, message.TtlMs = proto.String(producerID), proto.Int64(ttl.Milliseconds())
 	for _, table := range tables {
-		if table.TableID < 0 || len(table.Offsets) == 0 {
-			return false, fmt.Errorf("%w: invalid producer table offsets", fgo.ErrInvalidConfig)
-		}
-		item := &fmsg.PbProducerTableOffsets{TableId: proto.Int64(table.TableID)}
-		for _, offset := range table.Offsets {
-			if offset.Bucket < 0 || offset.Offset < 0 || offset.PartitionID < -1 {
-				return false, fmt.Errorf("%w: invalid producer bucket offset", fgo.ErrInvalidConfig)
-			}
-			pbOffset := &fmsg.PbBucketOffset{
-				BucketId: proto.Int32(offset.Bucket), LogEndOffset: proto.Int64(offset.Offset),
-			}
-			if offset.PartitionID >= 0 {
-				pbOffset.PartitionId = proto.Int64(offset.PartitionID)
-			}
-			item.BucketOffsets = append(item.BucketOffsets, pbOffset)
+		item, err := producerTableOffsetsMessage(table)
+		if err != nil {
+			return false, err
 		}
 		message.TableOffsets = append(message.TableOffsets, item)
 	}
@@ -439,6 +427,26 @@ func (c *Client) RegisterProducerOffsets(
 		return false, unexpected("register producer offsets", response)
 	}
 	return registered.GetResult() == 0, nil
+}
+
+func producerTableOffsetsMessage(table ProducerTableOffsets) (*fmsg.PbProducerTableOffsets, error) {
+	if table.TableID < 0 || len(table.Offsets) == 0 {
+		return nil, fmt.Errorf("%w: invalid producer table offsets", fgo.ErrInvalidConfig)
+	}
+	item := &fmsg.PbProducerTableOffsets{TableId: proto.Int64(table.TableID)}
+	for _, offset := range table.Offsets {
+		if offset.Bucket < 0 || offset.Offset < 0 || offset.PartitionID < -1 {
+			return nil, fmt.Errorf("%w: invalid producer bucket offset", fgo.ErrInvalidConfig)
+		}
+		pbOffset := &fmsg.PbBucketOffset{
+			BucketId: proto.Int32(offset.Bucket), LogEndOffset: proto.Int64(offset.Offset),
+		}
+		if offset.PartitionID >= 0 {
+			pbOffset.PartitionId = proto.Int64(offset.PartitionID)
+		}
+		item.BucketOffsets = append(item.BucketOffsets, pbOffset)
+	}
+	return item, nil
 }
 
 func (c *Client) GetProducerOffsets(ctx context.Context, producerID string) (ProducerOffsets, error) {
