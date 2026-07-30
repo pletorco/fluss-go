@@ -67,6 +67,22 @@ func serverError(err error, api fmsg.APIKey, endpoint string) error {
 	}
 }
 
+func responseServerError(code int32, message string, api fmsg.APIKey) error {
+	if code == int32(fmsg.ErrorCodeNone) {
+		return nil
+	}
+	metadata, known := fmsg.LookupErrorCode(code)
+	name := "UNKNOWN_FUTURE_ERROR"
+	typedCode := fmsg.ErrorCode(code)
+	if known {
+		name, typedCode = metadata.Name, metadata.Code
+	}
+	return &ServerError{
+		Code: typedCode, Name: name, Message: message, API: api,
+		Retriable: known && retriableErrorCode(typedCode), category: errorCategory(typedCode),
+	}
+}
+
 func errorCategory(code fmsg.ErrorCode) error {
 	switch code {
 	case fmsg.ErrorCodeAuthenticateException, fmsg.ErrorCodeRetriableAuthenticateException:

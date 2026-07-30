@@ -206,16 +206,8 @@ func (b clientLogWriterBackend) produce(
 		return 0, fmt.Errorf("%w: produce response omitted bucket %d", ErrValidation, bucket)
 	}
 	result := produced.GetBucketsResp()[0]
-	if code := fmsg.ErrorCode(result.GetErrorCode()); code != fmsg.ErrorCodeNone {
-		metadata, known := fmsg.LookupErrorCode(int32(code))
-		name := "UNKNOWN_FUTURE_ERROR"
-		if known {
-			name = metadata.Name
-		}
-		return 0, &ServerError{
-			Code: code, Name: name, Message: result.GetErrorMessage(), API: fmsg.APIKeyProduceLog,
-			Retriable: known && retriableErrorCode(code), category: errorCategory(code),
-		}
+	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyProduceLog); err != nil {
+		return 0, err
 	}
 	return result.GetBaseOffset(), nil
 }

@@ -28,7 +28,8 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Arrow schema and record batches | Supported | Full Fluss logical schema conversion plus v0/v1 Arrow log batches with NONE, LZ4, and ZSTD IPC compression; decoded records use explicit `Release` ownership. |
 | Row, key, KV and log record-batch codecs | Supported | Compacted/indexed rows, nested values, projected rows, v0/v1 lookup keys, KV batches, and row/Arrow log batches are covered by pinned Java 0.9.1 fixtures. |
 | Log append writers | Supported | `LogWriter` provides schema-aware row and explicit-bucket Arrow appends, Fluss hash/sticky/round-robin assignment, bounded per-bucket batching, idempotent sequences, partial results, `Flush`, and `Close`. |
-| Scanners, upserts and lookups | Planned | These user operations are tracked in [#11](https://github.com/pletorco/fluss-go/issues/11), [#12](https://github.com/pletorco/fluss-go/issues/12), and [#13](https://github.com/pletorco/fluss-go/issues/13). |
+| Log scanners | Supported | `LogScanner` provides explicit/earliest/latest/timestamp subscriptions, projection pushdown, ordered row and Arrow polling, partial bucket errors, and cancellation-aware lifecycle management. |
+| Upserts and lookups | Planned | These user operations are tracked in [#12](https://github.com/pletorco/fluss-go/issues/12) and [#13](https://github.com/pletorco/fluss-go/issues/13). |
 | `fadm` administrative client | Planned | No `pkg/fadm` package is published. Core and advanced administrative APIs are tracked in [#14](https://github.com/pletorco/fluss-go/issues/14) and [#15](https://github.com/pletorco/fluss-go/issues/15). |
 | Live Fluss 0.9.1 compatibility | Not yet verified | Unit, golden, and race tests run in `task verify`; the opt-in live integration harness is tracked in [#27](https://github.com/pletorco/fluss-go/issues/27). Do not infer production compatibility from generated protocol types alone. |
 

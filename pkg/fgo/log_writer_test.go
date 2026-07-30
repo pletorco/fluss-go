@@ -124,7 +124,7 @@ func TestLogWriterBatchesRowsAndAdvancesSequences(t *testing.T) {
 	backend := logBackend(0)
 	writer, err := newLogWriter(
 		context.Background(), backend, logWriterTable(),
-		WithLogBatchLimits(1<<20, 2), WithLogLinger(time.Hour), WithLogRequest(time.Second, 1),
+		WithLogBatchLimits(1<<20, 2), WithLogBuffer(8), WithLogLinger(time.Hour), WithLogRequest(time.Second, 1),
 	)
 	if err != nil {
 		t.Fatal(err)
