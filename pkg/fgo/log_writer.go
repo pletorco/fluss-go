@@ -15,18 +15,24 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ErrWriterState reports that cancellation or transport failure left the
+// server outcome of a mutation unknown.
 var ErrWriterState = errors.New("fgo: writer state is uncertain")
 
+// BucketAssignment selects how unkeyed log rows are routed to buckets.
 type BucketAssignment string
 
+// Bucket assignment strategies supported by [LogWriter].
 const (
 	AssignmentAuto       BucketAssignment = "auto"
 	AssignmentSticky     BucketAssignment = "sticky"
 	AssignmentRoundRobin BucketAssignment = "round-robin"
 )
 
+// LogWriteFormat selects the row or Arrow encoding used for log batches.
 type LogWriteFormat string
 
+// Log write formats supported by Apache Fluss 0.9.1.
 const (
 	LogWriteFormatAuto      LogWriteFormat = "auto"
 	LogWriteFormatArrow     LogWriteFormat = "arrow"
@@ -34,6 +40,8 @@ const (
 	LogWriteFormatCompacted LogWriteFormat = "compacted"
 )
 
+// LogWriterConfig controls batching, buffering, acknowledgements, routing, and
+// encoding for a log writer.
 type LogWriterConfig struct {
 	MaxBatchBytes    int
 	MaxBatchRecords  int
@@ -49,8 +57,10 @@ type LogWriterConfig struct {
 	arrowCompressionSet bool
 }
 
+// LogWriterOption configures a [LogWriter].
 type LogWriterOption func(*LogWriterConfig) error
 
+// WithLogBatchLimits sets maximum encoded bytes and records in one request.
 func WithLogBatchLimits(bytes, records int) LogWriterOption {
 	return func(config *LogWriterConfig) error {
 		if bytes <= logBatchV0HeaderSize || bytes > maxRowBytes || records <= 0 {
@@ -61,6 +71,7 @@ func WithLogBatchLimits(bytes, records int) LogWriterOption {
 	}
 }
 
+// WithLogBuffer bounds the number of queued records awaiting completion.
 func WithLogBuffer(records int) LogWriterOption {
 	return func(config *LogWriterConfig) error {
 		if records <= 0 {
@@ -71,6 +82,7 @@ func WithLogBuffer(records int) LogWriterOption {
 	}
 }
 
+// WithLogLinger sets the maximum delay used to collect a non-full batch.
 func WithLogLinger(linger time.Duration) LogWriterOption {
 	return func(config *LogWriterConfig) error {
 		if linger < 0 {
@@ -81,6 +93,7 @@ func WithLogLinger(linger time.Duration) LogWriterOption {
 	}
 }
 
+// WithLogRequest sets the server timeout and acknowledgement mode.
 func WithLogRequest(timeout time.Duration, acks int32) LogWriterOption {
 	return func(config *LogWriterConfig) error {
 		if timeout <= 0 || (acks != 0 && acks != 1 && acks != -1) {
@@ -91,6 +104,7 @@ func WithLogRequest(timeout time.Duration, acks int32) LogWriterOption {
 	}
 }
 
+// WithLogBucketAssignment selects routing for rows without a key.
 func WithLogBucketAssignment(assignment BucketAssignment) LogWriterOption {
 	return func(config *LogWriterConfig) error {
 		switch assignment {
@@ -103,6 +117,7 @@ func WithLogBucketAssignment(assignment BucketAssignment) LogWriterOption {
 	}
 }
 
+// WithLogPartition routes writes to the named physical partition.
 func WithLogPartition(partition string) LogWriterOption {
 	return func(config *LogWriterConfig) error {
 		path := PhysicalTablePath{TablePath: TablePath{Database: "d", Table: "t"}, Partition: partition}
@@ -153,6 +168,7 @@ func WithLogArrowCompression(compression ArrowCompression) LogWriterOption {
 	}
 }
 
+// WriteResult is the terminal outcome of one queued mutation.
 type WriteResult struct {
 	Bucket     int32
 	BaseOffset int64
@@ -160,6 +176,8 @@ type WriteResult struct {
 	Err        error
 }
 
+// WriteFuture represents one queued mutation.
+// Await may be called concurrently and does not consume the result.
 type WriteFuture struct {
 	done chan struct{}
 	once sync.Once
@@ -175,6 +193,8 @@ func (f *WriteFuture) complete(result WriteResult) {
 	})
 }
 
+// Await waits for the mutation result or ctx cancellation.
+// Cancellation stops waiting but does not cancel a mutation already in flight.
 func (f *WriteFuture) Await(ctx context.Context) WriteResult {
 	if f == nil {
 		return WriteResult{Err: fmt.Errorf("%w: nil write future", ErrInvalidConfig)}
@@ -277,6 +297,8 @@ func (b clientLogWriterBackend) produce(
 	return result.GetBaseOffset(), nil
 }
 
+// LogWriter batches append operations for a log table.
+// It owns one background scheduler and must be closed after use.
 type LogWriter struct {
 	table       Table
 	path        PhysicalTablePath
@@ -327,6 +349,7 @@ type logWriterLoop struct {
 	timerC    <-chan time.Time
 }
 
+// NewLogWriter creates an append writer for a log table.
 func (c *Client) NewLogWriter(ctx context.Context, table Table, options ...LogWriterOption) (*LogWriter, error) {
 	writer, err := newLogWriter(ctx, clientLogWriterBackend{client: c}, table, options...)
 	if err == nil {
@@ -534,6 +557,7 @@ func (w *LogWriter) enqueue(ctx context.Context, item *pendingWrite) {
 	}
 }
 
+// Flush waits until every previously accepted append reaches a terminal result.
 func (w *LogWriter) Flush(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
@@ -559,6 +583,8 @@ func (w *LogWriter) Flush(ctx context.Context) error {
 	}
 }
 
+// Close flushes accepted appends and stops the writer.
+// Close is idempotent.
 func (w *LogWriter) Close(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)

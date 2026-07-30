@@ -13,8 +13,10 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// ArrowCompression identifies the Arrow IPC compression codec.
 type ArrowCompression uint8
 
+// Arrow compression codecs supported by Apache Fluss 0.9.1.
 const (
 	ArrowCompressionNone ArrowCompression = iota
 	ArrowCompressionLZ4
@@ -53,6 +55,8 @@ func (b *ArrowLogBatch) Release() {
 	})
 }
 
+// EncodeArrowLogBatch encodes an Arrow-backed Fluss log batch.
+// The function borrows batch.Record only for the duration of the call.
 func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompression, allocator memory.Allocator) ([]byte, error) {
 	if batch.Magic != 0 && batch.Magic != 1 {
 		return nil, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, batch.Magic)
@@ -128,6 +132,8 @@ func writeArrowHeader(encoded []byte, batch ArrowLogBatch, count int) (int, int)
 	return crcOffset, schemaOffset
 }
 
+// DecodeArrowLogBatch decodes a Fluss Arrow log batch.
+// The caller owns the returned batch and must call [ArrowLogBatch.Release].
 func DecodeArrowLogBatch(schema *arrow.Schema, encoded []byte, allocator memory.Allocator) (*ArrowLogBatch, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("%w: nil Arrow schema", ErrInvalidSchema)

@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+// RemoteFileRequest describes one complete remote object read.
+// Token is a caller-owned clone and may be nil.
 type RemoteFileRequest struct {
 	Path         string
 	ExpectedSize int64
@@ -25,8 +27,10 @@ type RemoteFileReader interface {
 	ReadRemoteFile(context.Context, RemoteFileRequest) ([]byte, error)
 }
 
+// RemoteFileReaderFunc adapts a function to [RemoteFileReader].
 type RemoteFileReaderFunc func(context.Context, RemoteFileRequest) ([]byte, error)
 
+// ReadRemoteFile calls f with request.
 func (f RemoteFileReaderFunc) ReadRemoteFile(
 	ctx context.Context,
 	request RemoteFileRequest,
@@ -37,6 +41,7 @@ func (f RemoteFileReaderFunc) ReadRemoteFile(
 // LocalRemoteFileReader supports absolute paths and file:// URIs without an external dependency.
 type LocalRemoteFileReader struct{}
 
+// ReadRemoteFile reads an absolute local path or file URI.
 func (LocalRemoteFileReader) ReadRemoteFile(
 	ctx context.Context,
 	request RemoteFileRequest,
@@ -69,6 +74,8 @@ func (LocalRemoteFileReader) ReadRemoteFile(
 	return data, nil
 }
 
+// RemoteFileReadConfig bounds retries, backoff, and object size.
+// Zero fields use documented defaults.
 type RemoteFileReadConfig struct {
 	MaxAttempts  int
 	RetryBackoff time.Duration
@@ -112,21 +119,25 @@ type remoteFileSettings struct {
 	config RemoteFileReadConfig
 }
 
+// RemoteSnapshotFile describes a snapshot object before and after download.
 type RemoteSnapshotFile struct {
 	Path string
 	Size int64
 	Data []byte
 }
 
+// RemoteSnapshotResolver discovers immutable objects for one snapshot request.
 type RemoteSnapshotResolver interface {
 	ResolveSnapshotFiles(context.Context, SnapshotBatchRequest) ([]RemoteSnapshotFile, error)
 }
 
+// RemoteSnapshotResolverFunc adapts a function to [RemoteSnapshotResolver].
 type RemoteSnapshotResolverFunc func(
 	context.Context,
 	SnapshotBatchRequest,
 ) ([]RemoteSnapshotFile, error)
 
+// ResolveSnapshotFiles calls f with request.
 func (f RemoteSnapshotResolverFunc) ResolveSnapshotFiles(
 	ctx context.Context,
 	request SnapshotBatchRequest,
@@ -134,16 +145,20 @@ func (f RemoteSnapshotResolverFunc) ResolveSnapshotFiles(
 	return f(ctx, request)
 }
 
+// RemoteSnapshotDecoder opens downloaded snapshot objects in a storage-specific
+// format.
 type RemoteSnapshotDecoder interface {
 	OpenSnapshotFiles(context.Context, SnapshotBatchRequest, []RemoteSnapshotFile) (SnapshotBatchReader, error)
 }
 
+// RemoteSnapshotDecoderFunc adapts a function to [RemoteSnapshotDecoder].
 type RemoteSnapshotDecoderFunc func(
 	context.Context,
 	SnapshotBatchRequest,
 	[]RemoteSnapshotFile,
 ) (SnapshotBatchReader, error)
 
+// OpenSnapshotFiles calls f with the downloaded files.
 func (f RemoteSnapshotDecoderFunc) OpenSnapshotFiles(
 	ctx context.Context,
 	request SnapshotBatchRequest,
@@ -152,6 +167,7 @@ func (f RemoteSnapshotDecoderFunc) OpenSnapshotFiles(
 	return f(ctx, request, files)
 }
 
+// FileSystemSecurityTokenSource returns a cloned current token when available.
 type FileSystemSecurityTokenSource func() (FileSystemSecurityToken, bool)
 
 // RemoteSnapshotBatchProvider composes snapshot metadata and format adapters with the shared
@@ -164,6 +180,8 @@ type RemoteSnapshotBatchProvider struct {
 	observer    MetricsObserver
 }
 
+// NewRemoteSnapshotBatchProvider composes object discovery, bounded downloads,
+// and format-specific decoding.
 func NewRemoteSnapshotBatchProvider(
 	reader RemoteFileReader,
 	settings RemoteFileReadConfig,
@@ -185,6 +203,7 @@ func NewRemoteSnapshotBatchProvider(
 	}, nil
 }
 
+// OpenSnapshot downloads and opens the requested immutable snapshot.
 func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 	ctx context.Context,
 	request SnapshotBatchRequest,
@@ -222,6 +241,7 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 	return p.decoder.OpenSnapshotFiles(ctx, request, downloaded)
 }
 
+// RemoteLogSegment describes one immutable remote log object and offset range.
 type RemoteLogSegment struct {
 	ID          string
 	StartOffset int64
@@ -230,6 +250,7 @@ type RemoteLogSegment struct {
 	MaxTime     time.Time
 }
 
+// RemoteLogFetchInfo describes remote segments referenced by a fetch response.
 type RemoteLogFetchInfo struct {
 	TabletDirectory    string
 	PartitionName      string

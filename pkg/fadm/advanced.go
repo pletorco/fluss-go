@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ACL describes one Fluss access-control entry.
 type ACL struct {
 	ResourceName  string
 	ResourceType  int32
@@ -37,6 +38,8 @@ func (a ACL) message() *fmsg.PbAclInfo {
 	}
 }
 
+// ACLFilter selects access-control entries.
+// Nil pointer fields act as wildcards.
 type ACLFilter struct {
 	ResourceName  *string
 	ResourceType  int32
@@ -62,11 +65,13 @@ func (f ACLFilter) message() *fmsg.PbAclFilter {
 	}
 }
 
+// ACLResult associates one ACL with its server-side result.
 type ACLResult struct {
 	ACL ACL
 	Err error
 }
 
+// CreateACLs creates entries and returns one result per input ACL.
 func (c *Client) CreateACLs(ctx context.Context, acls ...ACL) ([]ACLResult, error) {
 	if len(acls) == 0 {
 		return nil, fmt.Errorf("%w: no ACLs", fgo.ErrInvalidConfig)
@@ -103,6 +108,7 @@ func (c *Client) CreateACLs(ctx context.Context, acls ...ACL) ([]ACLResult, erro
 	return results, nil
 }
 
+// ListACLs returns entries matching filter.
 func (c *Client) ListACLs(ctx context.Context, filter ACLFilter) ([]ACL, error) {
 	if err := filter.validate(); err != nil {
 		return nil, err
@@ -127,12 +133,14 @@ func (c *Client) ListACLs(ctx context.Context, filter ACLFilter) ([]ACL, error) 
 	return acls, nil
 }
 
+// DropACLResult contains matches and errors for one requested filter.
 type DropACLResult struct {
 	Filter  ACLFilter
 	Matches []ACLResult
 	Err     error
 }
 
+// DropACLs removes entries and returns one result per input filter.
 func (c *Client) DropACLs(ctx context.Context, filters ...ACLFilter) ([]DropACLResult, error) {
 	if len(filters) == 0 {
 		return nil, fmt.Errorf("%w: no ACL filters", fgo.ErrInvalidConfig)
@@ -181,10 +189,12 @@ func aclFromMessage(acl *fmsg.PbAclInfo) ACL {
 	}
 }
 
+// ClusterConfig is one effective cluster configuration value and its source.
 type ClusterConfig struct {
 	Key, Value, Source string
 }
 
+// DescribeClusterConfigs returns effective cluster configuration values.
 func (c *Client) DescribeClusterConfigs(ctx context.Context) ([]ClusterConfig, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyDescribeClusterConfigs, 0)
 	if err != nil {
@@ -207,6 +217,7 @@ func (c *Client) DescribeClusterConfigs(ctx context.Context) ([]ClusterConfig, e
 	return configs, nil
 }
 
+// AlterClusterConfigs applies configuration changes as one request.
 func (c *Client) AlterClusterConfigs(ctx context.Context, changes ...ConfigChange) error {
 	if len(changes) == 0 {
 		return fmt.Errorf("%w: no cluster config changes", fgo.ErrInvalidConfig)
@@ -230,10 +241,12 @@ func (c *Client) AlterClusterConfigs(ctx context.Context, changes ...ConfigChang
 	return err
 }
 
+// AddServerTag adds tag to each server ID.
 func (c *Client) AddServerTag(ctx context.Context, serverIDs []int32, tag int32) error {
 	return c.changeServerTag(ctx, fmsg.APIKeyAddServerTag, serverIDs, tag)
 }
 
+// RemoveServerTag removes tag from each server ID.
 func (c *Client) RemoveServerTag(ctx context.Context, serverIDs []int32, tag int32) error {
 	return c.changeServerTag(ctx, fmsg.APIKeyRemoveServerTag, serverIDs, tag)
 }
@@ -263,17 +276,20 @@ func (c *Client) changeServerTag(ctx context.Context, key fmsg.APIKey, serverIDs
 	return err
 }
 
+// RebalanceProgress is the current state of one rebalance operation.
 type RebalanceProgress struct {
 	ID     string
 	Status int32
 	Tables []RebalanceTableProgress
 }
 
+// RebalanceTableProgress groups bucket progress for one physical table.
 type RebalanceTableProgress struct {
 	TableID int64
 	Buckets []RebalanceBucketProgress
 }
 
+// RebalanceBucketProgress describes one bucket move.
 type RebalanceBucketProgress struct {
 	PartitionID               int64
 	Bucket                    int32
@@ -283,6 +299,7 @@ type RebalanceBucketProgress struct {
 	NewReplicas               []int32
 }
 
+// StartRebalance starts an asynchronous rebalance and returns its ID.
 func (c *Client) StartRebalance(ctx context.Context, goals ...int32) (string, error) {
 	if len(goals) == 0 {
 		return "", fmt.Errorf("%w: no rebalance goals", fgo.ErrInvalidConfig)
@@ -306,6 +323,7 @@ func (c *Client) StartRebalance(ctx context.Context, goals ...int32) (string, er
 	return message.GetRebalanceId(), nil
 }
 
+// RebalanceProgress returns the latest state for id.
 func (c *Client) RebalanceProgress(ctx context.Context, id string) (RebalanceProgress, error) {
 	if id == "" {
 		return RebalanceProgress{}, fmt.Errorf("%w: rebalance ID is required", fgo.ErrInvalidConfig)
@@ -366,6 +384,7 @@ func (c *Client) WaitRebalance(ctx context.Context, id string, interval time.Dur
 	}
 }
 
+// CancelRebalance requests cancellation of id.
 func (c *Client) CancelRebalance(ctx context.Context, id string) error {
 	if id == "" {
 		return fmt.Errorf("%w: rebalance ID is required", fgo.ErrInvalidConfig)
@@ -379,23 +398,27 @@ func (c *Client) CancelRebalance(ctx context.Context, id string) error {
 	return err
 }
 
+// ProducerBucketOffset is one producer offset for a table bucket.
 type ProducerBucketOffset struct {
 	PartitionID int64
 	Bucket      int32
 	Offset      int64
 }
 
+// ProducerTableOffsets groups producer offsets for one physical table.
 type ProducerTableOffsets struct {
 	TableID int64
 	Offsets []ProducerBucketOffset
 }
 
+// ProducerOffsets contains all registered offsets and their expiration.
 type ProducerOffsets struct {
 	ProducerID string
 	ExpiresAt  time.Time
 	Tables     []ProducerTableOffsets
 }
 
+// RegisterProducerOffsets creates or replaces offsets for producerID.
 func (c *Client) RegisterProducerOffsets(
 	ctx context.Context,
 	producerID string,
@@ -449,6 +472,7 @@ func producerTableOffsetsMessage(table ProducerTableOffsets) (*fmsg.PbProducerTa
 	return item, nil
 }
 
+// GetProducerOffsets returns registered offsets for producerID.
 func (c *Client) GetProducerOffsets(ctx context.Context, producerID string) (ProducerOffsets, error) {
 	if producerID == "" {
 		return ProducerOffsets{}, fmt.Errorf("%w: producer ID is required", fgo.ErrInvalidConfig)
@@ -471,6 +495,7 @@ func (c *Client) GetProducerOffsets(ctx context.Context, producerID string) (Pro
 	return result, nil
 }
 
+// DeleteProducerOffsets removes registered offsets for producerID.
 func (c *Client) DeleteProducerOffsets(ctx context.Context, producerID string) error {
 	if producerID == "" {
 		return fmt.Errorf("%w: producer ID is required", fgo.ErrInvalidConfig)
@@ -501,6 +526,7 @@ func producerOffsetsFromMessage(tables []*fmsg.PbProducerTableOffsets) []Produce
 	return result
 }
 
+// KVSnapshot identifies the latest available state for one bucket.
 type KVSnapshot struct {
 	Bucket     int32
 	SnapshotID int64
@@ -508,11 +534,13 @@ type KVSnapshot struct {
 	Available  bool
 }
 
+// LatestKVSnapshot groups latest snapshot metadata by table partition.
 type LatestKVSnapshot struct {
 	TableID, PartitionID int64
 	Snapshots            []KVSnapshot
 }
 
+// LatestKVSnapshots returns current primary-key snapshot IDs and offsets.
 func (c *Client) LatestKVSnapshots(
 	ctx context.Context,
 	path fgo.TablePath,
@@ -551,13 +579,16 @@ func (c *Client) LatestKVSnapshots(
 	return result, nil
 }
 
+// SnapshotFile maps one remote object to its local snapshot name.
 type SnapshotFile struct{ RemotePath, LocalName string }
 
+// KVSnapshotMetadata contains immutable files for one primary-key snapshot.
 type KVSnapshotMetadata struct {
 	LogOffset int64
 	Files     []SnapshotFile
 }
 
+// KVSnapshotMetadata returns immutable file metadata for one snapshot.
 func (c *Client) KVSnapshotMetadata(
 	ctx context.Context,
 	tableID, partitionID int64,
@@ -593,6 +624,7 @@ func (c *Client) KVSnapshotMetadata(
 	return result, nil
 }
 
+// SnapshotLease identifies one bucket snapshot protected by a lease.
 type SnapshotLease struct {
 	TableID, PartitionID int64
 	Bucket               int32
@@ -633,6 +665,7 @@ func (c *Client) AcquireKVSnapshotLease(
 	return leasesFromMessage(acquired.GetUnavailableSnapshots()), nil
 }
 
+// ReleaseKVSnapshotLease releases selected buckets from leaseID.
 func (c *Client) ReleaseKVSnapshotLease(ctx context.Context, leaseID string, buckets []fgo.TableBucket) error {
 	if leaseID == "" || len(buckets) == 0 {
 		return fmt.Errorf("%w: lease ID and buckets are required", fgo.ErrInvalidConfig)
@@ -657,6 +690,7 @@ func (c *Client) ReleaseKVSnapshotLease(ctx context.Context, leaseID string, buc
 	return err
 }
 
+// DropKVSnapshotLease releases every bucket held by leaseID.
 func (c *Client) DropKVSnapshotLease(ctx context.Context, leaseID string) error {
 	if leaseID == "" {
 		return fmt.Errorf("%w: lease ID is required", fgo.ErrInvalidConfig)
@@ -715,8 +749,10 @@ func leasesFromMessage(tables []*fmsg.PbKvSnapshotLeaseForTable) []SnapshotLease
 	return result
 }
 
+// FileSystemSecurityToken is the shared redacting token representation.
 type FileSystemSecurityToken = fgo.FileSystemSecurityToken
 
+// FileSystemSecurityToken requests temporary filesystem credentials.
 func (c *Client) FileSystemSecurityToken(ctx context.Context) (FileSystemSecurityToken, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyGetFilesystemSecurityToken, 0)
 	if err != nil {
@@ -740,6 +776,7 @@ func (c *Client) FileSystemSecurityToken(ctx context.Context) (FileSystemSecurit
 	return result, nil
 }
 
+// LakeBucketSnapshot describes one bucket included in a lake snapshot.
 type LakeBucketSnapshot struct {
 	PartitionID   int64
 	PartitionName string
@@ -747,11 +784,13 @@ type LakeBucketSnapshot struct {
 	LogOffset     int64
 }
 
+// LakeSnapshot contains the server-selected lake snapshot state.
 type LakeSnapshot struct {
 	TableID, SnapshotID int64
 	Buckets             []LakeBucketSnapshot
 }
 
+// LakeSnapshot returns a requested or latest readable lake snapshot.
 func (c *Client) LakeSnapshot(
 	ctx context.Context,
 	path fgo.TablePath,
@@ -795,6 +834,7 @@ func (c *Client) LakeSnapshot(
 	return result, nil
 }
 
+// TableStats is the table and log size result for one bucket.
 type TableStats struct {
 	Bucket      int32
 	RowCount    int64
@@ -802,6 +842,7 @@ type TableStats struct {
 	Err         error
 }
 
+// TableStats returns one independent result per requested bucket.
 func (c *Client) TableStats(
 	ctx context.Context,
 	table fgo.Table,

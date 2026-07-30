@@ -6,11 +6,13 @@ import (
 	"time"
 )
 
+// PhysicalTablePath identifies a logical table and optional named partition.
 type PhysicalTablePath struct {
 	TablePath
 	Partition string
 }
 
+// Validate checks the logical path and optional partition name.
 func (p PhysicalTablePath) Validate() error {
 	if err := p.TablePath.Validate(); err != nil {
 		return err
@@ -28,12 +30,14 @@ func (p PhysicalTablePath) String() string {
 	return p.TablePath.String() + "(p=" + p.Partition + ")"
 }
 
+// TableInfo combines table identity, schema identity, and table metadata.
 type TableInfo struct {
 	ID       int64
 	Table    Table
 	SchemaID int64
 }
 
+// TableBucket is a resolved bucket and its current tablet leader.
 type TableBucket struct {
 	TableID     int64
 	PartitionID int64
@@ -41,6 +45,7 @@ type TableBucket struct {
 	Leader      Node
 }
 
+// Validate checks IDs and leader metadata.
 func (b TableBucket) Validate() error {
 	if b.TableID < 0 || b.PartitionID < -1 || b.BucketID < 0 || b.Leader.Address == "" || b.Leader.Role != TabletServer {
 		return fmt.Errorf("%w: invalid table bucket", ErrInvalidConfig)
@@ -48,8 +53,10 @@ func (b TableBucket) Validate() error {
 	return nil
 }
 
+// NamedRow maps every schema column name to one value.
 type NamedRow map[string]any
 
+// RowFromNamed validates a named row and returns values in schema order.
 func (s Schema) RowFromNamed(row NamedRow) (Row, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -71,14 +78,18 @@ func (s Schema) RowFromNamed(row NamedRow) (Row, error) {
 	return values, nil
 }
 
+// PrimaryKey stores key values in schema primary-key order.
 type PrimaryKey Row
 
+// ValidatePrimaryKey checks key values against primary-key columns.
 func (s Schema) ValidatePrimaryKey(key PrimaryKey) error {
 	return s.ValidateRow(Row(key), s.PrimaryKey)
 }
 
+// ChangeType identifies the row-level change carried by a log record.
 type ChangeType int8
 
+// Change types encoded by Apache Fluss 0.9.1.
 const (
 	Append ChangeType = iota
 	Insert
@@ -90,6 +101,7 @@ const (
 	Upsert = UpdateAfter
 )
 
+// Validate reports an error for an unsupported change type.
 func (c ChangeType) Validate() error {
 	if c < Append || c > Delete {
 		return fmt.Errorf("%w: invalid change type", ErrInvalidRow)
@@ -97,6 +109,7 @@ func (c ChangeType) Validate() error {
 	return nil
 }
 
+// Record is one keyed or unkeyed row change and its log metadata.
 type Record struct {
 	Key       PrimaryKey
 	Value     Row
@@ -105,6 +118,7 @@ type Record struct {
 	Offset    int64
 }
 
+// Validate checks the change, offset, key, and value against schema.
 func (r Record) Validate(schema Schema) error {
 	if err := r.Change.Validate(); err != nil {
 		return err
@@ -121,11 +135,13 @@ func (r Record) Validate(schema Schema) error {
 	return nil
 }
 
+// OffsetSpec selects an explicit offset or timestamp lookup.
 type OffsetSpec struct {
 	Offset    int64
 	Timestamp time.Time
 }
 
+// Validate checks offset range and timestamp exclusivity.
 func (o OffsetSpec) Validate() error {
 	if o.Offset < -1 {
 		return fmt.Errorf("%w: invalid offset", ErrInvalidConfig)

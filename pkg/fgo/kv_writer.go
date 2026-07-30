@@ -14,6 +14,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// KVWriterConfig controls batching, buffering, acknowledgements, partition
+// routing, and merge behavior for a primary-key writer.
 type KVWriterConfig struct {
 	MaxBatchBytes   int
 	MaxBatchRecords int
@@ -25,13 +27,16 @@ type KVWriterConfig struct {
 	MergeMode       MergeMode
 }
 
+// KVWriterOption configures a [KVWriter].
 type KVWriterOption func(*KVWriterConfig) error
 
 // MergeMode controls whether Fluss applies or bypasses a table's merge engine.
 type MergeMode int32
 
 const (
-	MergeModeDefault   MergeMode = 0
+	// MergeModeDefault applies the table's configured merge engine.
+	MergeModeDefault MergeMode = 0
+	// MergeModeOverwrite bypasses the merge engine and replaces stored values.
 	MergeModeOverwrite MergeMode = 1
 )
 
@@ -50,6 +55,7 @@ func WithKVMergeMode(mode MergeMode) KVWriterOption {
 	}
 }
 
+// WithKVBatchLimits sets maximum encoded bytes and records in one request.
 func WithKVBatchLimits(bytes, records int) KVWriterOption {
 	return func(config *KVWriterConfig) error {
 		if bytes <= kvBatchHeaderSize || bytes > maxRowBytes || records <= 0 {
@@ -60,6 +66,7 @@ func WithKVBatchLimits(bytes, records int) KVWriterOption {
 	}
 }
 
+// WithKVBuffer bounds the number of queued records awaiting completion.
 func WithKVBuffer(records int) KVWriterOption {
 	return func(config *KVWriterConfig) error {
 		if records <= 0 {
@@ -70,6 +77,7 @@ func WithKVBuffer(records int) KVWriterOption {
 	}
 }
 
+// WithKVLinger sets the maximum delay used to collect a non-full batch.
 func WithKVLinger(linger time.Duration) KVWriterOption {
 	return func(config *KVWriterConfig) error {
 		if linger < 0 {
@@ -80,6 +88,7 @@ func WithKVLinger(linger time.Duration) KVWriterOption {
 	}
 }
 
+// WithKVRequest sets the server timeout and acknowledgement mode.
 func WithKVRequest(timeout time.Duration, acks int32) KVWriterOption {
 	return func(config *KVWriterConfig) error {
 		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 ||
@@ -91,6 +100,7 @@ func WithKVRequest(timeout time.Duration, acks int32) KVWriterOption {
 	}
 }
 
+// WithKVPartition routes writes to the named physical partition.
 func WithKVPartition(partition string) KVWriterOption {
 	return func(config *KVWriterConfig) error {
 		path := PhysicalTablePath{TablePath: TablePath{Database: "d", Table: "t"}, Partition: partition}
@@ -187,6 +197,8 @@ func (b clientKVWriterBackend) put(
 	return result.GetLogEndOffset(), nil
 }
 
+// KVWriter batches primary-key upserts and deletes.
+// It owns one background scheduler and must be closed after use.
 type KVWriter struct {
 	table       Table
 	path        PhysicalTablePath
@@ -235,6 +247,7 @@ type kvWriterLoop struct {
 	timerC    <-chan time.Time
 }
 
+// NewKVWriter creates a primary-key writer for table.
 func (c *Client) NewKVWriter(ctx context.Context, table Table, options ...KVWriterOption) (*KVWriter, error) {
 	writer, err := newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
 	if err == nil {
@@ -334,6 +347,7 @@ func kvWriterConfig(options []KVWriterOption) (KVWriterConfig, error) {
 	return config, nil
 }
 
+// Upsert queues a complete primary-key row for insertion or update.
 func (w *KVWriter) Upsert(ctx context.Context, row Row) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil {
@@ -379,6 +393,7 @@ func (w *KVWriter) PartialUpsert(ctx context.Context, columns []string, values R
 	return future
 }
 
+// Delete queues removal of the row identified by key.
 func (w *KVWriter) Delete(ctx context.Context, key PrimaryKey) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil {
@@ -524,6 +539,8 @@ func (w *KVWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
 	}
 }
 
+// Flush waits until every previously accepted mutation reaches a terminal
+// result.
 func (w *KVWriter) Flush(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
@@ -549,6 +566,8 @@ func (w *KVWriter) Flush(ctx context.Context) error {
 	}
 }
 
+// Close flushes accepted mutations and stops the writer.
+// Close is idempotent.
 func (w *KVWriter) Close(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)

@@ -33,6 +33,7 @@ func (c CodecFuncs[T]) Decode(row Row) (T, error) {
 	return c.DecodeFunc(row)
 }
 
+// KeyCodec maps an application key to primary-key column order.
 type KeyCodec[K any] interface {
 	EncodeKey(K) (PrimaryKey, error)
 }
@@ -61,6 +62,7 @@ func validateTypedKeyCodec[K any](codec KeyCodec[K]) error {
 	return nil
 }
 
+// TypedLogWriter encodes application values before appending them.
 type TypedLogWriter[T any] struct {
 	writer *LogWriter
 	codec  Codec[T]
@@ -122,6 +124,8 @@ func (w *TypedLogWriter[T]) Close(ctx context.Context) error {
 	return w.writer.Close(ctx)
 }
 
+// TypedKVWriter encodes application values and delete keys for a primary-key
+// table.
 type TypedKVWriter[T, K any] struct {
 	writer   *KVWriter
 	codec    Codec[T]
@@ -212,6 +216,7 @@ func completedWriteError(err error) *WriteFuture {
 	return future
 }
 
+// TypedLookupResult is one decoded point-lookup outcome.
 type TypedLookupResult[K, T any] struct {
 	Key   K
 	Found bool
@@ -226,6 +231,7 @@ type TypedPrefixLookupResult[K, T any] struct {
 	Err    error
 }
 
+// TypedLookupClient encodes application keys and decodes returned rows.
 type TypedLookupClient[T, K any] struct {
 	lookup   *LookupClient
 	codec    Codec[T]
@@ -356,6 +362,7 @@ func (c *TypedLookupClient[T, K]) Close() error {
 	return c.lookup.Close()
 }
 
+// TypedScanRecord is one decoded log record and its source metadata.
 type TypedScanRecord[T any] struct {
 	Bucket    int32
 	Value     T
@@ -372,6 +379,7 @@ type TypedScanResult[T any] struct {
 	Done          bool
 }
 
+// TypedLogScanner decodes row-based log scan results.
 type TypedLogScanner[T any] struct {
 	scanner *LogScanner
 	codec   Codec[T]
@@ -465,6 +473,7 @@ func (s *TypedLogScanner[T]) Close() error {
 	return s.scanner.Close()
 }
 
+// TypedBatchResult contains decoded values from one bounded poll.
 type TypedBatchResult[T any] struct {
 	Values []T
 	Done   bool

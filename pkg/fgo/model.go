@@ -14,14 +14,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Schema, row, and table-kind validation errors.
 var (
 	ErrInvalidSchema = errors.New("fgo: invalid schema")
 	ErrInvalidRow    = errors.New("fgo: invalid row")
 	ErrTableKind     = errors.New("fgo: unsupported table operation")
 )
 
+// DataType is the portable root type of a Fluss column.
 type DataType string
 
+// Data types supported by Apache Fluss 0.9.1 schemas.
 const (
 	BoolType         DataType = "BOOLEAN"
 	CharType         DataType = "CHAR"
@@ -44,6 +47,7 @@ const (
 	RowType          DataType = "ROW"
 )
 
+// Validate reports an error when the data type is unsupported.
 func (t DataType) Validate() error {
 	switch t {
 	case BoolType, CharType, IntType, TinyIntType, SmallIntType, BigIntType, FloatType, DoubleType, StringType, BinaryType, BytesType, DecimalType, DateType, TimeType, TimestampType, TimestampLTZType, ArrayType, MapType, RowType:
@@ -53,6 +57,7 @@ func (t DataType) Validate() error {
 	}
 }
 
+// Column describes one ordered field in a table schema.
 type Column struct {
 	Name        string
 	Type        DataType
@@ -62,6 +67,7 @@ type Column struct {
 	ID          int
 }
 
+// Schema describes ordered columns and table key definitions.
 type Schema struct {
 	Columns        []Column
 	PrimaryKey     []string
@@ -71,6 +77,7 @@ type Schema struct {
 	HighestFieldID int
 }
 
+// Validate checks columns, logical types, and key references.
 func (s Schema) Validate() error {
 	if len(s.Columns) == 0 {
 		return fmt.Errorf("%w: schema has no columns", ErrInvalidSchema)
@@ -117,6 +124,7 @@ func validateSchemaKeys(columns map[string]Column, keys []string) error {
 	return nil
 }
 
+// JSON validates and encodes the Fluss 0.9.1 schema JSON representation.
 func (s Schema) JSON() ([]byte, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -188,6 +196,7 @@ func assignLogicalFieldIDs(logicalType *LogicalType, nextID *int) {
 	}
 }
 
+// ParseSchemaJSON decodes and validates a Fluss 0.9.1 schema.
 func ParseSchemaJSON(data []byte) (Schema, error) {
 	var encoded schemaJSON
 	if err := json.Unmarshal(data, &encoded); err != nil {
@@ -250,6 +259,7 @@ func logicalRoot(dataType DataType) string {
 	}
 }
 
+// Row stores values in schema or projection order.
 type Row []any
 
 // MapEntry preserves Fluss map key types and iteration order. Go maps with string keys are also
@@ -259,8 +269,10 @@ type MapEntry struct {
 	Value any
 }
 
+// Map is an ordered collection of Fluss map entries.
 type Map []MapEntry
 
+// ValidateRow checks row values against all columns or the named projection.
 func (s Schema) ValidateRow(row Row, columns []string) error {
 	if err := s.Validate(); err != nil {
 		return err
@@ -445,13 +457,16 @@ func mapEntries(value any) (Map, bool) {
 	}
 }
 
+// TableKind distinguishes append-only log tables from primary-key tables.
 type TableKind string
 
+// Table kinds supported by Apache Fluss 0.9.1.
 const (
 	LogTable        TableKind = "LOG"
 	PrimaryKeyTable TableKind = "PRIMARY_KEY"
 )
 
+// Table is authoritative table metadata and schema loaded by [Client.OpenTable].
 type Table struct {
 	ID          int64
 	SchemaID    int32
@@ -462,6 +477,7 @@ type Table struct {
 	Properties  map[string]string
 }
 
+// RequireLog reports an error unless the table supports log operations.
 func (t Table) RequireLog() error {
 	if t.Kind != LogTable {
 		return fmt.Errorf("%w: %s is not a log table", ErrTableKind, t.Path)
@@ -469,6 +485,8 @@ func (t Table) RequireLog() error {
 	return nil
 }
 
+// RequirePrimaryKey reports an error unless the table supports primary-key
+// operations.
 func (t Table) RequirePrimaryKey() error {
 	if t.Kind != PrimaryKeyTable {
 		return fmt.Errorf("%w: %s is not a primary-key table", ErrTableKind, t.Path)

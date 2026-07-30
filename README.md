@@ -2,6 +2,8 @@
 
 Experimental Go client for Apache Fluss 0.9.1-incubating.
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/pletorco/fluss-go.svg)](https://pkg.go.dev/github.com/pletorco/fluss-go)
+
 Development and review follow the project
 [coding guidelines](CODING_GUIDELINES.md).
 
@@ -96,6 +98,10 @@ updated here. Protocol-message coverage is not end-user feature parity.
 
 ## Documentation
 
+- API reference:
+  [fmsg](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg),
+  [fgo](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo), and
+  [fadm](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm)
 - [Public architecture and ownership](docs/architecture/v0.1.md)
 - [Data operations and advanced options](docs/data-operations.md)
 - [Typed data API](docs/typed-api.md)

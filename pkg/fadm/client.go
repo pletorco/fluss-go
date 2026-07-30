@@ -1,4 +1,3 @@
-// Package fadm provides administrative operations for Apache Fluss 0.9.1.
 package fadm
 
 import (
@@ -20,6 +19,8 @@ type requester interface {
 	OpenTable(context.Context, fgo.TablePath) (fgo.Table, error)
 }
 
+// Client performs administrative operations through a shared fgo client.
+// Client does not own the underlying connections.
 type Client struct{ requester requester }
 
 // New shares the supplied data client's negotiated connections and pool.
@@ -32,6 +33,7 @@ func New(client *fgo.Client) (*Client, error) {
 
 func newClient(requester requester) *Client { return &Client{requester: requester} }
 
+// Database is the server-reported metadata for one database.
 type Database struct {
 	Name       string
 	Comment    string
@@ -41,11 +43,13 @@ type Database struct {
 	TableCount int32
 }
 
+// DatabaseDefinition contains optional metadata used when creating a database.
 type DatabaseDefinition struct {
 	Comment    string
 	Properties map[string]string
 }
 
+// CreateDatabase creates name, optionally succeeding when it already exists.
 func (c *Client) CreateDatabase(ctx context.Context, name string, definition DatabaseDefinition, ignoreIfExists bool) error {
 	if err := validateName("database", name); err != nil {
 		return err
@@ -72,6 +76,7 @@ func (c *Client) CreateDatabase(ctx context.Context, name string, definition Dat
 	return err
 }
 
+// DropDatabase removes name and optionally its contained tables.
 func (c *Client) DropDatabase(ctx context.Context, name string, ignoreIfNotExists, cascade bool) error {
 	if err := validateName("database", name); err != nil {
 		return err
@@ -88,6 +93,7 @@ func (c *Client) DropDatabase(ctx context.Context, name string, ignoreIfNotExist
 	return err
 }
 
+// ListDatabases returns databases in server order.
 func (c *Client) ListDatabases(ctx context.Context) ([]Database, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyListDatabases, 0)
 	if err != nil {
@@ -118,6 +124,7 @@ func (c *Client) ListDatabases(ctx context.Context) ([]Database, error) {
 	return databases, nil
 }
 
+// DatabaseExists reports whether name exists.
 func (c *Client) DatabaseExists(ctx context.Context, name string) (bool, error) {
 	if err := validateName("database", name); err != nil {
 		return false, err
@@ -138,6 +145,7 @@ func (c *Client) DatabaseExists(ctx context.Context, name string) (bool, error) 
 	return message.GetExists(), nil
 }
 
+// DescribeDatabase returns authoritative metadata for name.
 func (c *Client) DescribeDatabase(ctx context.Context, name string) (Database, error) {
 	if err := validateName("database", name); err != nil {
 		return Database{}, err
@@ -168,6 +176,7 @@ func (c *Client) DescribeDatabase(ctx context.Context, name string) (Database, e
 	}, nil
 }
 
+// TableDefinition contains the schema and properties used to create a table.
 type TableDefinition struct {
 	Schema           fgo.Schema
 	Comment          string
@@ -176,6 +185,7 @@ type TableDefinition struct {
 	CustomProperties map[string]string
 }
 
+// JSON validates and encodes a Fluss table definition.
 func (d TableDefinition) JSON() ([]byte, error) {
 	if err := d.Schema.Validate(); err != nil {
 		return nil, err
@@ -203,6 +213,7 @@ func (d TableDefinition) JSON() ([]byte, error) {
 	})
 }
 
+// CreateTable creates path from definition.
 func (c *Client) CreateTable(ctx context.Context, path fgo.TablePath, definition TableDefinition, ignoreIfExists bool) error {
 	if err := path.Validate(); err != nil {
 		return err
@@ -223,6 +234,7 @@ func (c *Client) CreateTable(ctx context.Context, path fgo.TablePath, definition
 	return err
 }
 
+// DropTable removes path, optionally succeeding when it is absent.
 func (c *Client) DropTable(ctx context.Context, path fgo.TablePath, ignoreIfNotExists bool) error {
 	if err := path.Validate(); err != nil {
 		return err
@@ -237,6 +249,7 @@ func (c *Client) DropTable(ctx context.Context, path fgo.TablePath, ignoreIfNotE
 	return err
 }
 
+// ListTables returns table paths in database.
 func (c *Client) ListTables(ctx context.Context, database string) ([]fgo.TablePath, error) {
 	if err := validateName("database", database); err != nil {
 		return nil, err
@@ -261,6 +274,7 @@ func (c *Client) ListTables(ctx context.Context, database string) ([]fgo.TablePa
 	return tables, nil
 }
 
+// TableExists reports whether path exists.
 func (c *Client) TableExists(ctx context.Context, path fgo.TablePath) (bool, error) {
 	if err := path.Validate(); err != nil {
 		return false, err
@@ -281,6 +295,7 @@ func (c *Client) TableExists(ctx context.Context, path fgo.TablePath) (bool, err
 	return message.GetExists(), nil
 }
 
+// DescribeTable returns authoritative table metadata and schema.
 func (c *Client) DescribeTable(ctx context.Context, path fgo.TablePath) (fgo.Table, error) {
 	if err := path.Validate(); err != nil {
 		return fgo.Table{}, err
@@ -288,6 +303,7 @@ func (c *Client) DescribeTable(ctx context.Context, path fgo.TablePath) (fgo.Tab
 	return c.requester.OpenTable(ctx, path)
 }
 
+// TableSchema returns one schema version for path.
 func (c *Client) TableSchema(ctx context.Context, path fgo.TablePath, schemaID int32) (fgo.Schema, error) {
 	if err := path.Validate(); err != nil {
 		return fgo.Schema{}, err
@@ -312,8 +328,10 @@ func (c *Client) TableSchema(ctx context.Context, path fgo.TablePath, schemaID i
 	return fgo.ParseSchemaJSON(schema.GetSchemaJson())
 }
 
+// ConfigOp identifies a table or cluster configuration mutation.
 type ConfigOp int32
 
+// Supported configuration mutation operations.
 const (
 	ConfigSet ConfigOp = iota
 	ConfigDelete
@@ -321,12 +339,14 @@ const (
 	ConfigSubtract
 )
 
+// ConfigChange applies one operation to a configuration key.
 type ConfigChange struct {
 	Key   string
 	Value *string
 	Op    ConfigOp
 }
 
+// AddColumn describes a column appended or inserted by an alter-table request.
 type AddColumn struct {
 	Name        string
 	Type        fgo.LogicalType
@@ -334,8 +354,10 @@ type AddColumn struct {
 	First       bool
 }
 
+// RenameColumn maps an existing column name to a new name.
 type RenameColumn struct{ Old, New string }
 
+// AlterTable groups configuration and schema changes into one request.
 type AlterTable struct {
 	Config []ConfigChange
 	Add    []AddColumn
@@ -343,6 +365,7 @@ type AlterTable struct {
 	Rename []RenameColumn
 }
 
+// AlterTable applies configuration and schema changes to path.
 func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes AlterTable, ignoreIfNotExists bool) error {
 	if err := path.Validate(); err != nil {
 		return err
@@ -432,6 +455,7 @@ func appendRenamedColumns(message *fmsg.AlterTableRequest, renames []RenameColum
 	return nil
 }
 
+// PartitionSpec maps partition-key columns to values.
 type PartitionSpec map[string]string
 
 func (p PartitionSpec) validate() error {
@@ -461,11 +485,13 @@ func (p PartitionSpec) proto() *fmsg.PbPartitionSpec {
 	return spec
 }
 
+// Partition is one named physical partition and its server identity.
 type Partition struct {
 	ID   int64
 	Spec PartitionSpec
 }
 
+// CreatePartition creates the partition described by spec.
 func (c *Client) CreatePartition(ctx context.Context, path fgo.TablePath, spec PartitionSpec, ignoreIfExists bool) error {
 	if err := path.Validate(); err != nil {
 		return err
@@ -484,6 +510,7 @@ func (c *Client) CreatePartition(ctx context.Context, path fgo.TablePath, spec P
 	return err
 }
 
+// DropPartition removes the partition described by spec.
 func (c *Client) DropPartition(ctx context.Context, path fgo.TablePath, spec PartitionSpec, ignoreIfNotExists bool) error {
 	if err := path.Validate(); err != nil {
 		return err
@@ -502,6 +529,7 @@ func (c *Client) DropPartition(ctx context.Context, path fgo.TablePath, spec Par
 	return err
 }
 
+// ListPartitions returns partitions matching partial.
 func (c *Client) ListPartitions(ctx context.Context, path fgo.TablePath, partial PartitionSpec) ([]Partition, error) {
 	if err := path.Validate(); err != nil {
 		return nil, err
@@ -533,12 +561,14 @@ func (c *Client) ListPartitions(ctx context.Context, path fgo.TablePath, partial
 	return partitions, nil
 }
 
+// OffsetResult is the resolved offset or failure for one bucket.
 type OffsetResult struct {
 	Bucket int32
 	Offset int64
 	Err    error
 }
 
+// ListOffsets resolves spec independently for every requested bucket.
 func (c *Client) ListOffsets(
 	ctx context.Context,
 	table fgo.Table,

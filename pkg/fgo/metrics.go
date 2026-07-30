@@ -8,8 +8,10 @@ import (
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 )
 
+// MetricKind identifies the client activity represented by an event.
 type MetricKind uint8
 
+// Metric event kinds emitted by the client.
 const (
 	MetricRequest MetricKind = iota
 	MetricRetry
@@ -20,8 +22,10 @@ const (
 	MetricThrottle
 )
 
+// MetricOperation identifies the high-level operation producing an event.
 type MetricOperation uint8
 
+// Metric operations emitted by the client.
 const (
 	MetricOperationRPC MetricOperation = iota
 	MetricOperationDial
@@ -31,8 +35,10 @@ const (
 	MetricOperationRemoteRead
 )
 
+// MetricErrorClass is a bounded-cardinality failure classification.
 type MetricErrorClass uint8
 
+// Metric error classes emitted by the client.
 const (
 	MetricErrorNone MetricErrorClass = iota
 	MetricErrorCanceled
@@ -61,12 +67,16 @@ type MetricEvent struct {
 	ErrorClass MetricErrorClass
 }
 
+// MetricsObserver receives synchronous client events.
+// Implementations should return quickly and must not retain sensitive data.
 type MetricsObserver interface {
 	ObserveMetric(MetricEvent)
 }
 
+// MetricsObserverFunc adapts a function to [MetricsObserver].
 type MetricsObserverFunc func(MetricEvent)
 
+// ObserveMetric calls f with event.
 func (f MetricsObserverFunc) ObserveMetric(event MetricEvent) { f(event) }
 
 func observeMetric(observer MetricsObserver, event MetricEvent) {
