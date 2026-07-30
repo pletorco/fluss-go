@@ -100,6 +100,86 @@ func TestConnectionManagerDeduplicatesConcurrentDials(t *testing.T) {
 	<-done
 }
 
+func TestConnectionManagerAuthenticatesEveryConnectionBeforePublishingIt(t *testing.T) {
+	firstClient, firstServer := net.Pipe()
+	secondClient, secondServer := net.Pipe()
+	firstSeen, firstRelease := make(chan struct{}), make(chan struct{})
+	secondRelease := make(chan struct{})
+	close(secondRelease)
+	firstDone := serveAuthenticatedVersions(t, firstServer, TabletServer, firstSeen, firstRelease)
+	secondDone := serveAuthenticatedVersions(t, secondServer, TabletServer, nil, secondRelease)
+
+	connections := map[string]net.Conn{
+		"tablet-1:9123": firstClient,
+		"tablet-2:9123": secondClient,
+	}
+	var mu sync.Mutex
+	var authenticators []*testAuthenticator
+	manager := newConnectionManager(config{
+		name: "test", version: "1",
+		dialContext: func(_ context.Context, _, address string) (net.Conn, error) {
+			return connections[address], nil
+		},
+		authFactory: func() (Authenticator, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			auth := &testAuthenticator{
+				protocol: "test", initial: true, tokens: [][]byte{[]byte("connection-token")},
+				completeAfter: 1,
+			}
+			authenticators = append(authenticators, auth)
+			return auth, nil
+		},
+	})
+
+	type openResult struct {
+		client *Client
+		err    error
+	}
+	result := make(chan openResult, 1)
+	go func() {
+		client, err := manager.getNode(context.Background(), Node{
+			ID: 1, Address: "tablet-1:9123", Role: TabletServer,
+		})
+		result <- openResult{client: client, err: err}
+	}()
+	<-firstSeen
+	select {
+	case opened := <-result:
+		t.Fatalf("connection published before authentication completed: %#v", opened)
+	default:
+	}
+	close(firstRelease)
+	opened := <-result
+	if opened.err != nil || opened.client == nil {
+		t.Fatalf("first authenticated connection = %#v", opened)
+	}
+	second, err := manager.getNode(context.Background(), Node{
+		ID: 2, Address: "tablet-2:9123", Role: TabletServer,
+	})
+	if err != nil || second == nil || second == opened.client {
+		t.Fatalf("second authenticated connection = %p, %v", second, err)
+	}
+
+	mu.Lock()
+	if len(authenticators) != 2 || authenticators[0] == authenticators[1] {
+		t.Fatalf("connection authenticators = %#v", authenticators)
+	}
+	mu.Unlock()
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	for index, auth := range authenticators {
+		if !auth.closed {
+			t.Fatalf("authenticator %d was not closed", index)
+		}
+	}
+	mu.Unlock()
+	<-firstDone
+	<-secondDone
+}
+
 func TestConnectionManagerRejectsWrongServerRole(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	done := serveVersions(t, serverConn, TabletServer)
@@ -387,6 +467,50 @@ func serveVersionThenRequest(t *testing.T, conn net.Conn, role ServerRole, expec
 			}
 		}
 		writeTransportResponse(t, conn, id, body)
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+	return done
+}
+
+func serveAuthenticatedVersions(
+	t *testing.T,
+	conn net.Conn,
+	role ServerRole,
+	authenticationSeen chan<- struct{},
+	release <-chan struct{},
+) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer conn.Close()
+		id, key, _ := readTransportRequest(t, conn)
+		if key != fmsg.APIKeyApiVersions {
+			t.Errorf("first API key = %d, want API_VERSIONS", key)
+			return
+		}
+		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{
+			ServerType: proto.Int32(int32(role)),
+			ApiVersions: []*fmsg.PbApiVersion{
+				apiVersion(fmsg.APIKeyApiVersions, 0, 0),
+				apiVersion(fmsg.APIKeyAuthenticate, 0, 0),
+			},
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		writeTransportResponse(t, conn, id, body)
+		id, key, _ = readTransportRequest(t, conn)
+		if key != fmsg.APIKeyAuthenticate {
+			t.Errorf("second API key = %d, want AUTHENTICATE", key)
+			return
+		}
+		if authenticationSeen != nil {
+			close(authenticationSeen)
+		}
+		<-release
+		writeTransportResponse(t, conn, id, nil)
 		_, _ = io.Copy(io.Discard, conn)
 	}()
 	return done

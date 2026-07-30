@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,18 +178,22 @@ func TestAuthenticateCompletesMultiStepExchange(t *testing.T) {
 	requester := requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		got = append(got, append([]byte(nil), request.(*fmsg.MessageRequest).Message().(*fmsg.AuthenticateRequest).GetToken()...))
 		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-		if len(got) == 1 {
-			response.Message().(*fmsg.AuthenticateResponse).Challenge = []byte("challenge")
+		if len(got) < 3 {
+			response.Message().(*fmsg.AuthenticateResponse).Challenge = []byte("challenge-" + string(rune('0'+len(got))))
 		}
 		return response, nil
 	})
 	client := newClient(requester, nil)
 	client.versions[fmsg.APIKeyAuthenticate] = 0
-	auth := &testAuthenticator{protocol: "test", initial: true, tokens: [][]byte{[]byte("initial"), []byte("reply")}, completeAfter: 2}
+	auth := &testAuthenticator{
+		protocol: "test", initial: true,
+		tokens:        [][]byte{[]byte("initial"), []byte("reply-1"), []byte("reply-2")},
+		completeAfter: 3,
+	}
 	if err := client.authenticate(context.Background(), auth); err != nil {
 		t.Fatalf("authenticate() error = %v", err)
 	}
-	if got, want := string(got[0])+":"+string(got[1]), "initial:reply"; got != want {
+	if got, want := string(got[0])+":"+string(got[1])+":"+string(got[2]), "initial:reply-1:reply-2"; got != want {
 		t.Fatalf("tokens = %q, want %q", got, want)
 	}
 }
@@ -239,6 +244,35 @@ func TestAuthenticateErrors(t *testing.T) {
 	}
 	if err := client.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, authenticateErr: context.Canceled}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled error = %v", err)
+	}
+}
+
+func TestAuthenticateClassifiesServerFailures(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		code      fmsg.ErrorCode
+		retriable bool
+	}{
+		{name: "permanent", code: fmsg.ErrorCodeAuthenticateException},
+		{name: "retriable", code: fmsg.ErrorCodeRetriableAuthenticateException, retriable: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := newClient(requesterFunc(func(context.Context, fmsg.Request) (fmsg.Response, error) {
+				return nil, &transport.RemoteError{Code: int32(test.code), Message: "safe server message"}
+			}), nil)
+			client.address = "coordinator:9123"
+			client.versions[fmsg.APIKeyAuthenticate] = 0
+			err := client.authenticate(context.Background(), &testAuthenticator{
+				protocol: "test", initial: true, tokens: [][]byte{[]byte("secret")}, completeAfter: 1,
+			})
+			var authErr *AuthenticationError
+			var serverErr *ServerError
+			if !errors.As(err, &authErr) || authErr.Retriable != test.retriable ||
+				!errors.As(err, &serverErr) || serverErr.Code != test.code ||
+				strings.Contains(err.Error(), "secret") {
+				t.Fatalf("authenticate error = %#v, server = %#v", authErr, serverErr)
+			}
+		})
 	}
 }
 

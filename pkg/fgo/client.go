@@ -376,7 +376,8 @@ func initialAuthenticationToken(ctx context.Context, auth Authenticator) ([]byte
 func (c *Client) authenticationChallenge(ctx context.Context, auth Authenticator, token []byte) ([]byte, bool, error) {
 	response, err := c.authenticateRequest(ctx, auth.Protocol(), token)
 	if err != nil {
-		return nil, false, authenticationError(err, isRetriableAuthenticationError(err))
+		classified := serverError(err, fmsg.APIKeyAuthenticate, c.address)
+		return nil, false, authenticationError(classified, isRetriableAuthenticationError(classified))
 	}
 	if response.Challenge != nil {
 		return append([]byte(nil), response.Challenge...), false, nil
@@ -442,7 +443,12 @@ func authenticationError(err error, retriable bool) error {
 
 func isRetriableAuthenticationError(err error) bool {
 	var authenticationError *AuthenticationError
-	return errors.As(err, &authenticationError) && authenticationError.Retriable
+	if errors.As(err, &authenticationError) {
+		return authenticationError.Retriable
+	}
+	var serverError *ServerError
+	return errors.As(err, &serverError) && serverError.Retriable &&
+		serverError.Code == fmsg.ErrorCodeRetriableAuthenticateException
 }
 
 func closeAll(closers ...func() error) func() error {

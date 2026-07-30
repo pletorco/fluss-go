@@ -46,4 +46,11 @@ func TestPlainAuthenticatorRejectsInvalidCredentials(t *testing.T) {
 			t.Fatalf("factory error = %v, want ErrInvalidConfig", err)
 		}
 	}
+	auth, err := PlainAuthenticator("alice", "secret")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.Authenticate(context.Background(), []byte("malformed")); err == nil {
+		t.Fatal("PLAIN malformed challenge error = nil")
+	}
 }
