@@ -248,7 +248,8 @@ func TestClientRequestBucketRefreshesStaleLeader(t *testing.T) {
 
 func TestConnectionManagerRedialsDisconnectedServer(t *testing.T) {
 	firstClient, firstServer := net.Pipe()
-	firstDone := serveThenDisconnect(t, firstServer, TabletServer)
+	disconnect := make(chan struct{})
+	firstDone := serveThenDisconnect(t, firstServer, TabletServer, disconnect)
 	secondClient, secondServer := net.Pipe()
 	secondDone := serveVersionThenRequest(t, secondServer, TabletServer, fmsg.APIKeyApiVersions)
 	dials := 0
@@ -266,6 +267,7 @@ func TestConnectionManagerRedialsDisconnectedServer(t *testing.T) {
 	if _, err := manager.getNode(context.Background(), node); err != nil {
 		t.Fatalf("getNode() error = %v", err)
 	}
+	close(disconnect)
 	<-firstDone
 	request, _ := apiVersionsRequest()
 	if _, err := manager.request(context.Background(), node, request); err == nil {
@@ -390,7 +392,7 @@ func serveVersionThenRequest(t *testing.T, conn net.Conn, role ServerRole, expec
 	return done
 }
 
-func serveThenDisconnect(t *testing.T, conn net.Conn, role ServerRole) <-chan struct{} {
+func serveThenDisconnect(t *testing.T, conn net.Conn, role ServerRole, disconnect <-chan struct{}) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -407,6 +409,7 @@ func serveThenDisconnect(t *testing.T, conn net.Conn, role ServerRole) <-chan st
 			return
 		}
 		writeTransportResponse(t, conn, id, body)
+		<-disconnect
 	}()
 	return done
 }
@@ -436,6 +439,7 @@ func serveVersionThenRemoteError(t *testing.T, conn net.Conn, role ServerRole, c
 			return
 		}
 		writeTransportError(t, conn, id, body)
+		_, _ = io.Copy(io.Discard, conn)
 	}()
 	return done
 }
