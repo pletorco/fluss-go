@@ -20,6 +20,7 @@ type putKVCall struct {
 	records     []byte
 	timeout     time.Duration
 	acks        int32
+	mergeMode   MergeMode
 }
 
 type fakeKVWriterBackend struct {
@@ -54,7 +55,7 @@ func (b *fakeKVWriterBackend) put(
 	b.calls = append(b.calls, putKVCall{
 		path: input.path, bucket: input.bucket, tableID: input.tableID, partitionID: input.partitionID,
 		targets: append([]int32(nil), input.targets...), records: append([]byte(nil), input.records...),
-		timeout: input.timeout, acks: input.acks,
+		timeout: input.timeout, acks: input.acks, mergeMode: input.mergeMode,
 	})
 	if b.putErr != nil {
 		return 0, b.putErr
@@ -124,6 +125,46 @@ func TestKVWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
 	}
 	if err := writer.Close(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestKVWriterMergeModes(t *testing.T) {
+	table := kvWriterTable()
+	table.Properties = map[string]string{"table.merge-engine": "aggregation"}
+	backend := kvBackend(0)
+	writer, err := newKVWriter(
+		context.Background(), backend, table,
+		WithKVMergeMode(MergeModeOverwrite), WithKVLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := writer.Upsert(context.Background(), Row{int32(1), "one", int64(10)}).
+		Await(context.Background())
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if calls := backend.putCalls(); len(calls) != 1 || calls[0].mergeMode != MergeModeOverwrite {
+		t.Fatalf("put calls = %#v", calls)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	table.Properties = map[string]string{}
+	if _, err := newKVWriter(
+		context.Background(), kvBackend(0), table, WithKVMergeMode(MergeModeOverwrite),
+	); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("overwrite without merge engine error = %v", err)
+	}
+	if _, err := kvWriterConfig([]KVWriterOption{
+		WithKVMergeMode(MergeMode(2)),
+	}); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("invalid merge mode error = %v", err)
+	}
+	config, err := kvWriterConfig(nil)
+	if err != nil || config.MergeMode != MergeModeDefault {
+		t.Fatalf("default merge mode = %d, %v", config.MergeMode, err)
 	}
 }
 
@@ -354,7 +395,10 @@ func TestClientKVWriterBackendMessagesAndErrors(t *testing.T) {
 	)
 	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
 	tablet.versions[fmsg.APIKeyPutKv] = 1
-	writer, err := client.NewKVWriter(context.Background(), kvWriterTable(), WithKVLinger(0))
+	writer, err := client.NewKVWriter(
+		context.Background(), kvWriterTable(),
+		WithKVLinger(0), WithKVMergeMode(MergeModeOverwrite),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +406,7 @@ func TestClientKVWriterBackendMessagesAndErrors(t *testing.T) {
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
-	if requestMessage.GetTableId() != 11 || requestMessage.GetAggMode() != 0 ||
+	if requestMessage.GetTableId() != 11 || requestMessage.GetAggMode() != 1 ||
 		len(requestMessage.GetTargetColumns()) != 2 || requestMessage.GetBucketsReq()[0].GetBucketId() != 0 {
 		t.Fatalf("PutKv request = %#v", requestMessage)
 	}

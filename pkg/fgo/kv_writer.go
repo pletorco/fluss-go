@@ -22,9 +22,33 @@ type KVWriterConfig struct {
 	Timeout         time.Duration
 	Acks            int32
 	Partition       string
+	MergeMode       MergeMode
 }
 
 type KVWriterOption func(*KVWriterConfig) error
+
+// MergeMode controls whether Fluss applies or bypasses a table's merge engine.
+type MergeMode int32
+
+const (
+	MergeModeDefault   MergeMode = 0
+	MergeModeOverwrite MergeMode = 1
+)
+
+func (m MergeMode) valid() bool {
+	return m == MergeModeDefault || m == MergeModeOverwrite
+}
+
+// WithKVMergeMode sets one merge mode for every record written by the writer.
+func WithKVMergeMode(mode MergeMode) KVWriterOption {
+	return func(config *KVWriterConfig) error {
+		if !mode.valid() {
+			return fmt.Errorf("%w: unsupported KV merge mode %d", ErrInvalidConfig, mode)
+		}
+		config.MergeMode = mode
+		return nil
+	}
+}
 
 func WithKVBatchLimits(bytes, records int) KVWriterOption {
 	return func(config *KVWriterConfig) error {
@@ -95,6 +119,7 @@ type kvPutRequest struct {
 	records     []byte
 	timeout     time.Duration
 	acks        int32
+	mergeMode   MergeMode
 }
 
 func (b clientKVWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
@@ -118,7 +143,7 @@ func (b clientKVWriterBackend) put(
 	message.TableId = proto.Int64(input.tableID)
 	message.TimeoutMs = proto.Int32(int32(input.timeout / time.Millisecond))
 	message.TargetColumns = append([]int32(nil), input.targets...)
-	message.AggMode = proto.Int32(0)
+	message.AggMode = proto.Int32(int32(input.mergeMode))
 	bucketRequest := &fmsg.PbPutKvReqForBucket{BucketId: proto.Int32(input.bucket), Records: input.records}
 	if input.partitionID >= 0 {
 		bucketRequest.PartitionId = proto.Int64(input.partitionID)
@@ -199,6 +224,13 @@ func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, opti
 	config, err := kvWriterConfig(options)
 	if err != nil {
 		return nil, err
+	}
+	if config.MergeMode == MergeModeOverwrite && table.Properties != nil &&
+		strings.TrimSpace(table.Properties["table.merge-engine"]) == "" {
+		return nil, fmt.Errorf(
+			"%w: KV overwrite requires table %s to configure table.merge-engine",
+			ErrInvalidConfig, table.Path,
+		)
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	physicalID, locations, err := backend.metadata(ctx, path)
@@ -612,6 +644,7 @@ func (l *kvWriterLoop) flushBucket(bucket int32) error {
 		logEnd, err = l.writer.backend.put(context.Background(), kvPutRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 			targets: batch.targets, records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+			mergeMode: l.writer.config.MergeMode,
 		})
 	}
 	if err != nil {

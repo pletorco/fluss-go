@@ -99,7 +99,7 @@ func TestOpenTableLoadsServerSchema(t *testing.T) {
 				t.Fatal("missing table path")
 			}
 			message.TableId, message.SchemaId = proto.Int64(9), proto.Int32(3)
-			message.TableJson = []byte(`{"bucket_key":["id"],"partition_key":[],"bucket_count":4}`)
+			message.TableJson = []byte(`{"bucket_key":["id"],"partition_key":[],"bucket_count":4,"properties":{"table.merge-engine":"aggregation"}}`)
 		case *fmsg.GetTableSchemaResponse:
 			if request.(*fmsg.MessageRequest).Message().(*fmsg.GetTableSchemaRequest).GetSchemaId() != 3 {
 				t.Fatal("missing schema id")
@@ -115,7 +115,8 @@ func TestOpenTableLoadsServerSchema(t *testing.T) {
 	client.versions[fmsg.APIKeyGetTableSchema] = 0
 	table, err := client.OpenTable(context.Background(), path)
 	if err != nil || table.ID != 9 || table.SchemaID != 3 || table.Kind != PrimaryKeyTable ||
-		table.BucketCount != 4 || len(table.Schema.BucketKey) != 1 {
+		table.BucketCount != 4 || len(table.Schema.BucketKey) != 1 ||
+		table.Properties["table.merge-engine"] != "aggregation" {
 		t.Fatalf("OpenTable() = %#v, %v", table, err)
 	}
 }

@@ -459,6 +459,7 @@ type Table struct {
 	Kind        TableKind
 	Schema      Schema
 	BucketCount int
+	Properties  map[string]string
 }
 
 func (t Table) RequireLog() error {
@@ -518,9 +519,10 @@ func (c *Client) OpenTable(ctx context.Context, path TablePath) (Table, error) {
 		return Table{}, err
 	}
 	var descriptor struct {
-		BucketKey    []string `json:"bucket_key"`
-		PartitionKey []string `json:"partition_key"`
-		BucketCount  int      `json:"bucket_count"`
+		BucketKey    []string          `json:"bucket_key"`
+		PartitionKey []string          `json:"partition_key"`
+		BucketCount  int               `json:"bucket_count"`
+		Properties   map[string]string `json:"properties"`
 	}
 	if len(info.GetTableJson()) != 0 {
 		if err := json.Unmarshal(info.GetTableJson(), &descriptor); err != nil {
@@ -539,5 +541,6 @@ func (c *Client) OpenTable(ctx context.Context, path TablePath) (Table, error) {
 	return Table{
 		ID: info.GetTableId(), SchemaID: schemaMessage.GetSchemaId(), Path: path,
 		Kind: kind, Schema: schema, BucketCount: descriptor.BucketCount,
+		Properties: descriptor.Properties,
 	}, nil
 }
