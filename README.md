@@ -22,7 +22,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | --- | --- | --- |
 | `fmsg` public API registry and protobuf messages | Implemented | Generated from the pinned Fluss 0.9.1 protocol; includes API/version and server-error registries. |
 | Protocol framing and request correlation | Implemented | [`internal/transport`](internal/transport) has bounded framing, cancellation, and protocol tests. |
-| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, and retries safe reads only. Live authentication coverage is tracked in [#27](https://github.com/pletorco/fluss-go/issues/27). |
+| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, retries safe reads only, and is verified against the live plaintext and SASL PLAIN environments. |
 | Coordinator/tablet metadata routing | Implemented | [`pkg/fgo/metadata.go`](pkg/fgo/metadata.go) and [`pkg/fgo/metadata_client.go`](pkg/fgo/metadata_client.go) cache table and partition leaders, coalesce refreshes, and reroute once after stale metadata. |
 | Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables and load authoritative schemas through `OpenTable`. |
 | Arrow schema and record batches | Supported | Full Fluss logical schema conversion plus v0/v1 Arrow log batches with NONE, LZ4, and ZSTD IPC compression; decoded records use explicit `Release` ownership. |
@@ -59,5 +59,8 @@ fixtures, and live compatibility suite are explicitly added to this matrix.
 
 Security findings block merges. The documented, time-limited exception process
 is in [docs/security-exceptions.md](docs/security-exceptions.md).
+
+The completed initial delivery record is in
+[docs/roadmap-v0.1.md](docs/roadmap-v0.1.md).
 
 fluss-go is licensed under the Apache License 2.0. See LICENSE and NOTICE.
