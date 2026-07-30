@@ -24,4 +24,7 @@ static analysis, unit tests, race tests, and security gates.
 Local security scans require Trivy v0.72.0. Integration tests require an
 explicitly configured Apache Fluss cluster and FLUSS_INTEGRATION=1.
 
+Security findings block merges. The documented, time-limited exception process
+is in [docs/security-exceptions.md](docs/security-exceptions.md).
+
 fluss-go is licensed under the Apache License 2.0. See LICENSE and NOTICE.
