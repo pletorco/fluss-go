@@ -40,6 +40,8 @@ type Requester interface {
 }
 
 // MessageRequest holds a generated protobuf request message and protocol metadata.
+// Encoding rejects unset proto2 required fields. Decoding retains unknown fields so that a
+// newer server response can round-trip through the pinned client without data loss.
 type MessageRequest struct {
 	api     APIMetadata
 	version int16

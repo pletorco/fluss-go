@@ -155,6 +155,162 @@ func LookupAPIKey(key APIKey) (APIMetadata, bool) {
 	return generatedAPIs[index], true
 }
 
+type ErrorCode int32
+
+const (
+	ErrorCodeUnknownServerError                    ErrorCode = -1
+	ErrorCodeNone                                  ErrorCode = 0
+	ErrorCodeNetworkException                      ErrorCode = 1
+	ErrorCodeUnsupportedVersion                    ErrorCode = 2
+	ErrorCodeCorruptMessage                        ErrorCode = 3
+	ErrorCodeDatabaseNotExist                      ErrorCode = 4
+	ErrorCodeDatabaseNotEmpty                      ErrorCode = 5
+	ErrorCodeDatabaseAlreadyExist                  ErrorCode = 6
+	ErrorCodeTableNotExist                         ErrorCode = 7
+	ErrorCodeTableAlreadyExist                     ErrorCode = 8
+	ErrorCodeSchemaNotExist                        ErrorCode = 9
+	ErrorCodeLogStorageException                   ErrorCode = 10
+	ErrorCodeKvStorageException                    ErrorCode = 11
+	ErrorCodeNotLeaderOrFollower                   ErrorCode = 12
+	ErrorCodeRecordTooLargeException               ErrorCode = 13
+	ErrorCodeCorruptRecordException                ErrorCode = 14
+	ErrorCodeInvalidTableException                 ErrorCode = 15
+	ErrorCodeInvalidDatabaseException              ErrorCode = 16
+	ErrorCodeInvalidReplicationFactor              ErrorCode = 17
+	ErrorCodeInvalidRequiredAcks                   ErrorCode = 18
+	ErrorCodeLogOffsetOutOfRangeException          ErrorCode = 19
+	ErrorCodeNonPrimaryKeyTableException           ErrorCode = 20
+	ErrorCodeUnknownTableOrBucketException         ErrorCode = 21
+	ErrorCodeInvalidUpdateVersionException         ErrorCode = 22
+	ErrorCodeInvalidCoordinatorException           ErrorCode = 23
+	ErrorCodeFencedLeaderEpochException            ErrorCode = 24
+	ErrorCodeRequestTimeOut                        ErrorCode = 25
+	ErrorCodeStorageException                      ErrorCode = 26
+	ErrorCodeOperationNotAttemptedException        ErrorCode = 27
+	ErrorCodeNotEnoughReplicasAfterAppendException ErrorCode = 28
+	ErrorCodeNotEnoughReplicasException            ErrorCode = 29
+	ErrorCodeSecurityTokenException                ErrorCode = 30
+	ErrorCodeOutOfOrderSequenceException           ErrorCode = 31
+	ErrorCodeDuplicateSequenceException            ErrorCode = 32
+	ErrorCodeUnknownWriterIdException              ErrorCode = 33
+	ErrorCodeInvalidColumnProjection               ErrorCode = 34
+	ErrorCodeInvalidTargetColumn                   ErrorCode = 35
+	ErrorCodePartitionNotExists                    ErrorCode = 36
+	ErrorCodeTableNotPartitionedException          ErrorCode = 37
+	ErrorCodeInvalidTimestampException             ErrorCode = 38
+	ErrorCodeInvalidConfigException                ErrorCode = 39
+	ErrorCodeLakeStorageNotConfiguredException     ErrorCode = 40
+	ErrorCodeKvSnapshotNotExist                    ErrorCode = 41
+	ErrorCodePartitionAlreadyExists                ErrorCode = 42
+	ErrorCodePartitionSpecInvalidException         ErrorCode = 43
+	ErrorCodeLeaderNotAvailableException           ErrorCode = 44
+	ErrorCodePartitionMaxNumException              ErrorCode = 45
+	ErrorCodeAuthenticateException                 ErrorCode = 46
+	ErrorCodeSecurityDisabledException             ErrorCode = 47
+	ErrorCodeAuthorizationException                ErrorCode = 48
+	ErrorCodeBucketMaxNumException                 ErrorCode = 49
+	ErrorCodeFencedTieringEpochException           ErrorCode = 50
+	ErrorCodeRetriableAuthenticateException        ErrorCode = 51
+	ErrorCodeInvalidServerRackInfoException        ErrorCode = 52
+	ErrorCodeLakeSnapshotNotExist                  ErrorCode = 53
+	ErrorCodeLakeTableAlreadyExist                 ErrorCode = 54
+	ErrorCodeIneligibleReplicaException            ErrorCode = 55
+	ErrorCodeInvalidAlterTableException            ErrorCode = 56
+	ErrorCodeDeletionDisabledException             ErrorCode = 57
+	ErrorCodeServerNotExistException               ErrorCode = 58
+	ErrorCodeSeverTagAlreadyExistException         ErrorCode = 59
+	ErrorCodeSeverTagNotExistException             ErrorCode = 60
+	ErrorCodeRebalanceFailureException             ErrorCode = 61
+	ErrorCodeNoRebalanceInProgressException        ErrorCode = 62
+	ErrorCodeInvalidProducerIdException            ErrorCode = 63
+)
+
+type ErrorMetadata struct {
+	Code ErrorCode
+	Name string
+}
+
+var generatedErrors = [...]ErrorMetadata{
+	{ErrorCodeUnknownServerError, "UNKNOWN_SERVER_ERROR"},
+	{ErrorCodeNone, "NONE"},
+	{ErrorCodeNetworkException, "NETWORK_EXCEPTION"},
+	{ErrorCodeUnsupportedVersion, "UNSUPPORTED_VERSION"},
+	{ErrorCodeCorruptMessage, "CORRUPT_MESSAGE"},
+	{ErrorCodeDatabaseNotExist, "DATABASE_NOT_EXIST"},
+	{ErrorCodeDatabaseNotEmpty, "DATABASE_NOT_EMPTY"},
+	{ErrorCodeDatabaseAlreadyExist, "DATABASE_ALREADY_EXIST"},
+	{ErrorCodeTableNotExist, "TABLE_NOT_EXIST"},
+	{ErrorCodeTableAlreadyExist, "TABLE_ALREADY_EXIST"},
+	{ErrorCodeSchemaNotExist, "SCHEMA_NOT_EXIST"},
+	{ErrorCodeLogStorageException, "LOG_STORAGE_EXCEPTION"},
+	{ErrorCodeKvStorageException, "KV_STORAGE_EXCEPTION"},
+	{ErrorCodeNotLeaderOrFollower, "NOT_LEADER_OR_FOLLOWER"},
+	{ErrorCodeRecordTooLargeException, "RECORD_TOO_LARGE_EXCEPTION"},
+	{ErrorCodeCorruptRecordException, "CORRUPT_RECORD_EXCEPTION"},
+	{ErrorCodeInvalidTableException, "INVALID_TABLE_EXCEPTION"},
+	{ErrorCodeInvalidDatabaseException, "INVALID_DATABASE_EXCEPTION"},
+	{ErrorCodeInvalidReplicationFactor, "INVALID_REPLICATION_FACTOR"},
+	{ErrorCodeInvalidRequiredAcks, "INVALID_REQUIRED_ACKS"},
+	{ErrorCodeLogOffsetOutOfRangeException, "LOG_OFFSET_OUT_OF_RANGE_EXCEPTION"},
+	{ErrorCodeNonPrimaryKeyTableException, "NON_PRIMARY_KEY_TABLE_EXCEPTION"},
+	{ErrorCodeUnknownTableOrBucketException, "UNKNOWN_TABLE_OR_BUCKET_EXCEPTION"},
+	{ErrorCodeInvalidUpdateVersionException, "INVALID_UPDATE_VERSION_EXCEPTION"},
+	{ErrorCodeInvalidCoordinatorException, "INVALID_COORDINATOR_EXCEPTION"},
+	{ErrorCodeFencedLeaderEpochException, "FENCED_LEADER_EPOCH_EXCEPTION"},
+	{ErrorCodeRequestTimeOut, "REQUEST_TIME_OUT"},
+	{ErrorCodeStorageException, "STORAGE_EXCEPTION"},
+	{ErrorCodeOperationNotAttemptedException, "OPERATION_NOT_ATTEMPTED_EXCEPTION"},
+	{ErrorCodeNotEnoughReplicasAfterAppendException, "NOT_ENOUGH_REPLICAS_AFTER_APPEND_EXCEPTION"},
+	{ErrorCodeNotEnoughReplicasException, "NOT_ENOUGH_REPLICAS_EXCEPTION"},
+	{ErrorCodeSecurityTokenException, "SECURITY_TOKEN_EXCEPTION"},
+	{ErrorCodeOutOfOrderSequenceException, "OUT_OF_ORDER_SEQUENCE_EXCEPTION"},
+	{ErrorCodeDuplicateSequenceException, "DUPLICATE_SEQUENCE_EXCEPTION"},
+	{ErrorCodeUnknownWriterIdException, "UNKNOWN_WRITER_ID_EXCEPTION"},
+	{ErrorCodeInvalidColumnProjection, "INVALID_COLUMN_PROJECTION"},
+	{ErrorCodeInvalidTargetColumn, "INVALID_TARGET_COLUMN"},
+	{ErrorCodePartitionNotExists, "PARTITION_NOT_EXISTS"},
+	{ErrorCodeTableNotPartitionedException, "TABLE_NOT_PARTITIONED_EXCEPTION"},
+	{ErrorCodeInvalidTimestampException, "INVALID_TIMESTAMP_EXCEPTION"},
+	{ErrorCodeInvalidConfigException, "INVALID_CONFIG_EXCEPTION"},
+	{ErrorCodeLakeStorageNotConfiguredException, "LAKE_STORAGE_NOT_CONFIGURED_EXCEPTION"},
+	{ErrorCodeKvSnapshotNotExist, "KV_SNAPSHOT_NOT_EXIST"},
+	{ErrorCodePartitionAlreadyExists, "PARTITION_ALREADY_EXISTS"},
+	{ErrorCodePartitionSpecInvalidException, "PARTITION_SPEC_INVALID_EXCEPTION"},
+	{ErrorCodeLeaderNotAvailableException, "LEADER_NOT_AVAILABLE_EXCEPTION"},
+	{ErrorCodePartitionMaxNumException, "PARTITION_MAX_NUM_EXCEPTION"},
+	{ErrorCodeAuthenticateException, "AUTHENTICATE_EXCEPTION"},
+	{ErrorCodeSecurityDisabledException, "SECURITY_DISABLED_EXCEPTION"},
+	{ErrorCodeAuthorizationException, "AUTHORIZATION_EXCEPTION"},
+	{ErrorCodeBucketMaxNumException, "BUCKET_MAX_NUM_EXCEPTION"},
+	{ErrorCodeFencedTieringEpochException, "FENCED_TIERING_EPOCH_EXCEPTION"},
+	{ErrorCodeRetriableAuthenticateException, "RETRIABLE_AUTHENTICATE_EXCEPTION"},
+	{ErrorCodeInvalidServerRackInfoException, "INVALID_SERVER_RACK_INFO_EXCEPTION"},
+	{ErrorCodeLakeSnapshotNotExist, "LAKE_SNAPSHOT_NOT_EXIST"},
+	{ErrorCodeLakeTableAlreadyExist, "LAKE_TABLE_ALREADY_EXIST"},
+	{ErrorCodeIneligibleReplicaException, "INELIGIBLE_REPLICA_EXCEPTION"},
+	{ErrorCodeInvalidAlterTableException, "INVALID_ALTER_TABLE_EXCEPTION"},
+	{ErrorCodeDeletionDisabledException, "DELETION_DISABLED_EXCEPTION"},
+	{ErrorCodeServerNotExistException, "SERVER_NOT_EXIST_EXCEPTION"},
+	{ErrorCodeSeverTagAlreadyExistException, "SEVER_TAG_ALREADY_EXIST_EXCEPTION"},
+	{ErrorCodeSeverTagNotExistException, "SEVER_TAG_NOT_EXIST_EXCEPTION"},
+	{ErrorCodeRebalanceFailureException, "REBALANCE_FAILURE_EXCEPTION"},
+	{ErrorCodeNoRebalanceInProgressException, "NO_REBALANCE_IN_PROGRESS_EXCEPTION"},
+	{ErrorCodeInvalidProducerIdException, "INVALID_PRODUCER_ID_EXCEPTION"},
+}
+
+func ErrorCodes() []ErrorMetadata {
+	return append([]ErrorMetadata(nil), generatedErrors[:]...)
+}
+
+func LookupErrorCode(code int32) (ErrorMetadata, bool) {
+	for _, entry := range generatedErrors {
+		if int32(entry.Code) == code {
+			return entry, true
+		}
+	}
+	return ErrorMetadata{}, false
+}
+
 func newRequestProto(key APIKey) proto.Message {
 	switch key {
 	case APIKeyApiVersions:

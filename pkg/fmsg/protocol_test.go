@@ -1,6 +1,7 @@
 package fmsg
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
@@ -35,6 +36,89 @@ func TestRequestRoundTrip(t *testing.T) {
 	}
 	if err := response.Unmarshal(responseBody); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
+	}
+}
+
+func TestProtocolGoldenBytes(t *testing.T) {
+	tests := []struct {
+		name string
+		key  APIKey
+		set  func(proto.Message)
+		want []byte
+	}{
+		{
+			name: "api versions request",
+			key:  APIKeyApiVersions,
+			set: func(message proto.Message) {
+				request := message.(*ApiVersionsRequest)
+				request.ClientSoftwareName = proto.String("test")
+				request.ClientSoftwareVersion = proto.String("1.0")
+			},
+			want: []byte{0x0a, 0x04, 't', 'e', 's', 't', 0x12, 0x03, '1', '.', '0'},
+		},
+		{
+			name: "lookup request",
+			key:  APIKeyLookup,
+			set: func(message proto.Message) {
+				message.(*LookupRequest).TableId = proto.Int64(42)
+			},
+			want: []byte{0x08, 0x2a},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := NewRequest(test.key, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.set(request.Message())
+			got, err := request.Marshal()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, test.want) {
+				t.Fatalf("wire bytes = %x, want %x", got, test.want)
+			}
+		})
+	}
+
+	errorCode := int32(ErrorCodeNotLeaderOrFollower)
+	errorBody, err := proto.Marshal(&ErrorResponse{ErrorCode: &errorCode, ErrorMessage: proto.String("leader")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []byte{0x08, 0x0c, 0x12, 0x06, 'l', 'e', 'a', 'd', 'e', 'r'}; !bytes.Equal(errorBody, want) {
+		t.Fatalf("error wire bytes = %x, want %x", errorBody, want)
+	}
+}
+
+func TestErrorCodeRegistry(t *testing.T) {
+	errors := ErrorCodes()
+	if got, want := len(errors), 65; got != want {
+		t.Fatalf("ErrorCodes() length = %d, want %d", got, want)
+	}
+	for _, entry := range errors {
+		got, ok := LookupErrorCode(int32(entry.Code))
+		if !ok || got != entry {
+			t.Fatalf("LookupErrorCode(%d) = %#v, %t", entry.Code, got, ok)
+		}
+	}
+	if _, ok := LookupErrorCode(64); ok {
+		t.Fatal("LookupErrorCode(64) unexpectedly succeeded")
+	}
+}
+
+func TestResponseRetainsUnknownFields(t *testing.T) {
+	response, err := NewResponse(APIKeyApiVersions, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte{0x48, 0x01}
+	if err := response.Unmarshal(body); err != nil {
+		t.Fatal(err)
+	}
+	if got := response.Message().ProtoReflect().GetUnknown(); !bytes.Equal(got, body) {
+		t.Fatalf("unknown fields = %x, want %x", got, body)
 	}
 }
 
