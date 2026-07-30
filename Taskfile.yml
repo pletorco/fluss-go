@@ -8,6 +8,8 @@ set:
   - pipefail
 
 vars:
+  FLUSS_VERSION: 0.9.1-incubating
+  FLUSS_COMMIT: 6bf969f71af8d6f9cc37383ab89ae46a58b0e227
   GO_PACKAGES:
     sh: go list ./... 2>/dev/null || true
   GOVULNCHECK_VERSION: v1.6.0
@@ -42,14 +44,41 @@ tasks:
       - test -z "{{.GO_PACKAGES}}" || go vet ./...
 
   test:
+    desc: Run the complete fast test suite
+    deps:
+      - test:unit
+      - test:golden
+
+  test:unit:
     desc: Run unit tests
     cmds:
       - test -z "{{.GO_PACKAGES}}" || go test ./...
+
+  test:golden:
+    desc: Verify byte-level Fluss 0.9.1 compatibility fixtures
+    cmds:
+      - go test ./pkg/fmsg -run '^TestProtocolGoldenBytes$'
+      - >-
+        go test ./pkg/fgo
+        -run '^Test(CompactedPrimaryKeyMatchesJavaFixture|RowsMatchJava091Fixtures|KVAndLogBatchesMatchJava091Fixtures|LogBatchEncodesV0AndV1Headers|ArrowLogBatchDecodesJava091Fixture|FlussBucketMatchesJava091)$'
 
   test:race:
     desc: Run unit tests with the race detector
     cmds:
       - test -z "{{.GO_PACKAGES}}" || go test -race ./...
+
+  test:fuzz:
+    desc: Run bounded parser and codec fuzz smoke tests
+    cmds:
+      - go test -run '^$' -fuzz '^FuzzHandleFrame$' -fuzztime=1s ./internal/transport
+      - go test -run '^$' -fuzz '^FuzzResponseUnmarshal$' -fuzztime=1s ./pkg/fmsg
+      - go test -run '^$' -fuzz '^FuzzParseLogicalTypeJSON$' -fuzztime=1s ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeCompactedRow$' -fuzztime=1s ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeIndexedRow$' -fuzztime=1s ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzLookupKeyEncoding$' -fuzztime=1s ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeKVBatch$' -fuzztime=1s ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeLogBatchRows$' -fuzztime=1s ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeArrowLogBatch$' -fuzztime=1s ./pkg/fgo
 
   coverage:
     desc: Verify 80 percent coverage for every hand-written Go source file
@@ -127,13 +156,14 @@ tasks:
       - security:repo
 
   verify:
-    desc: Run formatting, generation, static analysis, tests, and security gates
+    desc: Run all local pre-PR validation and security gates
     deps:
       - fmt:check
       - verify:generate
       - vet
       - test
       - test:race
+      - test:fuzz
       - coverage
       - security
 

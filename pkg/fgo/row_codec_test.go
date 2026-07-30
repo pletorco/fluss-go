@@ -473,3 +473,38 @@ func FuzzDecodeIndexedRow(f *testing.F) {
 		_, _ = DecodeIndexedRow(schema, encoded)
 	})
 }
+
+func FuzzLookupKeyEncoding(f *testing.F) {
+	schema := Schema{
+		Columns: []Column{
+			{Name: "name", Type: StringType},
+			{Name: "sequence", Type: BigIntType},
+		},
+		PrimaryKey: []string{"name", "sequence"},
+	}
+	f.Add("alice", int64(1), true)
+	f.Add("", int64(-1), false)
+	f.Fuzz(func(t *testing.T, name string, sequence int64, prefixOnly bool) {
+		if len(name) > maxRowBytes {
+			t.Skip()
+		}
+		key := PrimaryKey{name, sequence}
+		if prefixOnly {
+			key = key[:1]
+		}
+		for _, version := range []int16{0, 1} {
+			var first, second []byte
+			var firstErr, secondErr error
+			if prefixOnly {
+				first, firstErr = EncodePrefixLookupKey(schema, key, version)
+				second, secondErr = EncodePrefixLookupKey(schema, key, version)
+			} else {
+				first, firstErr = EncodeLookupKey(schema, key, version)
+				second, secondErr = EncodeLookupKey(schema, key, version)
+			}
+			if !errors.Is(firstErr, secondErr) || !bytes.Equal(first, second) {
+				t.Fatalf("key encoding is not deterministic: %x/%v != %x/%v", first, firstErr, second, secondErr)
+			}
+		}
+	})
+}
