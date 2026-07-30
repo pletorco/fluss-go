@@ -25,7 +25,7 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
-      - uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.0.0
+      - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v1.0.0
         with:
           version: 3.51.1
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
