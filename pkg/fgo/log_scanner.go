@@ -181,6 +181,7 @@ func (r *ScanResult) Release() {
 type scannerFetch struct {
 	records       []byte
 	highWatermark int64
+	remote        *RemoteLogFetchInfo
 }
 
 type logScannerBackend interface {
@@ -299,10 +300,38 @@ func (b clientLogScannerBackend) fetch(
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyFetchLog); err != nil {
 		return scannerFetch{}, err
 	}
-	return scannerFetch{
-		records:       append([]byte(nil), result.GetRecords()...),
-		highWatermark: result.GetHighWatermark(),
-	}, nil
+	records := append([]byte(nil), result.GetRecords()...)
+	remote := remoteLogFetchInfo(result.GetRemoteLogFetchInfo())
+	if remote != nil {
+		remoteRecords, err := b.client.readRemoteLog(ctx, remote)
+		if err != nil {
+			return scannerFetch{}, err
+		}
+		records = append(remoteRecords, records...)
+	}
+	return scannerFetch{records: records, highWatermark: result.GetHighWatermark(), remote: remote}, nil
+}
+
+func remoteLogFetchInfo(info *fmsg.PbRemoteLogFetchInfo) *RemoteLogFetchInfo {
+	if info == nil {
+		return nil
+	}
+	result := &RemoteLogFetchInfo{
+		TabletDirectory:    info.GetRemoteLogTabletDir(),
+		PartitionName:      info.GetPartitionName(),
+		FirstStartPosition: int(info.GetFirstStartPos()),
+		Segments:           make([]RemoteLogSegment, len(info.GetRemoteLogSegments())),
+	}
+	for index, segment := range info.GetRemoteLogSegments() {
+		result.Segments[index] = RemoteLogSegment{
+			ID:          segment.GetRemoteLogSegmentId(),
+			StartOffset: segment.GetRemoteLogStartOffset(),
+			EndOffset:   segment.GetRemoteLogEndOffset(),
+			SizeBytes:   int64(segment.GetSegmentSizeInBytes()),
+			MaxTime:     time.UnixMilli(segment.GetMaxTimestamp()),
+		}
+	}
+	return result
 }
 
 type LogScanner struct {
