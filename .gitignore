@@ -1,0 +1,5 @@
+.tools/
+.task/
+coverage.out
+coverage.html
+dist/

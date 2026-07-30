@@ -1,0 +1,113 @@
+version: '3'
+
+output: prefixed
+
+set:
+  - errexit
+  - nounset
+  - pipefail
+
+vars:
+  GO_PACKAGES:
+    sh: go list ./... 2>/dev/null || true
+  GOVULNCHECK_VERSION: v1.6.0
+  TRIVY_VERSION: 0.72.0
+  TOOLS_DIR: .tools/bin
+
+tasks:
+  default:
+    desc: List available project tasks
+    cmds:
+      - task --list
+
+  fmt:
+    desc: Format tracked Go files
+    cmds:
+      - test -z "$(git ls-files '*.go')" || gofmt -w $(git ls-files '*.go')
+
+  fmt:check:
+    desc: Verify Go files are formatted
+    cmds:
+      - test -z "$(git ls-files '*.go')" || test -z "$(gofmt -l $(git ls-files '*.go'))"
+
+  deps:verify:
+    desc: Verify Go module dependencies
+    cmds:
+      - go mod verify
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - test -z "{{.GO_PACKAGES}}" || go vet ./...
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - test -z "{{.GO_PACKAGES}}" || go test ./...
+
+  test:race:
+    desc: Run unit tests with the race detector
+    cmds:
+      - test -z "{{.GO_PACKAGES}}" || go test -race ./...
+
+  test:integration:
+    desc: Run integration tests against an explicitly configured Fluss cluster
+    preconditions:
+      - sh: test -n "$FLUSS_INTEGRATION"
+        msg: Set FLUSS_INTEGRATION=1 after configuring the integration environment.
+    cmds:
+      - go test -tags=integration ./...
+
+  generate:
+    desc: Regenerate protocol artifacts
+    cmds:
+      - test ! -d cmd/protocolgen || go run ./cmd/protocolgen
+
+  verify:generate:
+    desc: Verify generated protocol artifacts are current
+    cmds:
+      - task: generate
+      - git diff --exit-code -- pkg/fmsg
+
+  tools:check:
+    desc: Check required security tool versions
+    cmds:
+      - test "$(trivy version | awk '/^Version:/ { print $2; exit }')" = "{{.TRIVY_VERSION}}"
+
+  security:go:
+    desc: Scan Go dependencies with govulncheck
+    cmds:
+      - test -z "{{.GO_PACKAGES}}" || mkdir -p "{{.TOOLS_DIR}}"
+      - test -z "{{.GO_PACKAGES}}" || GOBIN="$(PWD)/{{.TOOLS_DIR}}" go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}
+      - test -z "{{.GO_PACKAGES}}" || "{{.TOOLS_DIR}}/govulncheck" ./...
+
+  security:repo:
+    desc: Scan repository vulnerabilities, configuration, secrets, and licenses
+    deps:
+      - tools:check
+    cmds:
+      - trivy fs --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 1 --no-progress .
+      - trivy fs --scanners secret --exit-code 1 --no-progress .
+      - trivy fs --scanners license --no-progress .
+
+  security:
+    desc: Run all local security gates
+    deps:
+      - deps:verify
+      - security:go
+      - security:repo
+
+  verify:
+    desc: Run formatting, generation, static analysis, tests, and security gates
+    deps:
+      - fmt:check
+      - verify:generate
+      - vet
+      - test
+      - test:race
+      - security
+
+  ci:
+    desc: Run the CI verification suite
+    deps:
+      - verify

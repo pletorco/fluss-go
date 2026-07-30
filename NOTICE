@@ -1,0 +1,6 @@
+Fluss-Go
+Copyright 2026 Pletorco contributors
+
+This distribution does not yet include vendored Apache Fluss source files.
+When Apache Fluss protocol inputs are added, the applicable notices from the
+pinned upstream Apache Fluss release will be retained in this file.
