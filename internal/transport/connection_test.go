@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"testing"
 	"time"
@@ -12,6 +13,48 @@ import (
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
 )
+
+var errTestRequest = errors.New("test request failure")
+var errTestResponse = errors.New("test response failure")
+
+type testRequest struct {
+	body        []byte
+	marshalErr  error
+	newResponse func() fmsg.Response
+}
+
+func (r *testRequest) APIKey() fmsg.APIKey        { return fmsg.APIKeyApiVersions }
+func (r *testRequest) Version() int16             { return 0 }
+func (r *testRequest) SetVersion(int16) error     { return nil }
+func (r *testRequest) NewResponse() fmsg.Response { return r.newResponse() }
+func (r *testRequest) Marshal() ([]byte, error)   { return r.body, r.marshalErr }
+
+type testResponse struct {
+	unmarshalErr error
+}
+
+func (r *testResponse) APIKey() fmsg.APIKey    { return fmsg.APIKeyApiVersions }
+func (r *testResponse) Version() int16         { return 0 }
+func (r *testResponse) Unmarshal([]byte) error { return r.unmarshalErr }
+func (r *testResponse) Message() proto.Message { return nil }
+
+type writeConn struct {
+	write func([]byte) (int, error)
+}
+
+func (c writeConn) Read([]byte) (int, error)        { return 0, io.EOF }
+func (c writeConn) Write(value []byte) (int, error) { return c.write(value) }
+func (writeConn) Close() error                      { return nil }
+func (writeConn) LocalAddr() net.Addr               { return testAddr("local") }
+func (writeConn) RemoteAddr() net.Addr              { return testAddr("remote") }
+func (writeConn) SetDeadline(time.Time) error       { return nil }
+func (writeConn) SetReadDeadline(time.Time) error   { return nil }
+func (writeConn) SetWriteDeadline(time.Time) error  { return nil }
+
+type testAddr string
+
+func (a testAddr) Network() string { return "test" }
+func (a testAddr) String() string  { return string(a) }
 
 func TestRequestRoundTrip(t *testing.T) {
 	client, server := net.Pipe()
@@ -32,6 +75,128 @@ func TestRequestRoundTrip(t *testing.T) {
 	}
 	if _, ok := response.Message().(*fmsg.ApiVersionsResponse); !ok {
 		t.Fatalf("response type = %T", response.Message())
+	}
+}
+
+func TestRequestRejectsInvalidInputBeforeWriting(t *testing.T) {
+	connection := &Connection{
+		maxFrame: requestHeaderSize, sem: make(chan struct{}, 1),
+		pending: make(map[int32]chan result), done: make(chan struct{}),
+	}
+	if _, err := connection.Request(context.Background(), nil); !errors.Is(err, fmsg.ErrInvalidArgument) {
+		t.Fatalf("nil Request() error = %v", err)
+	}
+	request := &testRequest{marshalErr: errTestRequest, newResponse: func() fmsg.Response { return &testResponse{} }}
+	if _, err := connection.Request(context.Background(), request); !errors.Is(err, errTestRequest) {
+		t.Fatalf("marshal Request() error = %v", err)
+	}
+	request.marshalErr = nil
+	request.body = []byte{1}
+	if _, err := connection.Request(context.Background(), request); !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("oversized Request() error = %v", err)
+	}
+}
+
+func TestRequestStopsWhileWaitingForCapacity(t *testing.T) {
+	connection := &Connection{
+		maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
+		pending: make(map[int32]chan result), done: make(chan struct{}),
+	}
+	connection.sem <- struct{}{}
+	request := &testRequest{newResponse: func() fmsg.Response { return &testResponse{} }}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := connection.Request(ctx, request); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Request() error = %v", err)
+	}
+
+	close(connection.done)
+	if _, err := connection.Request(context.Background(), request); !errors.Is(err, ErrClosed) {
+		t.Fatalf("closed Request() error = %v", err)
+	}
+}
+
+func TestRequestReportsWriteAndResponseFailures(t *testing.T) {
+	t.Run("short write", func(t *testing.T) {
+		connection := &Connection{
+			conn:     writeConn{write: func([]byte) (int, error) { return 0, nil }},
+			maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
+			pending: make(map[int32]chan result), done: make(chan struct{}),
+		}
+		request := &testRequest{newResponse: func() fmsg.Response { return &testResponse{} }}
+		if _, err := connection.Request(context.Background(), request); !errors.Is(err, io.ErrShortWrite) {
+			t.Fatalf("Request() error = %v", err)
+		}
+	})
+
+	for _, test := range []struct {
+		name     string
+		response func() fmsg.Response
+		want     error
+	}{
+		{name: "missing constructor", response: func() fmsg.Response { return nil }, want: ErrMalformed},
+		{name: "decode failure", response: func() fmsg.Response {
+			return &testResponse{unmarshalErr: errTestResponse}
+		}, want: errTestResponse},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client, server := net.Pipe()
+			defer server.Close()
+			connection, err := New(client, Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer connection.Close()
+			go func() {
+				id := readRequestID(t, server)
+				writeResponse(t, server, 0, id, nil)
+			}()
+			request := &testRequest{newResponse: test.response}
+			if _, err := connection.Request(context.Background(), request); !errors.Is(err, test.want) {
+				t.Fatalf("Request() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestRequestReportsReaderFailureToPendingCall(t *testing.T) {
+	client, server := net.Pipe()
+	connection, err := New(client, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() {
+		_ = readRequestID(t, server)
+		_ = server.Close()
+	}()
+	request := &testRequest{newResponse: func() fmsg.Response { return &testResponse{} }}
+	if _, err := connection.Request(context.Background(), request); !errors.Is(err, io.EOF) {
+		t.Fatalf("Request() error = %v, want EOF", err)
+	}
+}
+
+func TestRegisterHandlesClosureCollisionAndIDWrap(t *testing.T) {
+	connection := &Connection{pending: make(map[int32]chan result)}
+	connection.nextID = math.MaxInt32
+	connection.pending[1] = make(chan result, 1)
+	id, _, err := connection.register()
+	if err != nil || id != 2 {
+		t.Fatalf("register() = %d, %v, want 2, nil", id, err)
+	}
+	connection.unregister(id)
+	if _, found := connection.pending[id]; found {
+		t.Fatal("unregister() retained request")
+	}
+
+	connection.closed = true
+	if _, _, err := connection.register(); !errors.Is(err, ErrClosed) {
+		t.Fatalf("closed register() error = %v", err)
+	}
+	connection.closeErr = errTestRequest
+	if _, _, err := connection.register(); !errors.Is(err, errTestRequest) {
+		t.Fatalf("failed register() error = %v", err)
 	}
 }
 
@@ -113,6 +278,37 @@ func TestReadFrameAndHandleFrameFailures(t *testing.T) {
 	}
 	if got := (&RemoteError{Code: 3, Message: "remote"}).Error(); got != "transport: remote error 3: remote" {
 		t.Fatalf("RemoteError message = %q", got)
+	}
+}
+
+func TestReadFrameRejectsTruncatedBody(t *testing.T) {
+	left, right := net.Pipe()
+	connection := &Connection{conn: left, maxFrame: 8}
+	go func() {
+		var header [4]byte
+		binary.BigEndian.PutUint32(header[:], 3)
+		_, _ = right.Write(header[:])
+		_, _ = right.Write([]byte{1})
+		_ = right.Close()
+	}()
+	if _, err := connection.readFrame(); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("readFrame() error = %v, want unexpected EOF", err)
+	}
+	_ = left.Close()
+}
+
+func TestConnectionErrAndRepeatedFailure(t *testing.T) {
+	connection := &Connection{
+		conn:    writeConn{write: func(value []byte) (int, error) { return len(value), nil }},
+		pending: make(map[int32]chan result), done: make(chan struct{}),
+	}
+	if err := connection.err(); !errors.Is(err, ErrClosed) {
+		t.Fatalf("err() = %v", err)
+	}
+	connection.fail(errTestRequest)
+	connection.fail(errors.New("replacement"))
+	if err := connection.err(); !errors.Is(err, errTestRequest) {
+		t.Fatalf("err() = %v, want original failure", err)
 	}
 }
 

@@ -423,6 +423,118 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestLogWriterRejectsInvalidOperations(t *testing.T) {
+	table := logWriterTable()
+	writer, err := newLogWriter(
+		context.Background(), logBackend(0), table, WithLogLinger(time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := writer.Append(nil, Row{int32(1), "one"}).Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("Append(nil) = %#v", result)
+	}
+	if result := writer.Append(context.Background(), Row{int32(1)}).Await(context.Background()); !errors.Is(result.Err, ErrInvalidRow) {
+		t.Fatalf("Append(invalid row) = %#v", result)
+	}
+	if result := writer.AppendArrow(context.Background(), 0, nil, nil).Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("AppendArrow(nil) = %#v", result)
+	}
+
+	schema, err := table.Schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int32Builder).Append(1)
+	builder.Field(1).(*array.StringBuilder).Append("one")
+	record := builder.NewRecordBatch()
+	builder.Release()
+	defer record.Release()
+
+	for _, future := range []*WriteFuture{
+		writer.AppendArrow(context.Background(), 99, record, []ChangeType{Append}),
+		writer.AppendArrow(context.Background(), 0, record, nil),
+		writer.AppendArrow(context.Background(), 0, record, []ChangeType{ChangeType(99)}),
+	} {
+		if result := future.Await(context.Background()); result.Err == nil {
+			t.Fatalf("invalid Arrow append = %#v", result)
+		}
+	}
+	if err := writer.Flush(nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Flush(nil) error = %v", err)
+	}
+	if err := writer.Close(nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Close(nil) error = %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Flush(context.Background()); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Flush after Close error = %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("repeated Close error = %v", err)
+	}
+}
+
+func TestLogWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
+	release := make(chan struct{})
+	backend := logBackend(0)
+	backend.block = release
+	writer, err := newLogWriter(
+		context.Background(), backend, logWriterTable(), WithLogLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Append(context.Background(), Row{int32(1), "blocked"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	if err := writer.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() error = %v, want deadline", err)
+	}
+	close(release)
+	if result := future.Await(context.Background()); result.Err != nil {
+		t.Fatalf("blocked append = %#v", result)
+	}
+	select {
+	case <-writer.done:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not finish after backend release")
+	}
+}
+
+func TestLogWriterMovesStickyBatchAfterSizeBoundary(t *testing.T) {
+	backend := logBackend(0, 1)
+	table := logWriterTable()
+	table.BucketCount = 2
+	writer, err := newLogWriter(
+		context.Background(), backend, table,
+		WithLogLinger(time.Hour),
+		WithLogBatchLimits(logBatchV0HeaderSize+1, 100),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := writer.Append(context.Background(), Row{int32(1), strings.Repeat("a", 40)})
+	second := writer.Append(context.Background(), Row{int32(2), strings.Repeat("b", 40)})
+	if err := writer.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	firstResult := first.Await(context.Background())
+	secondResult := second.Await(context.Background())
+	if firstResult.Err != nil || secondResult.Err != nil {
+		t.Fatalf("write results = %#v, %#v", firstResult, secondResult)
+	}
+	if firstResult.Bucket == secondResult.Bucket {
+		t.Fatalf("sticky batches remained on bucket %d", firstResult.Bucket)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClientLogWriterBackendUsesFluss091Messages(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	var produced *fmsg.ProduceLogRequest

@@ -19,6 +19,9 @@ func TestPlainAuthenticator(t *testing.T) {
 	if first == second {
 		t.Fatal("PlainAuthenticator() reused an authenticator")
 	}
+	if first.Protocol() != "PLAIN" || !first.HasInitialResponse() {
+		t.Fatalf("PLAIN capabilities = protocol %q initial %t", first.Protocol(), first.HasInitialResponse())
+	}
 	token, err := first.Authenticate(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)

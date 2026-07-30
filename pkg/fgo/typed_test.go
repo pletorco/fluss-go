@@ -349,6 +349,10 @@ func TestTypedWrappersValidateNilValues(t *testing.T) {
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil lookup key codec error = %v", err)
 	}
+}
+
+func TestTypedConstructorsRejectInvalidCodecsAndTables(t *testing.T) {
+	codec, keyCodec := typedRowCodec(), typedKeyCodec()
 	client := &Client{}
 	if _, err := NewTypedLogWriter[typedRow](
 		context.Background(), client, Table{}, nil,
@@ -379,6 +383,28 @@ func TestTypedWrappersValidateNilValues(t *testing.T) {
 		context.Background(), client, Table{}, TableBucket{}, 0, nil,
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil snapshot codec error = %v", err)
+	}
+	for name, open := range map[string]func() error{
+		"log writer": func() error {
+			_, err := NewTypedLogWriter(context.Background(), client, Table{}, codec)
+			return err
+		},
+		"KV writer": func() error {
+			_, err := NewTypedKVWriter(context.Background(), client, Table{}, codec, keyCodec)
+			return err
+		},
+		"lookup": func() error {
+			_, err := NewTypedLookupClient(context.Background(), client, Table{}, codec, keyCodec)
+			return err
+		},
+		"log scanner": func() error {
+			_, err := NewTypedLogScanner(context.Background(), client, Table{}, AtOffset(0), codec)
+			return err
+		},
+	} {
+		if err := open(); err == nil {
+			t.Fatalf("%s with invalid table succeeded", name)
+		}
 	}
 }
 

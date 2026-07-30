@@ -315,7 +315,21 @@ func TestKVWriterRejectsInvalidMutations(t *testing.T) {
 			t.Errorf("invalid mutation %d succeeded", index)
 		}
 	}
-	_ = writer.Close(context.Background())
+	if err := writer.Flush(nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Flush(nil) error = %v", err)
+	}
+	if err := writer.Close(nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Close(nil) error = %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Flush(context.Background()); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Flush after Close error = %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("repeated Close error = %v", err)
+	}
 
 	auto := table
 	auto.Schema.AutoIncrement = []string{"score"}
@@ -330,6 +344,33 @@ func TestKVWriterRejectsInvalidMutations(t *testing.T) {
 		t.Fatal("partial auto-increment upsert succeeded")
 	}
 	_ = writer.Close(context.Background())
+}
+
+func TestKVWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
+	release := make(chan struct{})
+	backend := kvBackend(0)
+	backend.block = release
+	writer, err := newKVWriter(
+		context.Background(), backend, kvWriterTable(), WithKVLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Upsert(context.Background(), Row{int32(1), "blocked", nil})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	if err := writer.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() error = %v, want deadline", err)
+	}
+	close(release)
+	if result := future.Await(context.Background()); result.Err != nil {
+		t.Fatalf("blocked mutation = %#v", result)
+	}
+	select {
+	case <-writer.done:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not finish after backend release")
+	}
 }
 
 func TestKVWriterRejectsInvalidConfiguration(t *testing.T) {

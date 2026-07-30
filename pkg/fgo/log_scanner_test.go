@@ -465,6 +465,7 @@ func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
 		{"zero timestamp", AtTimestamp(time.Time{}), scannerBackend(0), nil, ErrInvalidConfig},
 		{"unknown offset", ScanOffset{Kind: 99}, scannerBackend(0), nil, ErrInvalidConfig},
 		{"nil option", AtOffset(0), scannerBackend(0), []LogScannerOption{nil}, ErrInvalidConfig},
+		{"bad partition", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanPartition("   ")}, ErrInvalidConfig},
 		{"empty projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection()}, ErrInvalidConfig},
 		{"unknown projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection("missing")}, ErrInvalidSchema},
 		{"bad limits", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanLimits(0, 1, 2, -1)}, ErrInvalidConfig},
@@ -486,6 +487,11 @@ func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
 	}
 	if err := (ScanOffset{Kind: ScanFromLatest, Offset: 1}).Validate(); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("valued latest error = %v", err)
+	}
+	var config LogScannerConfig
+	if err := WithScanPartition("day=2026-07-30")(&config); err != nil ||
+		config.Partition != "day=2026-07-30" {
+		t.Fatalf("WithScanPartition() = %#v, %v", config, err)
 	}
 }
 

@@ -53,13 +53,16 @@ func TestServerErrorCategoriesAndRetryability(t *testing.T) {
 }
 
 func TestPartitionNotExistsMapsToUnknownPartition(t *testing.T) {
-	err := responseServerError(
+	err := ResponseError(
 		int32(fmsg.ErrorCodePartitionNotExists),
 		"partition is absent",
 		fmsg.APIKeyGetMetadata,
 	)
 	if !errors.Is(err, ErrUnknownPartition) {
 		t.Fatalf("error = %v, want ErrUnknownPartition", err)
+	}
+	if err := ResponseError(int32(fmsg.ErrorCodeNone), "", fmsg.APIKeyGetMetadata); err != nil {
+		t.Fatalf("ResponseError(NONE) = %v", err)
 	}
 }
 

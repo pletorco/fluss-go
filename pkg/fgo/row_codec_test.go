@@ -416,6 +416,106 @@ func TestRowCodecsRejectInvalidLogicalValues(t *testing.T) {
 	}
 }
 
+func TestRowValueHelpersRejectTruncatedAndInvalidValues(t *testing.T) {
+	for _, kind := range []DataType{TinyIntType, SmallIntType, FloatType, DoubleType} {
+		if _, _, err := readCompactedFixed(nil, 0, kind); err == nil {
+			t.Fatalf("readCompactedFixed(%s) error = nil", kind)
+		}
+	}
+	if _, _, err := readCompactedFixed([]byte{2}, 0, BoolType); err == nil {
+		t.Fatal("invalid compacted boolean error = nil")
+	}
+	if _, _, err := readCompactedFixed(nil, 0, StringType); err == nil {
+		t.Fatal("unsupported compacted fixed type error = nil")
+	}
+
+	timestamp := appendVar64(nil, 0)
+	timestamp = appendVar32(timestamp, 1_000_000)
+	if _, _, err := readCompactedTimestamp(timestamp, 0, LogicalType{Root: "TIMESTAMP", Precision: 6}); err == nil {
+		t.Fatal("invalid compacted timestamp nanos error = nil")
+	}
+	if _, _, err := readCompactedTimestamp([]byte{0x80}, 0, LogicalType{Root: "TIMESTAMP"}); err == nil {
+		t.Fatal("truncated compacted timestamp error = nil")
+	}
+	if _, _, err := readCompactedDecimal([]byte{0x80}, 0, LogicalType{Root: "DECIMAL", Precision: 18, Scale: 2}); err == nil {
+		t.Fatal("truncated small decimal error = nil")
+	}
+	if _, _, err := readCompactedDecimal([]byte{0x80}, 0, LogicalType{Root: "DECIMAL", Precision: 19, Scale: 2}); err == nil {
+		t.Fatal("truncated large decimal error = nil")
+	}
+}
+
+func TestIndexedLengthsAndSignedIntegersCoverBoundaries(t *testing.T) {
+	tests := []struct {
+		logical LogicalType
+		want    int
+	}{
+		{LogicalType{Root: "BOOLEAN"}, 1},
+		{LogicalType{Root: "SMALLINT"}, 2},
+		{LogicalType{Root: "INTEGER"}, 4},
+		{LogicalType{Root: "BIGINT"}, 8},
+		{LogicalType{Root: "TIMESTAMP", Precision: 6}, 12},
+		{LogicalType{Root: "TIMESTAMP", Precision: 3}, 8},
+		{LogicalType{Root: "CHAR", Length: 7}, 7},
+		{LogicalType{Root: "STRING"}, -1},
+	}
+	for _, test := range tests {
+		if got := indexedLength(test.logical); got != test.want {
+			t.Fatalf("indexedLength(%#v) = %d, want %d", test.logical, got, test.want)
+		}
+	}
+	for _, value := range []*big.Int{
+		big.NewInt(0), big.NewInt(127), big.NewInt(128),
+		big.NewInt(-1), big.NewInt(-128), big.NewInt(-129),
+	} {
+		encoded := signedBigEndian(value)
+		if got := signedBigInt(encoded); got.Cmp(value) != 0 {
+			t.Fatalf("signed round trip %s = %x -> %s", value, encoded, got)
+		}
+	}
+	negative := timestampTime(TimestampType, -1, 0)
+	if negative.UnixNano() != -int64(time.Millisecond) {
+		t.Fatalf("negative timestamp = %v", negative)
+	}
+}
+
+func TestBinaryArrayReadersRejectInvalidNestedAndTimestampSlots(t *testing.T) {
+	truncated := make([]byte, 8)
+	putOffsetSize(truncated, 0, 100, 1)
+	if _, err := readArrayNested(
+		truncated, 0, LogicalType{Root: "ARRAY", Element: &LogicalType{Root: "INTEGER"}},
+		compactedEncoding,
+	); err == nil {
+		t.Fatal("truncated nested array error = nil")
+	}
+
+	unsupported := make([]byte, 8)
+	var err error
+	unsupported, err = appendArrayVariable(unsupported, 0, []byte{1}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readArrayNested(
+		unsupported, 0, LogicalType{Root: "STRING"}, compactedEncoding,
+	); err == nil {
+		t.Fatal("unsupported nested array type error = nil")
+	}
+
+	timestamp := make([]byte, 16)
+	putOffsetSize(timestamp, 0, 8, 1_000_000)
+	if _, err := readArrayTimestamp(
+		timestamp, 0, LogicalType{Root: "TIMESTAMP", Precision: 6},
+	); err == nil {
+		t.Fatal("invalid array timestamp nanos error = nil")
+	}
+	putOffsetSize(timestamp, 0, 100, 1)
+	if _, err := readArrayTimestamp(
+		timestamp, 0, LogicalType{Root: "TIMESTAMP", Precision: 6},
+	); err == nil {
+		t.Fatal("truncated array timestamp error = nil")
+	}
+}
+
 func logicalColumn(name string, logicalType LogicalType) Column {
 	return Column{Name: name, Type: dataTypeForLogicalType(logicalType), Nullable: logicalType.Nullable, LogicalType: &logicalType}
 }

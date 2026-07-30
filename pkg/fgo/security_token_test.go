@@ -338,6 +338,26 @@ func TestSecurityTokenOptionsAndProtocol(t *testing.T) {
 		token.AdditionalInfo["service"] != "filesystem" {
 		t.Fatalf("wire token = %#v, %v", token, err)
 	}
+	provided, err := (clientSecurityTokenProvider{client: client}).
+		AcquireFileSystemSecurityToken(context.Background())
+	if err != nil || string(provided.Token) != "wire-secret" {
+		t.Fatalf("client token provider = %#v, %v", provided, err)
+	}
+}
+
+func TestSystemSecurityTokenClock(t *testing.T) {
+	clock := systemSecurityTokenClock{}
+	before := time.Now()
+	if now := clock.Now(); now.Before(before) || now.After(time.Now()) {
+		t.Fatalf("clock.Now() = %v", now)
+	}
+	timer := clock.NewTimer(time.Millisecond)
+	select {
+	case <-timer.C():
+	case <-time.After(time.Second):
+		t.Fatal("system token timer did not fire")
+	}
+	_ = timer.Stop()
 }
 
 func TestClientCloseStopsSecurityTokenManager(t *testing.T) {

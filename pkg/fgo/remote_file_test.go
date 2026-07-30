@@ -224,6 +224,20 @@ func TestClientRemoteLogRequiresReaderAndCopiesToken(t *testing.T) {
 	if data, err := (&Client{}).readRemoteLog(context.Background(), nil); err != nil || data != nil {
 		t.Fatalf("empty remote log = %v, %v", data, err)
 	}
+
+	client := &Client{remoteFiles: remoteFileSettings{
+		reader: RemoteFileReaderFunc(func(_ context.Context, request RemoteFileRequest) ([]byte, error) {
+			if request.Token != nil {
+				t.Fatal("unexpected token")
+			}
+			return []byte("x"), nil
+		}),
+		config: RemoteFileReadConfig{MaxAttempts: 1, MaxFileBytes: 10},
+	}}
+	data, err := client.readRemoteLog(context.Background(), info)
+	if err != nil || string(data) != "x" {
+		t.Fatalf("readRemoteLog() = %q, %v", data, err)
+	}
 }
 
 func TestRemoteLogFetchInfoCopiesProtocolMetadata(t *testing.T) {

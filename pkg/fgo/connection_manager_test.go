@@ -224,6 +224,23 @@ func TestConnectionManagerCancelsWaitingDial(t *testing.T) {
 	}
 }
 
+func TestWaitRetryHandlesImmediateDelayAndCancellation(t *testing.T) {
+	if err := waitRetry(context.Background(), 0); err != nil {
+		t.Fatalf("waitRetry(0) error = %v", err)
+	}
+	if err := waitRetry(context.Background(), time.Millisecond); err != nil {
+		t.Fatalf("waitRetry(delay) error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitRetry(ctx, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitRetry(canceled) error = %v", err)
+	}
+	if err := waitRetry(ctx, 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitRetry(canceled, zero) error = %v", err)
+	}
+}
+
 func TestConnectionManagerDialAndAuthenticatorFailures(t *testing.T) {
 	dialFailure := newConnectionManager(config{
 		dialContext: func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("dial failed") },

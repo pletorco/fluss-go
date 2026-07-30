@@ -200,6 +200,9 @@ type Client struct {
 func Open(ctx context.Context, options ...Option) (*Client, error) {
 	cfg := config{name: "fluss-go", version: "dev", timeout: 10 * time.Second, retry: RetryPolicy{MaxAttempts: 1, Backoff: func(int) time.Duration { return 0 }}}
 	for _, option := range options {
+		if option == nil {
+			return nil, fmt.Errorf("%w: nil client option", ErrInvalidConfig)
+		}
 		if err := option(&cfg); err != nil {
 			return nil, err
 		}
@@ -243,6 +246,9 @@ func newClient(requester fmsg.Requester, close func() error) *Client {
 func (c *Client) Requester() fmsg.Requester { return c }
 
 func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
+	if request == nil {
+		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
+	}
 	if c.manager != nil {
 		return c.manager.request(ctx, Node{ID: c.serverID, Address: c.address, Role: c.role}, request)
 	}
@@ -252,6 +258,9 @@ func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 // RequestTo sends a raw request to the connection for node. It is intended for protocol helpers;
 // higher-level clients select the appropriate coordinator or tablet server from metadata.
 func (c *Client) RequestTo(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
+	if request == nil {
+		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
+	}
 	if c.manager == nil {
 		return nil, fmt.Errorf("%w: client does not manage server connections", ErrClosed)
 	}
@@ -289,6 +298,9 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 }
 
 func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
+	if request == nil {
+		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
+	}
 	var requestErr error
 	if c.observer != nil {
 		started := time.Now()

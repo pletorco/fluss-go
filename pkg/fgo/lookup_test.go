@@ -332,6 +332,7 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 	}{
 		{"log table", logTable, lookupBackendFor(table, 0), nil, ErrTableKind},
 		{"nil option", table, lookupBackendFor(table, 0), []LookupOption{nil}, ErrInvalidConfig},
+		{"bad partition", table, lookupBackendFor(table, 0), []LookupOption{WithLookupPartition("   ")}, ErrInvalidConfig},
 		{"bad batch", table, lookupBackendFor(table, 0), []LookupOption{WithLookupBatch(0, 0)}, ErrInvalidConfig},
 		{"bad insert request", table, lookupBackendFor(table, 0), []LookupOption{WithLookupInsertIfNotExists(0, 2)}, ErrInvalidConfig},
 		{"required insert value", requiredValue, lookupBackendFor(requiredValue, 0), []LookupOption{WithLookupInsertIfNotExists(time.Second, -1)}, ErrInvalidSchema},
@@ -344,6 +345,11 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 				t.Fatalf("newLookupClient() error = %v, want %v", err, test.target)
 			}
 		})
+	}
+	var config LookupConfig
+	if err := WithLookupPartition("day=2026-07-30")(&config); err != nil ||
+		config.Partition != "day=2026-07-30" {
+		t.Fatalf("WithLookupPartition() = %#v, %v", config, err)
 	}
 }
 

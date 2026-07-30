@@ -1,14 +1,19 @@
 package fgo
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/pletorco/fluss-go/pkg/fmsg"
+	"google.golang.org/protobuf/proto"
 )
 
 type batchScanBackendFunc func(context.Context, TableBucket, int32) (bool, []byte, error)
@@ -41,6 +46,98 @@ func TestResolvedTableBucketsAreOrdered(t *testing.T) {
 	if _, err := resolvedTableBuckets(1, -1, nil); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("empty buckets error = %v", err)
 	}
+}
+
+func TestClientResolvesTableAndPartitionBuckets(t *testing.T) {
+	path := TablePath{Database: "db", Table: "events"}
+	client := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		*response.Message().(*fmsg.MetadataResponse) = *metadataResponse(path)
+		return response, nil
+	}), nil)
+	client.versions[fmsg.APIKeyGetMetadata] = 0
+
+	tableBuckets, err := client.ResolveTableBuckets(
+		context.Background(), PhysicalTablePath{TablePath: path},
+	)
+	if err != nil || len(tableBuckets) != 1 || tableBuckets[0].TableID != 9 ||
+		tableBuckets[0].PartitionID != -1 || tableBuckets[0].BucketID != 0 {
+		t.Fatalf("table buckets = %#v, %v", tableBuckets, err)
+	}
+	partitionBuckets, err := client.ResolveTableBuckets(context.Background(), PhysicalTablePath{
+		TablePath: path, Partition: "day=2026-07-30",
+	})
+	if err != nil || len(partitionBuckets) != 1 || partitionBuckets[0].TableID != 9 ||
+		partitionBuckets[0].PartitionID != 10 || partitionBuckets[0].BucketID != 1 {
+		t.Fatalf("partition buckets = %#v, %v", partitionBuckets, err)
+	}
+	if _, err := client.ResolveTableBuckets(context.Background(), PhysicalTablePath{}); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("invalid path error = %v", err)
+	}
+}
+
+func TestClientBatchScanBackendResponses(t *testing.T) {
+	node := Node{ID: 2, Address: "tablet:9123", Role: TabletServer}
+	bucket := TableBucket{TableID: 9, PartitionID: 10, BucketID: 1, Leader: node}
+	requestErr := errors.New("limit scan request failed")
+
+	for _, test := range []struct {
+		name      string
+		requester requesterFunc
+		target    error
+	}{
+		{name: "request error", target: requestErr, requester: func(context.Context, fmsg.Request) (fmsg.Response, error) {
+			return nil, requestErr
+		}},
+		{name: "unexpected response", target: ErrValidation, requester: func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+			return fmsg.NewResponse(fmsg.APIKeyLookup, request.Version())
+		}},
+		{name: "server error", target: ErrStorage, requester: func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+			message := response.Message().(*fmsg.LimitScanResponse)
+			message.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeStorageException))
+			return response, nil
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := batchBackendClient(node, test.requester)
+			if _, _, err := (clientBatchScanBackend{client: client}).limitScan(
+				context.Background(), bucket, 3,
+			); err == nil || test.target == ErrValidation && !strings.Contains(err.Error(), "unexpected response") ||
+				test.target != ErrValidation && !errors.Is(err, test.target) {
+				t.Fatalf("limitScan() error = %v, want %v", err, test.target)
+			}
+		})
+	}
+
+	records := []byte{1, 2, 3}
+	client := batchBackendClient(node, func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		message := request.(*fmsg.MessageRequest).Message().(*fmsg.LimitScanRequest)
+		if message.GetTableId() != 9 || message.GetPartitionId() != 10 ||
+			message.GetBucketId() != 1 || message.GetLimit() != 3 {
+			t.Fatalf("limit scan request = %#v", message)
+		}
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		scanned := response.Message().(*fmsg.LimitScanResponse)
+		scanned.IsLogTable = proto.Bool(true)
+		scanned.Records = records
+		return response, nil
+	})
+	isLog, got, err := (clientBatchScanBackend{client: client}).limitScan(
+		context.Background(), bucket, 3,
+	)
+	records[0] = 9
+	if err != nil || !isLog || !bytes.Equal(got, []byte{1, 2, 3}) {
+		t.Fatalf("limitScan() = %t, %v, %v", isLog, got, err)
+	}
+}
+
+func batchBackendClient(node Node, requester requesterFunc) *Client {
+	tablet := newClient(requester, nil)
+	tablet.versions[fmsg.APIKeyLimitScan] = 0
+	manager := newConnectionManager(config{})
+	manager.clients[connectionKey{id: node.ID, address: node.Address, role: node.Role}] = tablet
+	return &Client{manager: manager}
 }
 
 func TestBatchScannerReadsCurrentKVStateOnce(t *testing.T) {

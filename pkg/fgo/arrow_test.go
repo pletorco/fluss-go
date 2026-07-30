@@ -56,6 +56,59 @@ func TestArrowSchemaCoversFluss091LogicalTypes(t *testing.T) {
 	}
 }
 
+func TestArrowPayloadCaptureLifecycle(t *testing.T) {
+	capture := &arrowPayloadCapture{}
+	if err := capture.Start(); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := capture.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	for _, test := range []struct {
+		precision int
+		want      arrow.TimeUnit
+	}{
+		{precision: 0, want: arrow.Second},
+		{precision: 3, want: arrow.Millisecond},
+		{precision: 6, want: arrow.Microsecond},
+		{precision: 9, want: arrow.Nanosecond},
+	} {
+		if got := arrowUnit(test.precision); got != test.want {
+			t.Fatalf("arrowUnit(%d) = %v, want %v", test.precision, got, test.want)
+		}
+	}
+}
+
+func TestArrowRecordDecoderRejectsPayloadBoundaries(t *testing.T) {
+	allocator := memory.NewCheckedAllocator(memory.DefaultAllocator)
+	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	if record, err := decodeArrowRecord(schema, nil, 0, allocator); err != nil || record != nil {
+		t.Fatalf("decode empty record = %v, %v", record, err)
+	}
+	if _, err := decodeArrowRecord(schema, []byte{1}, 0, allocator); !errors.Is(err, ErrMalformedRecordBatch) {
+		t.Fatalf("empty record trailing data error = %v", err)
+	}
+	if _, err := decodeArrowRecord(schema, []byte{1}, 1, allocator); !errors.Is(err, ErrMalformedRecordBatch) {
+		t.Fatalf("corrupt payload error = %v", err)
+	}
+
+	record := testArrowRecord(t, allocator, 8)
+	payload, err := encodeArrowPayload(record, ArrowCompressionNone, allocator)
+	if err != nil {
+		record.Release()
+		t.Fatal(err)
+	}
+	if decoded, err := decodeArrowRecord(record.Schema(), payload, 1, allocator); !errors.Is(err, ErrMalformedRecordBatch) {
+		if decoded != nil {
+			decoded.Release()
+		}
+		record.Release()
+		t.Fatalf("row count mismatch error = %v", err)
+	}
+	record.Release()
+	allocator.AssertSize(t, 0)
+}
+
 func TestArrowSchemaNormalizesLossyLogicalDistinctions(t *testing.T) {
 	charType := LogicalType{Root: "CHAR", Length: 4}
 	localTimestamp := LogicalType{Root: "TIMESTAMP_WITH_LOCAL_TIME_ZONE", Precision: 3}

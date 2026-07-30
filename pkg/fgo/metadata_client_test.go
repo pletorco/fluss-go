@@ -51,6 +51,25 @@ func TestMetadataResponseConversionFailures(t *testing.T) {
 	}
 }
 
+func TestApplyPartitionServersCopiesAvailableNodes(t *testing.T) {
+	coordinator := Node{ID: 1, Address: "coordinator:9123", Role: Coordinator}
+	tablets := map[int32]Node{2: {ID: 2, Address: "tablet:9123", Role: TabletServer}}
+	metadata := &Metadata{}
+	applyPartitionServers(metadata, PartitionMetadata{
+		coordinator: coordinator,
+		tablets:     tablets,
+	})
+	tablets[2] = Node{}
+	if metadata.Coordinator != coordinator || metadata.Tablets[2].Address != "tablet:9123" {
+		t.Fatalf("partition servers = %#v", metadata)
+	}
+	unchanged := *metadata
+	applyPartitionServers(metadata, PartitionMetadata{})
+	if metadata.Coordinator != unchanged.Coordinator || metadata.Tablets[2] != unchanged.Tablets[2] {
+		t.Fatalf("empty partition changed metadata = %#v", metadata)
+	}
+}
+
 func TestClientFetchesMetadataThroughCoordinator(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	calls := 0

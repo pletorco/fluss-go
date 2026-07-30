@@ -24,6 +24,9 @@ func TestLogicalTypeRejectsInvalidParameters(t *testing.T) {
 			t.Fatalf("%#v: %v", typ, err)
 		}
 	}
+	if _, err := (LogicalType{Root: "UNKNOWN"}).JSON(); !errors.Is(err, ErrInvalidSchema) {
+		t.Fatalf("invalid logical JSON error = %v", err)
+	}
 }
 
 func TestLogicalTypeJavaJSONRoundTrip(t *testing.T) {
