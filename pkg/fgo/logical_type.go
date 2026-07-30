@@ -53,7 +53,7 @@ func (t LogicalType) Validate() error {
 			return fmt.Errorf("%w: %s length must be positive", ErrInvalidSchema, t.Root)
 		}
 	case "DECIMAL":
-		if t.Precision < 1 || t.Scale < 0 || t.Scale > t.Precision {
+		if t.Precision < 1 || t.Precision > 38 || t.Scale < 0 || t.Scale > t.Precision {
 			return fmt.Errorf("%w: invalid DECIMAL precision or scale", ErrInvalidSchema)
 		}
 	case "TIME_WITHOUT_TIME_ZONE", "TIMESTAMP_WITHOUT_TIME_ZONE", "TIMESTAMP_WITH_LOCAL_TIME_ZONE":
