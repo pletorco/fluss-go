@@ -83,6 +83,12 @@ func responseServerError(code int32, message string, api fmsg.APIKey) error {
 	}
 }
 
+// ResponseError converts an error embedded in a successful Fluss response body. Most APIs report
+// errors in the RPC envelope; multi-resource APIs use this helper for their per-resource fields.
+func ResponseError(code int32, message string, api fmsg.APIKey) error {
+	return responseServerError(code, message, api)
+}
+
 func errorCategory(code fmsg.ErrorCode) error {
 	switch code {
 	case fmsg.ErrorCodeAuthenticateException, fmsg.ErrorCodeRetriableAuthenticateException:
