@@ -1,3 +1,6 @@
+.env
+sonar-project.properties
+.scannerwork/
 .tools/
 .task/
 coverage.out
