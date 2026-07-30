@@ -45,10 +45,10 @@ type AuthenticationError struct {
 }
 
 func (e *AuthenticationError) Error() string {
-	if e == nil || e.Err == nil {
-		return ErrAuthentication.Error()
+	if e != nil && e.Retriable {
+		return ErrAuthentication.Error() + " (retriable)"
 	}
-	return fmt.Sprintf("%s: %v", ErrAuthentication, e.Err)
+	return ErrAuthentication.Error()
 }
 
 func (e *AuthenticationError) Unwrap() error { return e.Err }
@@ -130,6 +130,12 @@ func WithDialTimeout(timeout time.Duration) Option {
 
 func WithTransportLimits(limits transport.Config) Option {
 	return func(c *config) error {
+		if limits.MaxFrameSize != 0 && limits.MaxFrameSize < 5 {
+			return fmt.Errorf("%w: maximum frame size must be at least 5 bytes", ErrInvalidConfig)
+		}
+		if limits.MaxInFlight < 0 {
+			return fmt.Errorf("%w: negative maximum in-flight requests", ErrInvalidConfig)
+		}
 		c.limits = limits
 		return nil
 	}
@@ -138,10 +144,14 @@ func WithTransportLimits(limits transport.Config) Option {
 type Client struct {
 	requester fmsg.Requester
 	close     func() error
+	manager   *connectionManager
+	address   string
+	role      ServerRole
 
-	mu       sync.RWMutex
-	closed   bool
-	versions map[fmsg.APIKey]int16
+	mu         sync.RWMutex
+	closed     bool
+	versions   map[fmsg.APIKey]int16
+	serverType int32
 }
 
 func Open(ctx context.Context, options ...Option) (*Client, error) {
@@ -158,41 +168,13 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 		dialer := net.Dialer{Timeout: cfg.timeout}
 		cfg.dialContext = dialer.DialContext
 	}
-	conn, err := cfg.dialContext(ctx, "tcp", cfg.seeds[0])
+	manager := newConnectionManager(cfg)
+	client, err := manager.bootstrap(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fgo: dial seed: %w", err)
-	}
-	if cfg.tlsConfig != nil {
-		tlsConn := tls.Client(conn, cfg.tlsConfig)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("fgo: TLS handshake: %w", err)
-		}
-		conn = tlsConn
-	}
-	requester, err := transport.New(conn, cfg.limits)
-	if err != nil {
-		_ = conn.Close()
+		_ = manager.Close()
 		return nil, err
 	}
-	close := func() error { return requester.Close() }
-	client := newClient(requester, close)
-	if err := client.negotiate(ctx, cfg.name, cfg.version); err != nil {
-		_ = client.Close()
-		return nil, err
-	}
-	if cfg.authFactory != nil {
-		auth, err := cfg.authFactory()
-		if err != nil {
-			_ = client.Close()
-			return nil, authenticationError(err, false)
-		}
-		client.close = closeAll(requester.Close, auth.Close)
-		if err := client.authenticate(ctx, auth); err != nil {
-			_ = client.Close()
-			return nil, err
-		}
-	}
+	client.manager = manager
 	return client, nil
 }
 
@@ -220,6 +202,13 @@ func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 }
 
 func (c *Client) Close() error {
+	if c.manager != nil {
+		return c.manager.Close()
+	}
+	return c.shutdown()
+}
+
+func (c *Client) shutdown() error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -263,6 +252,7 @@ func (c *Client) negotiate(ctx context.Context, name, version string) error {
 	}
 	c.mu.Lock()
 	c.versions = negotiated
+	c.serverType = versions.GetServerType()
 	c.mu.Unlock()
 	return nil
 }

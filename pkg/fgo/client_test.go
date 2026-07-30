@@ -39,9 +39,13 @@ func TestClientNegotiatesAndAppliesVersion(t *testing.T) {
 	var seenVersion int16
 	requester := requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		if request.APIKey() == fmsg.APIKeyApiVersions {
+			message := request.(*fmsg.MessageRequest).Message().(*fmsg.ApiVersionsRequest)
+			if got, want := message.GetClientSoftwareName()+":"+message.GetClientSoftwareVersion(), "test-client:1.0"; got != want {
+				t.Fatalf("client identity = %q, want %q", got, want)
+			}
 			response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
-			message := response.Message().(*fmsg.ApiVersionsResponse)
-			message.ApiVersions = []*fmsg.PbApiVersion{
+			responseMessage := response.Message().(*fmsg.ApiVersionsResponse)
+			responseMessage.ApiVersions = []*fmsg.PbApiVersion{
 				apiVersion(fmsg.APIKeyApiVersions, 0, 0),
 				apiVersion(fmsg.APIKeyLookup, 0, 1),
 			}
@@ -104,7 +108,7 @@ func TestClientOptions(t *testing.T) {
 	if err := WithTLSConfig(&tls.Config{ServerName: "example.test"})(&cfg); err != nil || cfg.tlsConfig.ServerName != "example.test" {
 		t.Fatalf("WithTLSConfig() = %#v, %v", cfg, err)
 	}
-	if err := WithTransportLimits(transport.Config{MaxFrameSize: 1})(&cfg); err != nil {
+	if err := WithTransportLimits(transport.Config{MaxFrameSize: 5})(&cfg); err != nil {
 		t.Fatal(err)
 	}
 	if err := WithAuthenticator(func() (Authenticator, error) {
@@ -119,6 +123,8 @@ func TestClientOptions(t *testing.T) {
 		WithTLSConfig(nil),
 		WithAuthenticator(nil),
 		WithDialTimeout(0),
+		WithTransportLimits(transport.Config{MaxFrameSize: 1}),
+		WithTransportLimits(transport.Config{MaxInFlight: -1}),
 	} {
 		if err := option(&cfg); !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("option error = %v, want ErrInvalidConfig", err)
@@ -244,7 +250,8 @@ func TestOpenNegotiatesOverTransport(t *testing.T) {
 		key := int32(fmsg.APIKeyApiVersions)
 		minimum := int32(0)
 		maximum := int32(0)
-		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ApiVersions: []*fmsg.PbApiVersion{{
+		role := int32(Coordinator)
+		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ServerType: &role, ApiVersions: []*fmsg.PbApiVersion{{
 			ApiKey: &key, MinVersion: &minimum, MaxVersion: &maximum,
 		}}})
 		if err != nil {
@@ -279,7 +286,8 @@ func TestOpenAuthenticatesWithPlain(t *testing.T) {
 		apiKey := int32(fmsg.APIKeyApiVersions)
 		minimum, maximum := int32(0), int32(0)
 		authenticateKey := int32(fmsg.APIKeyAuthenticate)
-		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ApiVersions: []*fmsg.PbApiVersion{
+		role := int32(Coordinator)
+		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ServerType: &role, ApiVersions: []*fmsg.PbApiVersion{
 			{ApiKey: &apiKey, MinVersion: &minimum, MaxVersion: &maximum},
 			{ApiKey: &authenticateKey, MinVersion: &minimum, MaxVersion: &maximum},
 		}})
