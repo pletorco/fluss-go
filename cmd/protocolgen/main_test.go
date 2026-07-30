@@ -30,18 +30,33 @@ func TestLoadAPIsFromPinnedInputs(t *testing.T) {
 	if got, want := apis[34].max, 1; got != want {
 		t.Fatalf("PREFIX_LOOKUP max version = %d, want %d", got, want)
 	}
+	errors, err := loadErrors(inputs)
+	if err != nil {
+		t.Fatalf("loadErrors() error = %v", err)
+	}
+	if got, want := len(errors), 65; got != want {
+		t.Fatalf("len(errors) = %d, want %d", got, want)
+	}
+	if errors[0].enumName != "UNKNOWN_SERVER_ERROR" || errors[0].code != -1 {
+		t.Fatalf("first error = %#v", errors[0])
+	}
 }
 
 func TestGenerateIsDeterministic(t *testing.T) {
-	apis, err := loadAPIs(filepath.Join("..", "..", "third_party", "apache-fluss"))
+	inputs := filepath.Join("..", "..", "third_party", "apache-fluss")
+	apis, err := loadAPIs(inputs)
 	if err != nil {
 		t.Fatalf("loadAPIs() error = %v", err)
 	}
-	first, err := generate(apis)
+	errors, err := loadErrors(inputs)
+	if err != nil {
+		t.Fatalf("loadErrors() error = %v", err)
+	}
+	first, err := generate(apis, errors)
 	if err != nil {
 		t.Fatalf("first generate() error = %v", err)
 	}
-	second, err := generate(apis)
+	second, err := generate(apis, errors)
 	if err != nil {
 		t.Fatalf("second generate() error = %v", err)
 	}

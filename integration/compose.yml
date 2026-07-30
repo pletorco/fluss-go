@@ -1,0 +1,174 @@
+name: fluss-go-integration
+
+x-fluss-image: &fluss-image apache/fluss@sha256:65f5513b33dde10ace4f8adb3956f17226a2a1e2663f92b3096e4769b0ee1d1c
+x-zookeeper-image: &zookeeper-image zookeeper@sha256:43d39109cbd4de394742efbfc162a8a0a93731e806374b71f3865f4ef4460a56
+x-fluss-health: &fluss-health
+  interval: 2s
+  timeout: 2s
+  retries: 60
+  start_period: 5s
+  test: ["CMD-SHELL", "bash -c '</dev/tcp/$(hostname -i)/9123'"]
+
+services:
+  plaintext-zookeeper:
+    image: *zookeeper-image
+    restart: "no"
+
+  plaintext-coordinator:
+    image: *fluss-image
+    command: coordinatorServer
+    depends_on:
+      plaintext-zookeeper:
+        condition: service_started
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: plaintext-zookeeper:2181
+        bind.listeners: INTERNAL://plaintext-coordinator:0, CLIENT://plaintext-coordinator:9123
+        advertised.listeners: CLIENT://127.0.0.1:${FLUSS_PLAIN_COORDINATOR_PORT:-19123}
+        internal.listener.name: INTERNAL
+        default.replication.factor: 3
+        remote.data.dir: /tmp/fluss/remote-data
+    ports:
+      - "${FLUSS_PLAIN_COORDINATOR_PORT:-19123}:9123"
+    healthcheck: *fluss-health
+    volumes:
+      - plaintext-data:/tmp/fluss
+
+  plaintext-tablet-0:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      plaintext-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: plaintext-zookeeper:2181
+        bind.listeners: INTERNAL://plaintext-tablet-0:0, CLIENT://plaintext-tablet-0:9123
+        advertised.listeners: CLIENT://127.0.0.1:${FLUSS_PLAIN_TABLET_0_PORT:-19124}
+        internal.listener.name: INTERNAL
+        tablet-server.id: 0
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data/tablet-0
+        remote.data.dir: /tmp/fluss/remote-data
+    ports:
+      - "${FLUSS_PLAIN_TABLET_0_PORT:-19124}:9123"
+    healthcheck: *fluss-health
+    volumes:
+      - plaintext-data:/tmp/fluss
+
+  plaintext-tablet-1:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      plaintext-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: plaintext-zookeeper:2181
+        bind.listeners: INTERNAL://plaintext-tablet-1:0, CLIENT://plaintext-tablet-1:9123
+        advertised.listeners: CLIENT://127.0.0.1:${FLUSS_PLAIN_TABLET_1_PORT:-19125}
+        internal.listener.name: INTERNAL
+        tablet-server.id: 1
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data/tablet-1
+        remote.data.dir: /tmp/fluss/remote-data
+    ports:
+      - "${FLUSS_PLAIN_TABLET_1_PORT:-19125}:9123"
+    healthcheck: *fluss-health
+    volumes:
+      - plaintext-data:/tmp/fluss
+
+  plaintext-tablet-2:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      plaintext-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: plaintext-zookeeper:2181
+        bind.listeners: INTERNAL://plaintext-tablet-2:0, CLIENT://plaintext-tablet-2:9123
+        advertised.listeners: CLIENT://127.0.0.1:${FLUSS_PLAIN_TABLET_2_PORT:-19126}
+        internal.listener.name: INTERNAL
+        tablet-server.id: 2
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data/tablet-2
+        remote.data.dir: /tmp/fluss/remote-data
+    ports:
+      - "${FLUSS_PLAIN_TABLET_2_PORT:-19126}:9123"
+    healthcheck: *fluss-health
+    volumes:
+      - plaintext-data:/tmp/fluss
+
+  sasl-zookeeper:
+    image: *zookeeper-image
+    restart: "no"
+
+  sasl-coordinator:
+    image: *fluss-image
+    command: coordinatorServer
+    depends_on:
+      sasl-zookeeper:
+        condition: service_started
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: sasl-zookeeper:2181
+        bind.listeners: INTERNAL://sasl-coordinator:0, CLIENT://sasl-coordinator:9123
+        advertised.listeners: CLIENT://127.0.0.1:${FLUSS_SASL_COORDINATOR_PORT:-19223}
+        internal.listener.name: INTERNAL
+        remote.data.dir: /tmp/fluss/remote-data
+        security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
+        security.sasl.enabled.mechanisms: PLAIN
+        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}";
+        authorizer.enabled: true
+        super.users: User:${FLUSS_SASL_USERNAME}
+    ports:
+      - "${FLUSS_SASL_COORDINATOR_PORT:-19223}:9123"
+    healthcheck: *fluss-health
+    volumes:
+      - sasl-data:/tmp/fluss
+
+  sasl-tablet:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      sasl-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: sasl-zookeeper:2181
+        bind.listeners: INTERNAL://sasl-tablet:0, CLIENT://sasl-tablet:9123
+        advertised.listeners: CLIENT://127.0.0.1:${FLUSS_SASL_TABLET_PORT:-19224}
+        internal.listener.name: INTERNAL
+        tablet-server.id: 0
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data
+        remote.data.dir: /tmp/fluss/remote-data
+        security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
+        security.sasl.enabled.mechanisms: PLAIN
+        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}";
+        authorizer.enabled: true
+        super.users: User:${FLUSS_SASL_USERNAME}
+    ports:
+      - "${FLUSS_SASL_TABLET_PORT:-19224}:9123"
+    healthcheck: *fluss-health
+    volumes:
+      - sasl-data:/tmp/fluss
+
+volumes:
+  plaintext-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  sasl-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
