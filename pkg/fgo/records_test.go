@@ -19,7 +19,7 @@ func TestSharedRecordModels(t *testing.T) {
 	if err := (TableBucket{TableID: 1, PartitionID: -1, BucketID: 0, Leader: Node{Address: "tablet:9123", Role: TabletServer}}).Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if err := (PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "t"}, Partition: map[string]string{"day": "2026-07-30"}}).Validate(); err != nil {
+	if err := (PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "t"}, Partition: "day=2026-07-30"}).Validate(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -38,7 +38,7 @@ func TestSharedRecordModelFailures(t *testing.T) {
 	if err := (TableBucket{}).Validate(); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatal(err)
 	}
-	if err := (PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "t"}, Partition: map[string]string{"": "v"}}).Validate(); !errors.Is(err, ErrInvalidConfig) {
+	if err := (PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "t"}, Partition: " "}).Validate(); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatal(err)
 	}
 	if _, err := schema.RowFromNamed(NamedRow{"id": int64(1), "extra": true}); !errors.Is(err, ErrInvalidRow) {

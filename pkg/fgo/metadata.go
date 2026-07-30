@@ -11,6 +11,7 @@ var (
 	ErrUnknownTable     = errors.New("fgo: unknown table")
 	ErrUnknownPartition = errors.New("fgo: unknown partition")
 	ErrUnknownBucket    = errors.New("fgo: unknown bucket")
+	ErrNoBucketLeader   = errors.New("fgo: bucket has no tablet leader")
 )
 
 type TablePath struct {
@@ -39,6 +40,9 @@ type TableMetadata struct {
 	SchemaID   int32
 	Buckets    map[int32]Node
 	Partitions map[string]PartitionMetadata
+
+	coordinator Node
+	tablets     map[int32]Node
 }
 
 // PartitionMetadata describes a named partition and its tablet leaders.
@@ -46,6 +50,9 @@ type PartitionMetadata struct {
 	Path    PhysicalTablePath
 	ID      int64
 	Buckets map[int32]Node
+
+	coordinator Node
+	tablets     map[int32]Node
 }
 
 type Metadata struct {
@@ -125,7 +132,7 @@ func (r *Router) RoutePhysical(ctx context.Context, path PhysicalTablePath, buck
 	if err := path.Validate(); err != nil {
 		return Node{}, err
 	}
-	if len(path.Partition) == 0 {
+	if path.Partition == "" {
 		return r.Route(ctx, path.TablePath, bucket)
 	}
 	if node, ok := r.lookupPartition(path, bucket); ok {
@@ -175,6 +182,7 @@ func (r *Router) refresh(ctx context.Context, path TablePath, force bool) error 
 	r.mu.Lock()
 	if err == nil {
 		next := cloneMetadata(r.metadata)
+		applyTableServers(&next, table)
 		next.Tables[path] = cloneTableMetadata(table)
 		r.metadata = next
 	}
@@ -191,7 +199,7 @@ func (r *Router) RefreshPhysical(ctx context.Context, path PhysicalTablePath) er
 	if err := path.Validate(); err != nil {
 		return err
 	}
-	if len(path.Partition) == 0 {
+	if path.Partition == "" {
 		return r.Refresh(ctx, path.TablePath)
 	}
 	if !r.hasTable(path.TablePath) {
@@ -237,6 +245,7 @@ func (r *Router) RefreshPhysical(ctx context.Context, path PhysicalTablePath) er
 			}
 			table.Partitions[key] = clonePartitionMetadata(partition)
 			next.Tables[path.TablePath] = table
+			applyPartitionServers(&next, partition)
 			r.metadata = next
 		}
 	}
@@ -260,7 +269,7 @@ func (r *Router) Invalidate(path TablePath) {
 
 // InvalidatePhysical removes one partition while retaining the table's other cached locations.
 func (r *Router) InvalidatePhysical(path PhysicalTablePath) {
-	if len(path.Partition) == 0 {
+	if path.Partition == "" {
 		r.Invalidate(path.TablePath)
 		return
 	}
@@ -345,7 +354,7 @@ func cloneMetadata(metadata Metadata) Metadata {
 }
 
 func cloneTableMetadata(table TableMetadata) TableMetadata {
-	next := TableMetadata{Path: table.Path, ID: table.ID, SchemaID: table.SchemaID, Buckets: make(map[int32]Node, len(table.Buckets)), Partitions: make(map[string]PartitionMetadata, len(table.Partitions))}
+	next := TableMetadata{Path: table.Path, ID: table.ID, SchemaID: table.SchemaID, Buckets: make(map[int32]Node, len(table.Buckets)), Partitions: make(map[string]PartitionMetadata, len(table.Partitions)), coordinator: table.coordinator, tablets: cloneNodes(table.tablets)}
 	for bucket, node := range table.Buckets {
 		next.Buckets[bucket] = node
 	}
@@ -356,9 +365,38 @@ func cloneTableMetadata(table TableMetadata) TableMetadata {
 }
 
 func clonePartitionMetadata(partition PartitionMetadata) PartitionMetadata {
-	next := PartitionMetadata{Path: partition.Path, ID: partition.ID, Buckets: make(map[int32]Node, len(partition.Buckets))}
+	next := PartitionMetadata{Path: partition.Path, ID: partition.ID, Buckets: make(map[int32]Node, len(partition.Buckets)), coordinator: partition.coordinator, tablets: cloneNodes(partition.tablets)}
 	for bucket, node := range partition.Buckets {
 		next.Buckets[bucket] = node
+	}
+	return next
+}
+
+func applyTableServers(metadata *Metadata, table TableMetadata) {
+	if table.coordinator.Address != "" {
+		metadata.Coordinator = table.coordinator
+	}
+	if table.tablets != nil {
+		metadata.Tablets = cloneNodes(table.tablets)
+	}
+}
+
+func applyPartitionServers(metadata *Metadata, partition PartitionMetadata) {
+	if partition.coordinator.Address != "" {
+		metadata.Coordinator = partition.coordinator
+	}
+	if partition.tablets != nil {
+		metadata.Tablets = cloneNodes(partition.tablets)
+	}
+}
+
+func cloneNodes(nodes map[int32]Node) map[int32]Node {
+	if nodes == nil {
+		return nil
+	}
+	next := make(map[int32]Node, len(nodes))
+	for id, node := range nodes {
+		next[id] = node
 	}
 	return next
 }

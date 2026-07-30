@@ -200,6 +200,52 @@ func TestClientRequestToUsesTabletConnection(t *testing.T) {
 	<-tabletDone
 }
 
+func TestClientRequestBucketRefreshesStaleLeader(t *testing.T) {
+	firstClient, firstServer := net.Pipe()
+	firstDone := serveVersionThenRemoteError(t, firstServer, TabletServer, fmsg.ErrorCodeNotLeaderOrFollower)
+	secondClient, secondServer := net.Pipe()
+	secondDone := serveVersionThenRequest(t, secondServer, TabletServer, fmsg.APIKeyApiVersions)
+	dials := map[string]int{}
+	manager := newConnectionManager(config{
+		name: "test", version: "1",
+		dialContext: func(_ context.Context, _, address string) (net.Conn, error) {
+			dials[address]++
+			switch address {
+			case "tablet-1:9123":
+				return firstClient, nil
+			case "tablet-2:9123":
+				return secondClient, nil
+			default:
+				return nil, fmt.Errorf("unexpected address %s", address)
+			}
+		},
+	})
+	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}, Partition: "day=2026-07-30"}
+	leader := 0
+	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+		return TableMetadata{Path: path.TablePath}, nil
+	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
+		leader++
+		return PartitionMetadata{Path: path, Buckets: map[int32]Node{0: {ID: int32(leader), Address: fmt.Sprintf("tablet-%d:9123", leader), Role: TabletServer}}}, nil
+	})
+	client := &Client{manager: manager, router: router}
+	request, err := apiVersionsRequest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RequestBucket(context.Background(), path, 0, request); err != nil {
+		t.Fatalf("RequestBucket() error = %v", err)
+	}
+	if dials["tablet-1:9123"] != 1 || dials["tablet-2:9123"] != 1 {
+		t.Fatalf("dials = %#v", dials)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-firstDone
+	<-secondDone
+}
+
 func TestConnectionManagerRedialsDisconnectedServer(t *testing.T) {
 	firstClient, firstServer := net.Pipe()
 	firstDone := serveThenDisconnect(t, firstServer, TabletServer)

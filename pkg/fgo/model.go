@@ -1,12 +1,16 @@
 package fgo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/pletorco/fluss-go/pkg/fmsg"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -291,9 +295,11 @@ const (
 )
 
 type Table struct {
-	Path   TablePath
-	Kind   TableKind
-	Schema Schema
+	ID       int64
+	SchemaID int32
+	Path     TablePath
+	Kind     TableKind
+	Schema   Schema
 }
 
 func (t Table) RequireLog() error {
@@ -310,7 +316,8 @@ func (t Table) RequirePrimaryKey() error {
 	return nil
 }
 
-func (c *Client) OpenTable(path TablePath, kind TableKind, schema Schema) (Table, error) {
+// OpenTable loads authoritative table metadata and schema from the coordinator.
+func (c *Client) OpenTable(ctx context.Context, path TablePath) (Table, error) {
 	c.mu.RLock()
 	closed := c.closed
 	c.mu.RUnlock()
@@ -320,11 +327,40 @@ func (c *Client) OpenTable(path TablePath, kind TableKind, schema Schema) (Table
 	if err := path.Validate(); err != nil {
 		return Table{}, err
 	}
-	if kind != LogTable && kind != PrimaryKeyTable {
-		return Table{}, fmt.Errorf("%w: table kind %q", ErrTableKind, kind)
-	}
-	if err := schema.Validate(); err != nil {
+	infoRequest, err := fmsg.NewRequest(fmsg.APIKeyGetTableInfo, 0)
+	if err != nil {
 		return Table{}, err
 	}
-	return Table{Path: path, Kind: kind, Schema: schema}, nil
+	infoRequest.Message().(*fmsg.GetTableInfoRequest).TablePath = pbTablePath(path)
+	infoResponse, err := c.RequestCoordinator(ctx, infoRequest)
+	if err != nil {
+		return Table{}, err
+	}
+	info, ok := infoResponse.Message().(*fmsg.GetTableInfoResponse)
+	if !ok {
+		return Table{}, fmt.Errorf("fgo: get table info: unexpected response %T", infoResponse.Message())
+	}
+	schemaRequest, err := fmsg.NewRequest(fmsg.APIKeyGetTableSchema, 0)
+	if err != nil {
+		return Table{}, err
+	}
+	schemaRequest.Message().(*fmsg.GetTableSchemaRequest).TablePath = pbTablePath(path)
+	schemaRequest.Message().(*fmsg.GetTableSchemaRequest).SchemaId = proto.Int32(info.GetSchemaId())
+	schemaResponse, err := c.RequestCoordinator(ctx, schemaRequest)
+	if err != nil {
+		return Table{}, err
+	}
+	schemaMessage, ok := schemaResponse.Message().(*fmsg.GetTableSchemaResponse)
+	if !ok {
+		return Table{}, fmt.Errorf("fgo: get table schema: unexpected response %T", schemaResponse.Message())
+	}
+	schema, err := ParseSchemaJSON(schemaMessage.GetSchemaJson())
+	if err != nil {
+		return Table{}, err
+	}
+	kind := LogTable
+	if len(schema.PrimaryKey) != 0 {
+		kind = PrimaryKeyTable
+	}
+	return Table{ID: info.GetTableId(), SchemaID: schemaMessage.GetSchemaId(), Path: path, Kind: kind, Schema: schema}, nil
 }

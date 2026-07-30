@@ -2,42 +2,30 @@ package fgo
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 )
 
 type PhysicalTablePath struct {
 	TablePath
-	Partition map[string]string
+	Partition string
 }
 
 func (p PhysicalTablePath) Validate() error {
 	if err := p.TablePath.Validate(); err != nil {
 		return err
 	}
-	for key, value := range p.Partition {
-		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
-			return fmt.Errorf("%w: invalid partition spec", ErrInvalidConfig)
-		}
+	if p.Partition != "" && strings.TrimSpace(p.Partition) == "" {
+		return fmt.Errorf("%w: invalid partition name", ErrInvalidConfig)
 	}
 	return nil
 }
 
 func (p PhysicalTablePath) String() string {
-	if len(p.Partition) == 0 {
+	if p.Partition == "" {
 		return p.TablePath.String()
 	}
-	keys := make([]string, 0, len(p.Partition))
-	for key := range p.Partition {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, key+"="+p.Partition[key])
-	}
-	return p.TablePath.String() + "." + strings.Join(parts, ",")
+	return p.TablePath.String() + "(p=" + p.Partition + ")"
 }
 
 type TableInfo struct {

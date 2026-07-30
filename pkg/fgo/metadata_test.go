@@ -69,7 +69,7 @@ func TestRouterInvalidationRefreshesLeader(t *testing.T) {
 
 func TestRouterRoutesPhysicalPartitionAndCoalescesRefresh(t *testing.T) {
 	table := TablePath{Database: "db", Table: "events"}
-	path := PhysicalTablePath{TablePath: table, Partition: map[string]string{"day": "2026-07-30"}}
+	path := PhysicalTablePath{TablePath: table, Partition: "day=2026-07-30"}
 	var tableCalls, partitionCalls atomic.Int32
 	release := make(chan struct{})
 	router := NewRouter(Node{ID: 1, Role: Coordinator}, func(context.Context, TablePath) (TableMetadata, error) {
@@ -112,7 +112,7 @@ func TestRouterPhysicalAndTableFailuresAreTyped(t *testing.T) {
 		t.Fatalf("Route() error = %v, want unknown table", err)
 	}
 
-	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}, Partition: map[string]string{"day": "x"}}
+	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}, Partition: "day=x"}
 	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
 		return TableMetadata{Path: path.TablePath}, nil
 	})
@@ -170,4 +170,21 @@ func TestRouterRefreshHonorsWaitingContext(t *testing.T) {
 		t.Fatalf("Refresh() error = %v, want deadline exceeded", err)
 	}
 	close(release)
+}
+
+func TestRouterAppliesServerSnapshot(t *testing.T) {
+	path := TablePath{Database: "db", Table: "events"}
+	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+		return TableMetadata{
+			Path: path, coordinator: Node{ID: 1, Address: "coordinator:9123", Role: Coordinator},
+			tablets: map[int32]Node{2: {ID: 2, Address: "tablet:9123", Role: TabletServer}},
+		}, nil
+	})
+	if err := router.Refresh(context.Background(), path); err != nil {
+		t.Fatal(err)
+	}
+	if got := router.Coordinator(); got.Address != "coordinator:9123" {
+		t.Fatalf("Coordinator() = %#v", got)
+	}
+	router.InvalidatePhysical(PhysicalTablePath{TablePath: path})
 }

@@ -166,6 +166,7 @@ type Client struct {
 	requester fmsg.Requester
 	close     func() error
 	manager   *connectionManager
+	router    *Router
 	serverID  int32
 	address   string
 	role      ServerRole
@@ -197,6 +198,8 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 		return nil, err
 	}
 	client.manager = manager
+	client.router = NewRouter(Node{ID: client.serverID, Address: client.address, Role: Coordinator}, client.fetchTableMetadata).
+		WithPhysicalMetadataFetcher(client.fetchPartitionMetadata)
 	return client, nil
 }
 
@@ -220,6 +223,36 @@ func (c *Client) RequestTo(ctx context.Context, node Node, request fmsg.Request)
 		return nil, fmt.Errorf("%w: client does not manage server connections", ErrClosed)
 	}
 	return c.manager.request(ctx, node, request)
+}
+
+// RequestCoordinator sends an administrative request to the currently advertised coordinator.
+func (c *Client) RequestCoordinator(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
+	if c.router == nil {
+		return c.Request(ctx, request)
+	}
+	return c.RequestTo(ctx, c.router.Coordinator(), request)
+}
+
+// RequestBucket sends a bucket-scoped request to its current tablet leader. A stale metadata
+// response causes one cache invalidation and one bounded reroute.
+func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, bucket int32, request fmsg.Request) (fmsg.Response, error) {
+	if c.router == nil {
+		return nil, fmt.Errorf("%w: client does not manage metadata", ErrClosed)
+	}
+	node, err := c.router.RoutePhysical(ctx, path, bucket)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.RequestTo(ctx, node, request)
+	if !errors.Is(err, ErrMetadata) {
+		return response, err
+	}
+	c.router.InvalidatePhysical(path)
+	node, refreshErr := c.router.RoutePhysical(ctx, path, bucket)
+	if refreshErr != nil {
+		return nil, refreshErr
+	}
+	return c.RequestTo(ctx, node, request)
 }
 
 func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
