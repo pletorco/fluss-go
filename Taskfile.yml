@@ -13,6 +13,7 @@ vars:
   GO_PACKAGES:
     sh: go list ./... 2>/dev/null || true
   GOVULNCHECK_VERSION: v1.6.0
+  PROTOC_VERSION: 3.21.12
   PROTOC_GEN_GO_VERSION: v1.36.10
   TRIVY_VERSION: 0.72.0
   TOOLS_DIR: .tools/bin
@@ -119,6 +120,11 @@ tasks:
 
   generate:protocol:
     desc: Regenerate pinned Apache Fluss protocol metadata
+    preconditions:
+      - sh: command -v protoc >/dev/null 2>&1
+        msg: Install protoc {{.PROTOC_VERSION}} and make it available on PATH.
+      - sh: test "$(protoc --version)" = "libprotoc {{.PROTOC_VERSION}}"
+        msg: protoc {{.PROTOC_VERSION}} is required for reproducible protocol generation.
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - GOBIN="$(pwd)/{{.TOOLS_DIR}}" go install google.golang.org/protobuf/cmd/protoc-gen-go@{{.PROTOC_GEN_GO_VERSION}}

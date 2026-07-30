@@ -42,8 +42,9 @@ see available checks; task verify runs formatting, generation verification,
 static analysis, unit and golden tests, bounded fuzz smoke tests, race tests,
 per-file coverage checks, and security gates.
 
-Local security scans require Trivy v0.72.0. Integration tests require Docker,
-Docker Compose, and OpenSSL; the task creates and removes isolated clusters.
+Protocol generation requires protoc v3.21.12. Local security scans require
+Trivy v0.72.0. Integration tests require Docker, Docker Compose, and OpenSSL;
+the task creates and removes isolated clusters.
 
 ## Compatibility Matrix
 
@@ -52,6 +53,7 @@ Docker Compose, and OpenSSL; the task creates and removes isolated clusters.
 | Apache Fluss | `0.9.1-incubating` at commit `6bf969f71af8d6f9cc37383ab89ae46a58b0e227` only |
 | Go | `1.25.x` and `1.26.x`; the module language baseline is `1.25.0` |
 | Task | `3.51.1` |
+| protoc | `3.21.12` |
 | Trivy | `0.72.0` |
 
 Later Fluss versions are unsupported until their protocol inputs, golden
