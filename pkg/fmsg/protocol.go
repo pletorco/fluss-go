@@ -21,6 +21,7 @@ var (
 type Request interface {
 	APIKey() APIKey
 	Version() int16
+	SetVersion(int16) error
 	Marshal() ([]byte, error)
 	NewResponse() Response
 }
@@ -74,6 +75,18 @@ func (r *MessageRequest) Version() int16 {
 		return 0
 	}
 	return r.version
+}
+
+// SetVersion validates and applies a supported version for this request.
+func (r *MessageRequest) SetVersion(version int16) error {
+	if r == nil {
+		return fmt.Errorf("%w: nil request", ErrInvalidArgument)
+	}
+	if _, err := validateAPI(r.api.Key, version, false); err != nil {
+		return err
+	}
+	r.version = version
+	return nil
 }
 
 func (r *MessageRequest) Marshal() ([]byte, error) {
