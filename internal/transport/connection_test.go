@@ -82,6 +82,21 @@ func TestReadFrameAndHandleFrameFailures(t *testing.T) {
 	if _, err := connection.readFrame(); !errors.Is(err, ErrFrameTooLarge) {
 		t.Fatalf("readFrame() error = %v", err)
 	}
+	left.Close()
+	if _, err := connection.readFrame(); err == nil {
+		t.Fatal("readFrame() closed connection error = nil")
+	}
+	left, right = net.Pipe()
+	defer left.Close()
+	defer right.Close()
+	connection.conn = left
+	go func() {
+		var header [4]byte
+		_, _ = right.Write(header[:])
+	}()
+	if _, err := connection.readFrame(); !errors.Is(err, ErrMalformed) {
+		t.Fatalf("readFrame() zero-size error = %v", err)
+	}
 	for _, frame := range [][]byte{
 		nil,
 		{99},
@@ -95,6 +110,9 @@ func TestReadFrameAndHandleFrameFailures(t *testing.T) {
 	}
 	if got := (&RemoteError{Code: 3}).Error(); got != "transport: remote error 3" {
 		t.Fatalf("RemoteError error = %q", got)
+	}
+	if got := (&RemoteError{Code: 3, Message: "remote"}).Error(); got != "transport: remote error 3: remote" {
+		t.Fatalf("RemoteError message = %q", got)
 	}
 }
 

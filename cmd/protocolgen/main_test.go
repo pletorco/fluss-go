@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -45,5 +47,30 @@ func TestGenerateIsDeterministic(t *testing.T) {
 	}
 	if string(first) != string(second) {
 		t.Fatal("generate() was not deterministic")
+	}
+}
+
+func TestRunAndMain(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "nested", "api_keys_gen.go")
+	inputs := filepath.Join("..", "..", "third_party", "apache-fluss")
+	if err := run([]string{"-inputs", inputs, "-output", output}, "", ""); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if _, err := os.Stat(output); err != nil {
+		t.Fatalf("generated output: %v", err)
+	}
+	if err := run([]string{"-unknown"}, inputs, output); err == nil {
+		t.Fatal("run() unknown flag error = nil")
+	}
+}
+
+func TestFatalUsesExitHook(t *testing.T) {
+	original := exit
+	defer func() { exit = original }()
+	code := 0
+	exit = func(value int) { code = value }
+	fatal(errors.New("expected"))
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
 	}
 }

@@ -52,11 +52,11 @@ tasks:
       - test -z "{{.GO_PACKAGES}}" || go test -race ./...
 
   coverage:
-    desc: Verify 80 percent coverage for hand-written Go source
+    desc: Verify 80 percent coverage for every hand-written Go source file
     cmds:
       - go test -coverprofile=coverage.out ./...
       - cmd: >-
-          awk 'NR > 1 && $1 !~ /FlussApi\.pb\.go|api_keys_gen\.go/ { total += $2; if ($3 > 0) covered += $2 } END { percent = 100 * covered / total; printf "hand-written Go coverage: %.1f%% (%d/%d statements)\n", percent, covered, total; exit percent < 80 }' coverage.out
+          awk 'NR > 1 && $1 !~ /FlussApi\.pb\.go|api_keys_gen\.go/ { split($1, path, ":"); total[path[1]] += $2; if ($3 > 0) covered[path[1]] += $2 } END { failed = 0; for (file in total) { percent = 100 * covered[file] / total[file]; printf "%s: %.1f%% (%d/%d statements)\n", file, percent, covered[file], total[file]; if (percent < 80) failed = 1 } exit failed }' coverage.out
 
   test:integration:
     desc: Run integration tests against an explicitly configured Fluss cluster

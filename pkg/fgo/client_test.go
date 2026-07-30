@@ -107,6 +107,11 @@ func TestClientOptions(t *testing.T) {
 	if err := WithTransportLimits(transport.Config{MaxFrameSize: 1})(&cfg); err != nil {
 		t.Fatal(err)
 	}
+	if err := WithAuthenticator(func(context.Context, []byte) (string, []byte, error) {
+		return "test", nil, nil
+	})(&cfg); err != nil || cfg.auth == nil {
+		t.Fatalf("WithAuthenticator() = %#v, %v", cfg, err)
+	}
 	for _, option := range []Option{
 		WithSeedBrokers(),
 		WithClientIdentity("", ""),
@@ -194,6 +199,34 @@ func TestOpenDialFailure(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("Open() error = nil")
+	}
+}
+
+func TestNegotiationAndAuthenticationErrors(t *testing.T) {
+	unsupported := newClient(requesterFunc(func(context.Context, fmsg.Request) (fmsg.Response, error) {
+		return fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
+	}), nil)
+	if err := unsupported.negotiate(context.Background(), "test", "1"); !errors.Is(err, ErrUnsupportedAPI) {
+		t.Fatalf("negotiate unsupported error = %v", err)
+	}
+	unexpected := newClient(requesterFunc(func(context.Context, fmsg.Request) (fmsg.Response, error) {
+		return fmsg.NewResponse(fmsg.APIKeyLookup, 0)
+	}), nil)
+	if err := unexpected.negotiate(context.Background(), "test", "1"); err == nil {
+		t.Fatal("negotiate unexpected response error = nil")
+	}
+	client := newClient(requesterFunc(func(context.Context, fmsg.Request) (fmsg.Response, error) {
+		response, _ := fmsg.NewResponse(fmsg.APIKeyAuthenticate, 0)
+		return response, nil
+	}), nil)
+	client.versions[fmsg.APIKeyAuthenticate] = 0
+	if err := client.authenticate(context.Background(), func(context.Context, []byte) (string, []byte, error) {
+		return "", nil, errors.New("authentication failure")
+	}); err == nil {
+		t.Fatal("authenticate callback error = nil")
+	}
+	if min(2, 1) != 1 {
+		t.Fatal("min() returned the wrong right value")
 	}
 }
 

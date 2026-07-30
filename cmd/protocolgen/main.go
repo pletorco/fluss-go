@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +19,7 @@ const generatorVersion = "v0.1.0"
 
 var apiPattern = regexp.MustCompile("(?m)^\\s*([A-Z_]+)\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*(PUBLIC|PRIVATE)\\)[,;]?$")
 var messagePattern = regexp.MustCompile("(?m)^message\\s+([A-Za-z0-9]+(?:Request|Response))\\s*\\{")
+var exit = os.Exit
 
 type api struct {
 	enumName string
@@ -30,26 +32,37 @@ type api struct {
 }
 
 func main() {
+	if err := run(os.Args[1:], "third_party/apache-fluss", "pkg/fmsg/api_keys_gen.go"); err != nil {
+		fatal(err)
+	}
+}
+
+func run(args []string, defaultInputs, defaultOutput string) error {
 	var inputs string
 	var output string
-	flag.StringVar(&inputs, "inputs", "third_party/apache-fluss", "pinned Apache Fluss input directory")
-	flag.StringVar(&output, "output", "pkg/fmsg/api_keys_gen.go", "generated Go output")
-	flag.Parse()
+	flags := flag.NewFlagSet("protocolgen", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&inputs, "inputs", defaultInputs, "pinned Apache Fluss input directory")
+	flags.StringVar(&output, "output", defaultOutput, "generated Go output")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
 
 	apis, err := loadAPIs(inputs)
 	if err != nil {
-		fatal(err)
+		return err
 	}
 	source, err := generate(apis)
 	if err != nil {
-		fatal(err)
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
-		fatal(err)
+		return err
 	}
 	if err := os.WriteFile(output, source, 0o644); err != nil {
-		fatal(err)
+		return err
 	}
+	return nil
 }
 
 func loadAPIs(inputs string) ([]api, error) {
@@ -164,5 +177,5 @@ func goName(enumName string) string {
 
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, "protocolgen:", err)
-	os.Exit(1)
+	exit(1)
 }
