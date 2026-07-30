@@ -50,6 +50,10 @@ func TestFluss091Integration(t *testing.T) {
 		testSASLPlain(t, saslAddress)
 	})
 
+	t.Run("filesystem security token refresh", func(t *testing.T) {
+		testManagedFileSystemToken(t, plainAddress)
+	})
+
 	database := fmt.Sprintf("go_it_%d", time.Now().UnixNano())
 	logPath := fgo.TablePath{Database: database, Table: "events"}
 	kvPath := fgo.TablePath{Database: database, Table: "users"}
@@ -130,6 +134,27 @@ func testSASLPlain(t *testing.T, address string) {
 	if !errors.Is(err, fgo.ErrAuthentication) || strings.Contains(fmt.Sprint(err), password) {
 		t.Fatalf("invalid credential error = %v", err)
 	}
+}
+
+func testManagedFileSystemToken(t *testing.T, address string) {
+	t.Helper()
+	client := openClient(
+		t, []string{address},
+		fgo.WithFileSystemSecurityTokenRefresh(fgo.FileSystemSecurityTokenRefreshConfig{}),
+	)
+	defer client.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		token, ok := client.CurrentFileSystemSecurityToken()
+		if ok {
+			if token.Schema == "" || !strings.Contains(fmt.Sprintf("%#v", token), "[REDACTED]") {
+				t.Fatalf("managed filesystem token = %#v", token)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("managed filesystem token was not published")
 }
 
 func testCatalog(t *testing.T, admin *fadm.Client, database string, logPath, kvPath fgo.TablePath) {

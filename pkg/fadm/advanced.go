@@ -715,12 +715,7 @@ func leasesFromMessage(tables []*fmsg.PbKvSnapshotLeaseForTable) []SnapshotLease
 	return result
 }
 
-type FileSystemSecurityToken struct {
-	Schema         string
-	Token          []byte
-	ExpiresAt      time.Time
-	AdditionalInfo map[string]string
-}
+type FileSystemSecurityToken = fgo.FileSystemSecurityToken
 
 func (c *Client) FileSystemSecurityToken(ctx context.Context) (FileSystemSecurityToken, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyGetFilesystemSecurityToken, 0)

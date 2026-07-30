@@ -69,6 +69,7 @@ type config struct {
 	limits      transport.Config
 	retry       RetryPolicy
 	observer    MetricsObserver
+	tokens      securityTokenSettings
 }
 
 // RetryPolicy bounds automatic retries of safe, read-only requests.
@@ -174,14 +175,15 @@ func WithMetricsObserver(observer MetricsObserver) Option {
 }
 
 type Client struct {
-	requester fmsg.Requester
-	close     func() error
-	manager   *connectionManager
-	router    *Router
-	serverID  int32
-	address   string
-	role      ServerRole
-	observer  MetricsObserver
+	requester    fmsg.Requester
+	close        func() error
+	manager      *connectionManager
+	router       *Router
+	serverID     int32
+	address      string
+	role         ServerRole
+	observer     MetricsObserver
+	tokenManager *securityTokenManager
 
 	mu         sync.RWMutex
 	closed     bool
@@ -212,6 +214,14 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 	client.manager = manager
 	client.router = NewRouter(Node{ID: client.serverID, Address: client.address, Role: Coordinator}, client.fetchTableMetadata).
 		WithPhysicalMetadataFetcher(client.fetchPartitionMetadata)
+	if cfg.tokens.enabled {
+		provider := cfg.tokens.provider
+		if provider == nil {
+			provider = clientSecurityTokenProvider{client: client}
+		}
+		client.tokenManager = newSecurityTokenManager(provider, cfg.tokens.config, cfg.tokens.receivers)
+		client.tokenManager.Start()
+	}
 	return client, nil
 }
 
@@ -304,6 +314,9 @@ func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 }
 
 func (c *Client) Close() error {
+	if c.tokenManager != nil {
+		c.tokenManager.Stop()
+	}
 	if c.manager != nil {
 		return c.manager.Close()
 	}
