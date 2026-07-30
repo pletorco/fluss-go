@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
+	"time"
 )
 
 var (
@@ -16,20 +18,30 @@ var (
 type DataType string
 
 const (
-	BoolType      DataType = "BOOLEAN"
-	IntType       DataType = "INT"
-	BigIntType    DataType = "BIGINT"
-	FloatType     DataType = "FLOAT"
-	DoubleType    DataType = "DOUBLE"
-	StringType    DataType = "STRING"
-	BinaryType    DataType = "BINARY"
-	DateType      DataType = "DATE"
-	TimestampType DataType = "TIMESTAMP"
+	BoolType         DataType = "BOOLEAN"
+	CharType         DataType = "CHAR"
+	IntType          DataType = "INT"
+	TinyIntType      DataType = "TINYINT"
+	SmallIntType     DataType = "SMALLINT"
+	BigIntType       DataType = "BIGINT"
+	FloatType        DataType = "FLOAT"
+	DoubleType       DataType = "DOUBLE"
+	StringType       DataType = "STRING"
+	BinaryType       DataType = "BINARY"
+	BytesType        DataType = "BYTES"
+	DecimalType      DataType = "DECIMAL"
+	DateType         DataType = "DATE"
+	TimeType         DataType = "TIME_WITHOUT_TIME_ZONE"
+	TimestampType    DataType = "TIMESTAMP"
+	TimestampLTZType DataType = "TIMESTAMP_WITH_LOCAL_TIME_ZONE"
+	ArrayType        DataType = "ARRAY"
+	MapType          DataType = "MAP"
+	RowType          DataType = "ROW"
 )
 
 func (t DataType) Validate() error {
 	switch t {
-	case BoolType, IntType, BigIntType, FloatType, DoubleType, StringType, BinaryType, DateType, TimestampType:
+	case BoolType, CharType, IntType, TinyIntType, SmallIntType, BigIntType, FloatType, DoubleType, StringType, BinaryType, BytesType, DecimalType, DateType, TimeType, TimestampType, TimestampLTZType, ArrayType, MapType, RowType:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported data type %q", ErrInvalidSchema, t)
@@ -157,6 +169,12 @@ func validValue(kind DataType, value any) bool {
 	case IntType:
 		_, ok := value.(int32)
 		return ok
+	case TinyIntType:
+		_, ok := value.(int8)
+		return ok
+	case SmallIntType:
+		_, ok := value.(int16)
+		return ok
 	case BigIntType:
 		_, ok := value.(int64)
 		return ok
@@ -166,15 +184,38 @@ func validValue(kind DataType, value any) bool {
 	case DoubleType:
 		_, ok := value.(float64)
 		return ok
-	case StringType:
+	case StringType, CharType:
 		_, ok := value.(string)
 		return ok
-	case BinaryType:
+	case BinaryType, BytesType:
 		_, ok := value.([]byte)
 		return ok
+	case DecimalType:
+		_, ok := value.(*big.Rat)
+		return ok
+	case DateType, TimeType, TimestampType, TimestampLTZType:
+		_, ok := value.(time.Time)
+		return ok
+	case ArrayType:
+		return isSlice(value)
+	case MapType:
+		return isMap(value)
+	case RowType:
+		_, ok := value.(Row)
+		return ok
 	default:
-		return true
+		return false
 	}
+}
+
+func isSlice(value any) bool {
+	_, ok := value.([]any)
+	return ok
+}
+
+func isMap(value any) bool {
+	_, ok := value.(map[string]any)
+	return ok
 }
 
 type TableKind string

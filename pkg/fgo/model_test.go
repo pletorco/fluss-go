@@ -2,7 +2,9 @@ package fgo
 
 import (
 	"errors"
+	"math/big"
 	"testing"
+	"time"
 )
 
 func TestSchemaJSONRoundTrip(t *testing.T) {
@@ -67,7 +69,8 @@ func TestValidateRowAllTypes(t *testing.T) {
 		{Name: "float", Type: FloatType}, {Name: "double", Type: DoubleType}, {Name: "string", Type: StringType},
 		{Name: "binary", Type: BinaryType}, {Name: "date", Type: DateType}, {Name: "timestamp", Type: TimestampType},
 	}}
-	row := Row{true, int32(1), int64(2), float32(3), float64(4), "five", []byte("six"), "date", "timestamp"}
+	now := time.Now().UTC()
+	row := Row{true, int32(1), int64(2), float32(3), float64(4), "five", []byte("six"), now, now}
 	if err := schema.ValidateRow(row, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -76,5 +79,24 @@ func TestValidateRowAllTypes(t *testing.T) {
 	}
 	if err := schema.ValidateRow(Row{nil}, []string{"bool"}); !errors.Is(err, ErrInvalidRow) {
 		t.Fatalf("nil required error = %v", err)
+	}
+}
+
+func TestValidateRowExtendedTypes(t *testing.T) {
+	now := time.Now().UTC()
+	schema := Schema{Columns: []Column{
+		{Name: "char", Type: CharType}, {Name: "tiny", Type: TinyIntType}, {Name: "small", Type: SmallIntType},
+		{Name: "bytes", Type: BytesType}, {Name: "decimal", Type: DecimalType}, {Name: "time", Type: TimeType},
+		{Name: "ltz", Type: TimestampLTZType}, {Name: "array", Type: ArrayType}, {Name: "map", Type: MapType}, {Name: "row", Type: RowType},
+	}}
+	valid := Row{"a", int8(1), int16(2), []byte("b"), big.NewRat(3, 10), now, now, []any{"x"}, map[string]any{"k": "v"}, Row{"nested"}}
+	if err := schema.ValidateRow(valid, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.ValidateRow(Row{"not-a-date"}, []string{"time"}); !errors.Is(err, ErrInvalidRow) {
+		t.Fatalf("temporal validation error = %v", err)
+	}
+	if err := schema.ValidateRow(Row{int32(1)}, []string{"tiny"}); !errors.Is(err, ErrInvalidRow) {
+		t.Fatalf("tinyint validation error = %v", err)
 	}
 }
