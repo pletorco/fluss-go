@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -177,6 +178,15 @@ func logicalRoot(dataType DataType) string {
 
 type Row []any
 
+// MapEntry preserves Fluss map key types and iteration order. Go maps with string keys are also
+// accepted as input, but decoded map values always use Map.
+type MapEntry struct {
+	Key   any
+	Value any
+}
+
+type Map []MapEntry
+
 func (s Schema) ValidateRow(row Row, columns []string) error {
 	if err := s.Validate(); err != nil {
 		return err
@@ -224,13 +234,16 @@ func validateColumnValue(column Column, value any) error {
 		}
 		return fmt.Errorf("%w: column %q is not nullable", ErrInvalidRow, column.Name)
 	}
-	if validValue(column.Type, value) {
+	if column.LogicalType == nil && validUntypedValue(column.Type, value) {
+		return nil
+	}
+	if column.LogicalType != nil && validLogicalValue(*column.LogicalType, value) {
 		return nil
 	}
 	return fmt.Errorf("%w: column %q expects %s", ErrInvalidRow, column.Name, column.Type)
 }
 
-func validValue(kind DataType, value any) bool {
+func validUntypedValue(kind DataType, value any) bool {
 	switch kind {
 	case BoolType:
 		_, ok := value.(bool)
@@ -266,9 +279,11 @@ func validValue(kind DataType, value any) bool {
 		_, ok := value.(time.Time)
 		return ok
 	case ArrayType:
-		return isSlice(value)
+		_, ok := value.([]any)
+		return ok
 	case MapType:
-		return isMap(value)
+		_, ok := mapEntries(value)
+		return ok
 	case RowType:
 		_, ok := value.(Row)
 		return ok
@@ -277,14 +292,103 @@ func validValue(kind DataType, value any) bool {
 	}
 }
 
-func isSlice(value any) bool {
-	_, ok := value.([]any)
-	return ok
+func validLogicalValue(logicalType LogicalType, value any) bool {
+	if value == nil {
+		return logicalType.Nullable
+	}
+	switch dataTypeForLogicalType(logicalType) {
+	case BoolType:
+		_, ok := value.(bool)
+		return ok
+	case IntType:
+		_, ok := value.(int32)
+		return ok
+	case TinyIntType:
+		_, ok := value.(int8)
+		return ok
+	case SmallIntType:
+		_, ok := value.(int16)
+		return ok
+	case BigIntType:
+		_, ok := value.(int64)
+		return ok
+	case FloatType:
+		_, ok := value.(float32)
+		return ok
+	case DoubleType:
+		_, ok := value.(float64)
+		return ok
+	case StringType, CharType:
+		_, ok := value.(string)
+		return ok
+	case BinaryType, BytesType:
+		_, ok := value.([]byte)
+		return ok
+	case DecimalType:
+		_, ok := value.(*big.Rat)
+		return ok
+	case DateType, TimeType, TimestampType, TimestampLTZType:
+		_, ok := value.(time.Time)
+		return ok
+	case ArrayType:
+		values, ok := value.([]any)
+		if !ok || logicalType.Element == nil {
+			return false
+		}
+		for _, element := range values {
+			if !validLogicalValue(*logicalType.Element, element) {
+				return false
+			}
+		}
+		return true
+	case MapType:
+		if logicalType.Key == nil || logicalType.Value == nil {
+			return false
+		}
+		entries, ok := mapEntries(value)
+		if !ok {
+			return false
+		}
+		for _, entry := range entries {
+			if !validLogicalValue(*logicalType.Key, entry.Key) || !validLogicalValue(*logicalType.Value, entry.Value) {
+				return false
+			}
+		}
+		return true
+	case RowType:
+		row, ok := value.(Row)
+		if !ok || len(row) != len(logicalType.Fields) {
+			return false
+		}
+		for i, field := range logicalType.Fields {
+			if !validLogicalValue(field.Type, row[i]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
-func isMap(value any) bool {
-	_, ok := value.(map[string]any)
-	return ok
+func mapEntries(value any) (Map, bool) {
+	switch value := value.(type) {
+	case Map:
+		return value, true
+	case map[string]any:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		entries := make(Map, len(keys))
+		for i, key := range keys {
+			entries[i] = MapEntry{Key: key, Value: value[key]}
+		}
+		return entries, true
+	default:
+		return nil, false
+	}
 }
 
 type TableKind string

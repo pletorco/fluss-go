@@ -81,8 +81,13 @@ type ChangeType int8
 
 const (
 	Append ChangeType = iota
-	Upsert
+	Insert
+	UpdateBefore
+	UpdateAfter
 	Delete
+
+	// Upsert is the idempotent update-after change used by primary-key tables.
+	Upsert = UpdateAfter
 )
 
 func (c ChangeType) Validate() error {

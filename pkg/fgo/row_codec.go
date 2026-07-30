@@ -4,148 +4,201 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 )
 
 const maxRowBytes = 16 << 20
 
 var ErrMalformedRow = errors.New("fgo: malformed row encoding")
 
+type rowEncoding uint8
+
+const (
+	compactedEncoding rowEncoding = iota
+	indexedEncoding
+)
+
 // EncodeCompactedRow encodes Fluss's compacted binary row format. The returned buffer is owned by
 // the caller and remains valid after the input row is reused.
 func EncodeCompactedRow(schema Schema, row Row) ([]byte, error) {
-	if err := schema.ValidateRow(row, nil); err != nil {
-		return nil, err
-	}
-	encoded := make([]byte, (len(schema.Columns)+7)/8)
-	for index, column := range schema.Columns {
-		if row[index] == nil {
-			encoded[index/8] |= 1 << (index % 8)
-			continue
-		}
-		var err error
-		encoded, err = appendCompactedValue(encoded, column.Type, row[index])
-		if err != nil {
-			return nil, err
-		}
-		if len(encoded) > maxRowBytes {
-			return nil, fmt.Errorf("%w: row exceeds %d bytes", ErrMalformedRow, maxRowBytes)
-		}
-	}
-	return encoded, nil
+	return encodeRow(schema, row, compactedEncoding)
 }
 
-// DecodeCompactedRow decodes a compacted Fluss row. It rejects truncated, overlong, and trailing
-// data instead of accepting an ambiguous prefix.
+// DecodeCompactedRow decodes a complete compacted Fluss row.
 func DecodeCompactedRow(schema Schema, encoded []byte) (Row, error) {
-	if err := schema.Validate(); err != nil {
-		return nil, err
-	}
-	if len(encoded) > maxRowBytes || len(encoded) < (len(schema.Columns)+7)/8 {
-		return nil, fmt.Errorf("%w: invalid compacted row length", ErrMalformedRow)
-	}
-	position := (len(schema.Columns) + 7) / 8
-	row := make(Row, len(schema.Columns))
-	for index, column := range schema.Columns {
-		if encoded[index/8]&(1<<(index%8)) != 0 {
-			if !column.Nullable {
-				return nil, fmt.Errorf("%w: non-nullable column %q is null", ErrMalformedRow, column.Name)
-			}
-			continue
-		}
-		value, next, err := readCompactedValue(encoded, position, column.Type)
-		if err != nil {
-			return nil, fmt.Errorf("%w: column %q: %v", ErrMalformedRow, column.Name, err)
-		}
-		row[index], position = value, next
-	}
-	if position != len(encoded) {
-		return nil, fmt.Errorf("%w: trailing bytes", ErrMalformedRow)
-	}
-	return row, nil
+	return decodeRow(schema, encoded, compactedEncoding)
 }
 
-// EncodePrimaryKey writes the compacted key representation used by Fluss Lookup and PrefixLookup.
-// Primary-key columns have no null bitmap and must all be non-null.
+// EncodeIndexedRow encodes Fluss's indexed binary row format.
+func EncodeIndexedRow(schema Schema, row Row) ([]byte, error) {
+	return encodeRow(schema, row, indexedEncoding)
+}
+
+// DecodeIndexedRow decodes a complete indexed Fluss row.
+func DecodeIndexedRow(schema Schema, encoded []byte) (Row, error) {
+	return decodeRow(schema, encoded, indexedEncoding)
+}
+
+// EncodeCompactedProjectedRow encodes values for the named columns in the given order. It is used
+// by Fluss partial updates, where omitted columns must not be serialized as nulls.
+func EncodeCompactedProjectedRow(schema Schema, columns []string, row Row) ([]byte, error) {
+	projected, err := projectSchema(schema, columns)
+	if err != nil {
+		return nil, err
+	}
+	return encodeRow(projected, row, compactedEncoding)
+}
+
+func DecodeCompactedProjectedRow(schema Schema, columns []string, encoded []byte) (Row, error) {
+	projected, err := projectSchema(schema, columns)
+	if err != nil {
+		return nil, err
+	}
+	return decodeRow(projected, encoded, compactedEncoding)
+}
+
+func EncodeIndexedProjectedRow(schema Schema, columns []string, row Row) ([]byte, error) {
+	projected, err := projectSchema(schema, columns)
+	if err != nil {
+		return nil, err
+	}
+	return encodeRow(projected, row, indexedEncoding)
+}
+
+func DecodeIndexedProjectedRow(schema Schema, columns []string, encoded []byte) (Row, error) {
+	projected, err := projectSchema(schema, columns)
+	if err != nil {
+		return nil, err
+	}
+	return decodeRow(projected, encoded, indexedEncoding)
+}
+
+// EncodePrimaryKey writes the compacted key representation used by Lookup v0 and v1. Primary-key
+// columns have no null bitmap and must all be non-null.
 func EncodePrimaryKey(schema Schema, key PrimaryKey) ([]byte, error) {
 	if err := schema.ValidatePrimaryKey(key); err != nil {
 		return nil, err
 	}
+	return encodeKeyColumns(schema, schema.PrimaryKey, key)
+}
+
+// EncodeLookupKey selects the key contract negotiated for Lookup v0 or v1. Fluss 0.9.1 uses the
+// same compacted key bytes in both versions; keeping the version explicit prevents silent use of a
+// future incompatible layout.
+func EncodeLookupKey(schema Schema, key PrimaryKey, version int16) ([]byte, error) {
+	if version != 0 && version != 1 {
+		return nil, fmt.Errorf("%w: unsupported Lookup version %d", ErrInvalidConfig, version)
+	}
+	return EncodePrimaryKey(schema, key)
+}
+
+// EncodePrefixKey writes a non-empty leading subset of the primary key for PrefixLookup v0 and v1.
+func EncodePrefixKey(schema Schema, prefix PrimaryKey) ([]byte, error) {
+	if len(prefix) == 0 || len(prefix) > len(schema.PrimaryKey) {
+		return nil, fmt.Errorf("%w: prefix has %d values for %d primary-key columns", ErrInvalidRow, len(prefix), len(schema.PrimaryKey))
+	}
+	return encodeKeyColumns(schema, schema.PrimaryKey[:len(prefix)], prefix)
+}
+
+func EncodePrefixLookupKey(schema Schema, prefix PrimaryKey, version int16) ([]byte, error) {
+	if version != 0 && version != 1 {
+		return nil, fmt.Errorf("%w: unsupported PrefixLookup version %d", ErrInvalidConfig, version)
+	}
+	return EncodePrefixKey(schema, prefix)
+}
+
+func encodeKeyColumns(schema Schema, names []string, values PrimaryKey) ([]byte, error) {
+	if err := schema.ValidateRow(Row(values), names); err != nil {
+		return nil, err
+	}
 	byName := schema.columnsByName()
 	encoded := make([]byte, 0, 32)
-	for index, name := range schema.PrimaryKey {
-		var err error
-		encoded, err = appendCompactedValue(encoded, byName[name].Type, key[index])
-		if err != nil {
-			return nil, err
+	for i, name := range names {
+		column := byName[name]
+		if values[i] == nil {
+			return nil, fmt.Errorf("%w: key column %q is null", ErrInvalidRow, name)
 		}
+		var err error
+		encoded, err = appendCompactedValue(encoded, logicalTypeForColumn(column), values[i])
+		if err != nil {
+			return nil, fmt.Errorf("fgo: key column %q: %w", name, err)
+		}
+	}
+	if len(encoded) > maxRowBytes {
+		return nil, fmt.Errorf("%w: key exceeds %d bytes", ErrMalformedRow, maxRowBytes)
 	}
 	return encoded, nil
 }
 
-// EncodeIndexedRow encodes Fluss's indexed row format. Its header stores a null bitmap followed
-// by little-endian lengths for non-null variable-width fields.
-func EncodeIndexedRow(schema Schema, row Row) ([]byte, error) {
+func encodeRow(schema Schema, row Row, encoding rowEncoding) ([]byte, error) {
 	if err := schema.ValidateRow(row, nil); err != nil {
 		return nil, err
 	}
 	nullBytes := (len(schema.Columns) + 7) / 8
-	variableBytes := 0
-	for _, column := range schema.Columns {
-		if isVariableWidth(column.Type) {
-			variableBytes += 4
+	headerBytes := nullBytes
+	if encoding == indexedEncoding {
+		for _, column := range schema.Columns {
+			if !indexedFixed(logicalTypeForColumn(column)) {
+				headerBytes += 4
+			}
 		}
 	}
-	encoded := make([]byte, nullBytes+variableBytes)
+	encoded := make([]byte, headerBytes)
 	lengthPosition := nullBytes
-	for index, column := range schema.Columns {
-		if row[index] == nil {
-			encoded[index/8] |= 1 << (index % 8)
+	for i, column := range schema.Columns {
+		logicalType := logicalTypeForColumn(column)
+		if row[i] == nil {
+			encoded[i/8] |= 1 << (i % 8)
 			continue
 		}
-		if isVariableWidth(column.Type) {
-			length, err := compactedValueLength(column.Type, row[index])
-			if err != nil {
-				return nil, err
-			}
-			binary.LittleEndian.PutUint32(encoded[lengthPosition:], uint32(length))
-			lengthPosition += 4
-		}
+		var value []byte
 		var err error
-		encoded, err = appendIndexedValue(encoded, column.Type, row[index])
-		if err != nil {
-			return nil, err
+		if encoding == compactedEncoding {
+			value, err = appendCompactedValue(nil, logicalType, row[i])
+		} else {
+			value, err = appendIndexedValue(nil, logicalType, row[i])
+			if !indexedFixed(logicalType) {
+				binary.LittleEndian.PutUint32(encoded[lengthPosition:], uint32(len(value)))
+				lengthPosition += 4
+			}
 		}
-		if len(encoded) > maxRowBytes {
+		if err != nil {
+			return nil, fmt.Errorf("fgo: column %q: %w", column.Name, err)
+		}
+		if len(value) > maxRowBytes-len(encoded) {
 			return nil, fmt.Errorf("%w: row exceeds %d bytes", ErrMalformedRow, maxRowBytes)
 		}
+		encoded = append(encoded, value...)
 	}
 	return encoded, nil
 }
 
-// DecodeIndexedRow validates its variable-width offsets while decoding the sequential payload.
-func DecodeIndexedRow(schema Schema, encoded []byte) (Row, error) {
+func decodeRow(schema Schema, encoded []byte, encoding rowEncoding) (Row, error) {
 	if err := schema.Validate(); err != nil {
 		return nil, err
 	}
 	nullBytes := (len(schema.Columns) + 7) / 8
-	variableBytes := 0
-	for _, column := range schema.Columns {
-		if isVariableWidth(column.Type) {
-			variableBytes += 4
+	headerBytes := nullBytes
+	if encoding == indexedEncoding {
+		for _, column := range schema.Columns {
+			if !indexedFixed(logicalTypeForColumn(column)) {
+				headerBytes += 4
+			}
 		}
 	}
-	if len(encoded) > maxRowBytes || len(encoded) < nullBytes+variableBytes {
-		return nil, fmt.Errorf("%w: invalid indexed row length", ErrMalformedRow)
+	if len(encoded) > maxRowBytes || len(encoded) < headerBytes {
+		return nil, fmt.Errorf("%w: invalid row length", ErrMalformedRow)
 	}
 	row := make(Row, len(schema.Columns))
-	position, lengthPosition := nullBytes+variableBytes, nullBytes
-	for index, column := range schema.Columns {
-		isNull := encoded[index/8]&(1<<(index%8)) != 0
-		var length int
-		if isVariableWidth(column.Type) && !isNull {
-			length = int(binary.LittleEndian.Uint32(encoded[lengthPosition:]))
-			lengthPosition += 4
+	position, lengthPosition := headerBytes, nullBytes
+	for i, column := range schema.Columns {
+		logicalType := logicalTypeForColumn(column)
+		isNull := encoded[i/8]&(1<<(i%8)) != 0
+		length := -1
+		if encoding == indexedEncoding && !indexedFixed(logicalType) {
+			if !isNull {
+				length = int(binary.LittleEndian.Uint32(encoded[lengthPosition:]))
+				lengthPosition += 4
+			}
 		}
 		if isNull {
 			if !column.Nullable {
@@ -153,11 +206,20 @@ func DecodeIndexedRow(schema Schema, encoded []byte) (Row, error) {
 			}
 			continue
 		}
-		value, next, err := readIndexedValue(encoded, position, column.Type, length)
+		var (
+			value any
+			next  int
+			err   error
+		)
+		if encoding == compactedEncoding {
+			value, next, err = readCompactedValue(encoded, position, logicalType)
+		} else {
+			value, next, err = readIndexedValue(encoded, position, logicalType, length)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: column %q: %v", ErrMalformedRow, column.Name, err)
 		}
-		row[index], position = value, next
+		row[i], position = value, next
 	}
 	if position != len(encoded) {
 		return nil, fmt.Errorf("%w: trailing bytes", ErrMalformedRow)
@@ -165,88 +227,51 @@ func DecodeIndexedRow(schema Schema, encoded []byte) (Row, error) {
 	return row, nil
 }
 
-func appendCompactedValue(dst []byte, kind DataType, value any) ([]byte, error) {
-	switch kind {
-	case BoolType:
-		if value.(bool) {
-			return append(dst, 1), nil
+func nestedSchema(logicalType LogicalType) Schema {
+	columns := make([]Column, len(logicalType.Fields))
+	for i, field := range logicalType.Fields {
+		fieldType := field.Type
+		columns[i] = Column{
+			Name:        field.Name,
+			Type:        dataTypeForLogicalType(fieldType),
+			Nullable:    fieldType.Nullable,
+			LogicalType: &fieldType,
+			Description: field.Description,
+			ID:          field.ID,
 		}
-		return append(dst, 0), nil
-	case TinyIntType:
-		return append(dst, byte(value.(int8))), nil
-	case SmallIntType:
-		return appendLittle(dst, uint64(uint16(value.(int16))), 2), nil
-	case IntType:
-		return appendVar32(dst, uint32(value.(int32))), nil
-	case BigIntType:
-		return appendVar64(dst, uint64(value.(int64))), nil
-	case FloatType:
-		return appendLittle(dst, uint64(math.Float32bits(value.(float32))), 4), nil
-	case DoubleType:
-		return appendLittle(dst, math.Float64bits(value.(float64)), 8), nil
-	case StringType, CharType:
-		return appendLengthBytes(dst, []byte(value.(string)))
-	case BytesType, BinaryType:
-		return appendLengthBytes(dst, value.([]byte))
-	default:
-		return nil, fmt.Errorf("%w: compacted codec does not support %s", ErrInvalidSchema, kind)
 	}
+	return Schema{Columns: columns}
 }
 
-func readCompactedValue(encoded []byte, position int, kind DataType) (any, int, error) {
-	switch kind {
-	case BoolType:
-		value, next, err := readFixed(encoded, position, 1)
-		if err != nil || value[0] > 1 {
-			return nil, 0, errors.New("invalid boolean")
-		}
-		return value[0] == 1, next, nil
-	case TinyIntType:
-		value, next, err := readFixed(encoded, position, 1)
-		if err != nil {
-			return nil, 0, err
-		}
-		return int8(value[0]), next, err
-	case SmallIntType:
-		value, next, err := readFixed(encoded, position, 2)
-		if err != nil {
-			return nil, 0, err
-		}
-		return int16(binary.LittleEndian.Uint16(value)), next, err
-	case IntType:
-		value, next, err := readVar(encoded, position, 5)
-		return int32(value), next, err
-	case BigIntType:
-		value, next, err := readVar(encoded, position, 10)
-		return int64(value), next, err
-	case FloatType:
-		value, next, err := readFixed(encoded, position, 4)
-		if err != nil {
-			return nil, 0, err
-		}
-		return math.Float32frombits(binary.LittleEndian.Uint32(value)), next, err
-	case DoubleType:
-		value, next, err := readFixed(encoded, position, 8)
-		if err != nil {
-			return nil, 0, err
-		}
-		return math.Float64frombits(binary.LittleEndian.Uint64(value)), next, err
-	case StringType, CharType:
-		value, next, err := readLengthBytes(encoded, position)
-		return string(value), next, err
-	case BytesType, BinaryType:
-		return readLengthBytes(encoded, position)
-	default:
-		return nil, 0, fmt.Errorf("unsupported type %s", kind)
+func projectSchema(schema Schema, names []string) (Schema, error) {
+	if err := schema.Validate(); err != nil {
+		return Schema{}, err
 	}
+	if len(names) == 0 {
+		return Schema{}, fmt.Errorf("%w: projection has no columns", ErrInvalidSchema)
+	}
+	byName := schema.columnsByName()
+	seen := make(map[string]struct{}, len(names))
+	columns := make([]Column, len(names))
+	for i, name := range names {
+		column, ok := byName[name]
+		if !ok {
+			return Schema{}, fmt.Errorf("%w: projected column %q does not exist", ErrInvalidSchema, name)
+		}
+		if _, exists := seen[name]; exists {
+			return Schema{}, fmt.Errorf("%w: duplicate projected column %q", ErrInvalidSchema, name)
+		}
+		seen[name] = struct{}{}
+		columns[i] = column
+	}
+	return Schema{Columns: columns}, nil
 }
 
-func appendLengthBytes(dst, value []byte) ([]byte, error) {
-	if len(value) > maxRowBytes {
-		return nil, fmt.Errorf("%w: value exceeds %d bytes", ErrMalformedRow, maxRowBytes)
+func readFixed(encoded []byte, position, length int) ([]byte, int, error) {
+	if position < 0 || length < 0 || position > len(encoded) || len(encoded)-position < length {
+		return nil, 0, errors.New("truncated value")
 	}
-	dst = appendVar32(dst, uint32(len(value)))
-	return append(dst, value...), nil
+	return encoded[position : position+length], position + length, nil
 }
 
 func appendLittle(dst []byte, value uint64, width int) []byte {
@@ -265,22 +290,15 @@ func appendVar64(dst []byte, value uint64) []byte {
 	return append(dst, byte(value))
 }
 
-func readFixed(encoded []byte, position, length int) ([]byte, int, error) {
-	if position < 0 || length < 0 || len(encoded)-position < length {
-		return nil, 0, errors.New("truncated value")
-	}
-	return encoded[position : position+length], position + length, nil
-}
-
 func readVar(encoded []byte, position, maximum int) (uint64, int, error) {
 	var value uint64
-	for index := 0; index < maximum; index++ {
+	for i := 0; i < maximum; i++ {
 		if position >= len(encoded) {
 			return 0, 0, errors.New("truncated varint")
 		}
 		part := encoded[position]
 		position++
-		value |= uint64(part&0x7f) << (7 * index)
+		value |= uint64(part&0x7f) << (7 * i)
 		if part&0x80 == 0 {
 			return value, position, nil
 		}
@@ -288,70 +306,19 @@ func readVar(encoded []byte, position, maximum int) (uint64, int, error) {
 	return 0, 0, errors.New("overlong varint")
 }
 
+func appendLengthBytes(dst, value []byte) ([]byte, error) {
+	if len(value) > maxRowBytes {
+		return nil, fmt.Errorf("value exceeds %d bytes", maxRowBytes)
+	}
+	dst = appendVar32(dst, uint32(len(value)))
+	return append(dst, value...), nil
+}
+
 func readLengthBytes(encoded []byte, position int) ([]byte, int, error) {
 	length, next, err := readVar(encoded, position, 5)
-	if err != nil || length > maxRowBytes || length > uint64(len(encoded)-next) {
+	if err != nil || length > maxRowBytes || next > len(encoded) || length > uint64(len(encoded)-next) {
 		return nil, 0, errors.New("invalid byte length")
 	}
 	value := append([]byte(nil), encoded[next:next+int(length)]...)
 	return value, next + int(length), nil
-}
-
-func appendIndexedValue(dst []byte, kind DataType, value any) ([]byte, error) {
-	switch kind {
-	case IntType:
-		return appendLittle(dst, uint64(uint32(value.(int32))), 4), nil
-	case BigIntType:
-		return appendLittle(dst, uint64(value.(int64)), 8), nil
-	case StringType, CharType:
-		return append(dst, value.(string)...), nil
-	case BytesType:
-		return append(dst, value.([]byte)...), nil
-	default:
-		return appendCompactedValue(dst, kind, value)
-	}
-}
-
-func readIndexedValue(encoded []byte, position int, kind DataType, length int) (any, int, error) {
-	if isVariableWidth(kind) {
-		value, next, err := readFixed(encoded, position, length)
-		if err != nil {
-			return nil, 0, err
-		}
-		if kind == StringType || kind == CharType {
-			return string(value), next, nil
-		}
-		return append([]byte(nil), value...), next, nil
-	}
-	switch kind {
-	case IntType:
-		value, next, err := readFixed(encoded, position, 4)
-		if err != nil {
-			return nil, 0, err
-		}
-		return int32(binary.LittleEndian.Uint32(value)), next, err
-	case BigIntType:
-		value, next, err := readFixed(encoded, position, 8)
-		if err != nil {
-			return nil, 0, err
-		}
-		return int64(binary.LittleEndian.Uint64(value)), next, err
-	default:
-		return readCompactedValue(encoded, position, kind)
-	}
-}
-
-func compactedValueLength(kind DataType, value any) (int, error) {
-	switch kind {
-	case StringType, CharType:
-		return len(value.(string)), nil
-	case BytesType:
-		return len(value.([]byte)), nil
-	default:
-		return 0, fmt.Errorf("%w: indexed codec does not support %s", ErrInvalidSchema, kind)
-	}
-}
-
-func isVariableWidth(kind DataType) bool {
-	return kind == StringType || kind == CharType || kind == BytesType
 }
