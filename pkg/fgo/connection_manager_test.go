@@ -112,6 +112,57 @@ func TestConnectionManagerRejectsWrongServerRole(t *testing.T) {
 	<-done
 }
 
+func TestConnectionManagerRejectsInvalidOrClosedRequests(t *testing.T) {
+	manager := newConnectionManager(config{})
+	if _, err := manager.getNode(context.Background(), Node{Role: Coordinator}); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("empty address error = %v", err)
+	}
+	if _, err := manager.getNode(context.Background(), Node{Address: "server:9123", Role: UnknownServerRole}); !errors.Is(err, ErrServerRole) {
+		t.Fatalf("unknown role error = %v", err)
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.get(context.Background(), "server:9123", Coordinator); !errors.Is(err, ErrClosed) {
+		t.Fatalf("get after Close error = %v", err)
+	}
+}
+
+func TestConnectionManagerCancelsWaitingDial(t *testing.T) {
+	manager := newConnectionManager(config{})
+	key := connectionKey{id: 1, address: "tablet:9123", role: TabletServer}
+	manager.flights[key] = &connectionFlight{done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := manager.getNode(ctx, Node{ID: 1, Address: "tablet:9123", Role: TabletServer}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiting get error = %v, want context.Canceled", err)
+	}
+}
+
+func TestConnectionManagerDialAndAuthenticatorFailures(t *testing.T) {
+	dialFailure := newConnectionManager(config{
+		dialContext: func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("dial failed") },
+	})
+	if _, err := dialFailure.open(context.Background(), "server:9123", Coordinator); err == nil {
+		t.Fatal("open() dial failure error = nil")
+	}
+
+	clientConn, serverConn := net.Pipe()
+	done := serveVersions(t, serverConn, Coordinator)
+	authFailure := newConnectionManager(config{
+		name: "test", version: "1",
+		dialContext: func(context.Context, string, string) (net.Conn, error) { return clientConn, nil },
+		authFactory: func() (Authenticator, error) { return nil, errors.New("factory failed") },
+	})
+	if _, err := authFailure.get(context.Background(), "server:9123", Coordinator); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("auth factory error = %v", err)
+	}
+	<-done
+}
+
 func TestClientRequestToUsesTabletConnection(t *testing.T) {
 	coordinatorClient, coordinatorServer := net.Pipe()
 	coordinatorDone := serveVersions(t, coordinatorServer, Coordinator)
@@ -194,6 +245,9 @@ func TestServerRole(t *testing.T) {
 	}
 	if _, err := serverRole(0); !errors.Is(err, ErrServerRole) {
 		t.Fatalf("serverRole(0) error = %v", err)
+	}
+	if got, want := UnknownServerRole.String(), "unknown"; got != want {
+		t.Fatalf("unknown role string = %q, want %q", got, want)
 	}
 }
 

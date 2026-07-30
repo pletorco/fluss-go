@@ -279,43 +279,69 @@ func (c *Client) authenticate(ctx context.Context, auth Authenticator) error {
 	if auth == nil || auth.Protocol() == "" {
 		return authenticationError(fmt.Errorf("invalid authenticator"), false)
 	}
-
-	var token []byte
-	var err error
-	if auth.HasInitialResponse() {
-		token, err = auth.Authenticate(ctx, nil)
-		if err != nil {
-			return authenticationError(err, false)
-		}
-		if token == nil {
-			return authenticationError(fmt.Errorf("initial response is missing"), false)
-		}
+	token, err := initialAuthenticationToken(ctx, auth)
+	if err != nil {
+		return err
 	}
-
 	for step := 0; step < 16; step++ {
-		response, err := c.authenticateRequest(ctx, auth.Protocol(), token)
+		challenge, complete, err := c.authenticationChallenge(ctx, auth, token)
 		if err != nil {
-			return authenticationError(err, isRetriableAuthenticationError(err))
+			return err
 		}
-		if response.Challenge == nil {
-			if auth.Complete() {
-				return nil
-			}
-			return authenticationError(fmt.Errorf("server completed exchange before authenticator completed"), false)
+		if complete {
+			return nil
 		}
-
-		token, err = auth.Authenticate(ctx, append([]byte(nil), response.Challenge...))
+		token, complete, err = authenticationResponseToken(ctx, auth, challenge)
 		if err != nil {
-			return authenticationError(err, false)
+			return err
 		}
-		if token == nil {
-			if auth.Complete() {
-				return nil
-			}
-			return authenticationError(fmt.Errorf("authenticator returned no response before completion"), false)
+		if complete {
+			return nil
 		}
 	}
 	return authenticationError(fmt.Errorf("authentication exchange exceeded 16 steps"), false)
+}
+
+func initialAuthenticationToken(ctx context.Context, auth Authenticator) ([]byte, error) {
+	if !auth.HasInitialResponse() {
+		return nil, nil
+	}
+	token, err := auth.Authenticate(ctx, nil)
+	if err != nil {
+		return nil, authenticationError(err, false)
+	}
+	if token == nil {
+		return nil, authenticationError(fmt.Errorf("initial response is missing"), false)
+	}
+	return token, nil
+}
+
+func (c *Client) authenticationChallenge(ctx context.Context, auth Authenticator, token []byte) ([]byte, bool, error) {
+	response, err := c.authenticateRequest(ctx, auth.Protocol(), token)
+	if err != nil {
+		return nil, false, authenticationError(err, isRetriableAuthenticationError(err))
+	}
+	if response.Challenge != nil {
+		return append([]byte(nil), response.Challenge...), false, nil
+	}
+	if auth.Complete() {
+		return nil, true, nil
+	}
+	return nil, false, authenticationError(fmt.Errorf("server completed exchange before authenticator completed"), false)
+}
+
+func authenticationResponseToken(ctx context.Context, auth Authenticator, challenge []byte) ([]byte, bool, error) {
+	token, err := auth.Authenticate(ctx, challenge)
+	if err != nil {
+		return nil, false, authenticationError(err, false)
+	}
+	if token != nil {
+		return token, false, nil
+	}
+	if auth.Complete() {
+		return nil, true, nil
+	}
+	return nil, false, authenticationError(fmt.Errorf("authenticator returned no response before completion"), false)
 }
 
 func (c *Client) authenticateRequest(ctx context.Context, protocol string, token []byte) (*fmsg.AuthenticateResponse, error) {
