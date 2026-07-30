@@ -49,16 +49,21 @@ func (t DataType) Validate() error {
 }
 
 type Column struct {
-	Name     string
-	Type     DataType
-	Nullable bool
+	Name        string
+	Type        DataType
+	Nullable    bool
+	LogicalType *LogicalType
+	Description string
+	ID          int
 }
 
 type Schema struct {
-	Columns      []Column
-	PrimaryKey   []string
-	BucketKey    []string
-	PartitionKey []string
+	Columns        []Column
+	PrimaryKey     []string
+	BucketKey      []string
+	PartitionKey   []string
+	AutoIncrement  []string
+	HighestFieldID int
 }
 
 func (s Schema) Validate() error {
@@ -73,7 +78,11 @@ func (s Schema) Validate() error {
 		if _, exists := columns[column.Name]; exists {
 			return fmt.Errorf("%w: duplicate column %q", ErrInvalidSchema, column.Name)
 		}
-		if err := column.Type.Validate(); err != nil {
+		if column.LogicalType != nil {
+			if err := column.LogicalType.Validate(); err != nil {
+				return err
+			}
+		} else if err := column.Type.Validate(); err != nil {
 			return err
 		}
 		columns[column.Name] = column
@@ -92,18 +101,74 @@ func (s Schema) JSON() ([]byte, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(s)
+	columns := make([]schemaColumnJSON, len(s.Columns))
+	for i, column := range s.Columns {
+		logicalType := logicalTypeForColumn(column)
+		columns[i] = schemaColumnJSON{Name: column.Name, DataType: logicalType, Comment: column.Description, ID: column.ID}
+	}
+	return json.Marshal(schemaJSON{Version: 1, Columns: columns, PrimaryKey: s.PrimaryKey, AutoIncrement: s.AutoIncrement, HighestFieldID: s.HighestFieldID})
 }
 
 func ParseSchemaJSON(data []byte) (Schema, error) {
-	var schema Schema
-	if err := json.Unmarshal(data, &schema); err != nil {
+	var encoded schemaJSON
+	if err := json.Unmarshal(data, &encoded); err != nil {
 		return Schema{}, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+	}
+	schema := Schema{PrimaryKey: encoded.PrimaryKey, AutoIncrement: encoded.AutoIncrement, HighestFieldID: encoded.HighestFieldID, Columns: make([]Column, len(encoded.Columns))}
+	for i, column := range encoded.Columns {
+		if err := column.DataType.Validate(); err != nil {
+			return Schema{}, err
+		}
+		schema.Columns[i] = Column{Name: column.Name, Type: dataTypeForLogicalType(column.DataType), Nullable: column.DataType.Nullable, LogicalType: &column.DataType, Description: column.Comment, ID: column.ID}
 	}
 	if err := schema.Validate(); err != nil {
 		return Schema{}, err
 	}
 	return schema, nil
+}
+
+type schemaJSON struct {
+	Version        int                `json:"version"`
+	Columns        []schemaColumnJSON `json:"columns"`
+	PrimaryKey     []string           `json:"primary_key,omitempty"`
+	AutoIncrement  []string           `json:"auto_increment_column,omitempty"`
+	HighestFieldID int                `json:"highest_field_id"`
+}
+
+type schemaColumnJSON struct {
+	Name     string      `json:"name"`
+	DataType LogicalType `json:"data_type"`
+	Comment  string      `json:"comment,omitempty"`
+	ID       int         `json:"id"`
+}
+
+func logicalTypeForColumn(column Column) LogicalType {
+	if column.LogicalType != nil {
+		return *column.LogicalType
+	}
+	return LogicalType{Root: logicalRoot(column.Type), Nullable: column.Nullable}
+}
+
+func dataTypeForLogicalType(logicalType LogicalType) DataType {
+	switch logicalType.Root {
+	case "INTEGER":
+		return IntType
+	case "TIMESTAMP_WITHOUT_TIME_ZONE":
+		return TimestampType
+	default:
+		return DataType(logicalType.Root)
+	}
+}
+
+func logicalRoot(dataType DataType) string {
+	switch dataType {
+	case IntType:
+		return "INTEGER"
+	case TimestampType:
+		return "TIMESTAMP_WITHOUT_TIME_ZONE"
+	default:
+		return string(dataType)
+	}
 }
 
 type Row []any

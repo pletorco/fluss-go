@@ -8,7 +8,7 @@ import (
 )
 
 func TestSchemaJSONRoundTrip(t *testing.T) {
-	schema := Schema{Columns: []Column{{Name: "id", Type: BigIntType}, {Name: "value", Type: StringType, Nullable: true}}, PrimaryKey: []string{"id"}}
+	schema := Schema{Columns: []Column{{Name: "id", Type: BigIntType, ID: 1}, {Name: "value", Type: StringType, Nullable: true, Description: "payload", ID: 2}}, PrimaryKey: []string{"id"}, HighestFieldID: 2}
 	data, err := schema.JSON()
 	if err != nil {
 		t.Fatal(err)
@@ -17,8 +17,36 @@ func TestSchemaJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Columns[1].Name != "value" || got.PrimaryKey[0] != "id" {
+	if got.Columns[1].Name != "value" || got.Columns[1].Description != "payload" || got.PrimaryKey[0] != "id" {
 		t.Fatalf("round trip = %#v", got)
+	}
+}
+
+func TestParseFlussSchemaJSON(t *testing.T) {
+	fixture := []byte(`{"version":1,"columns":[{"name":"id","data_type":{"type":"BIGINT"},"id":1},{"name":"tags","data_type":{"type":"ARRAY","element_type":{"type":"STRING"}},"id":2}],"primary_key":["id"],"highest_field_id":2}`)
+	schema, err := ParseSchemaJSON(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := schema.Columns[1].LogicalType.Element.Root; got != "STRING" {
+		t.Fatalf("nested root = %q", got)
+	}
+	if _, err := schema.JSON(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLogicalTypeDataTypeMappings(t *testing.T) {
+	for _, test := range []struct {
+		dataType DataType
+		root     string
+	}{{IntType, "INTEGER"}, {TimestampType, "TIMESTAMP_WITHOUT_TIME_ZONE"}, {StringType, "STRING"}} {
+		if got := logicalRoot(test.dataType); got != test.root {
+			t.Fatalf("logicalRoot(%s) = %q", test.dataType, got)
+		}
+		if got := dataTypeForLogicalType(LogicalType{Root: test.root}); got != test.dataType {
+			t.Fatalf("dataTypeForLogicalType(%s) = %q", test.root, got)
+		}
 	}
 }
 
@@ -99,4 +127,13 @@ func TestValidateRowExtendedTypes(t *testing.T) {
 	if err := schema.ValidateRow(Row{int32(1)}, []string{"tiny"}); !errors.Is(err, ErrInvalidRow) {
 		t.Fatalf("tinyint validation error = %v", err)
 	}
+}
+
+func FuzzParseLogicalTypeJSON(f *testing.F) {
+	f.Add([]byte(`{"type":"STRING"}`))
+	f.Add([]byte(`{"type":"ARRAY","element_type":{"type":"INTEGER"}}`))
+	f.Add([]byte(`{"type":"ROW","fields":[]}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_, _ = ParseLogicalTypeJSON(data)
+	})
 }
