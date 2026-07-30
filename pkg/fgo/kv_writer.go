@@ -180,6 +180,7 @@ type KVWriter struct {
 	done        chan struct{}
 	appendMu    sync.Mutex
 	closed      bool
+	observer    MetricsObserver
 }
 
 type kvWriterCommand struct {
@@ -189,12 +190,13 @@ type kvWriterCommand struct {
 }
 
 type pendingKVWrite struct {
-	ctx     context.Context
-	record  KVRecord
-	bucket  int32
-	targets []int32
-	size    int
-	future  *WriteFuture
+	ctx      context.Context
+	record   KVRecord
+	bucket   int32
+	targets  []int32
+	size     int
+	queuedAt time.Time
+	future   *WriteFuture
 }
 
 type kvPendingBatch struct {
@@ -214,7 +216,11 @@ type kvWriterLoop struct {
 }
 
 func (c *Client) NewKVWriter(ctx context.Context, table Table, options ...KVWriterOption) (*KVWriter, error) {
-	return newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
+	writer, err := newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
+	if err == nil {
+		writer.observer = c.observer
+	}
+	return writer, err
 }
 
 func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, options ...KVWriterOption) (*KVWriter, error) {
@@ -399,10 +405,14 @@ func (w *KVWriter) enqueueMutation(
 		return
 	}
 	bucket := w.buckets[int(hashBucket)]
-	w.enqueue(ctx, &pendingKVWrite{
+	item := &pendingKVWrite{
 		ctx: ctx, record: KVRecord{Key: key, Value: value}, bucket: bucket,
 		targets: append([]int32(nil), targets...), size: len(key) + len(value) + 8, future: future,
-	})
+	}
+	if w.observer != nil {
+		item.queuedAt = time.Now()
+	}
+	w.enqueue(ctx, item)
 }
 
 func (w *KVWriter) validatePartial(columns []string, values Row) ([]int32, error) {
@@ -640,6 +650,7 @@ func (l *kvWriterLoop) flushBucket(bucket int32) error {
 		BatchSequence: l.sequences[bucket], Records: batch.records,
 	}).Encode()
 	var logEnd int64
+	started := metricStart(l.writer.observer)
 	if err == nil {
 		logEnd, err = l.writer.backend.put(context.Background(), kvPutRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
@@ -647,6 +658,16 @@ func (l *kvWriterLoop) flushBucket(bucket int32) error {
 			mergeMode: l.writer.config.MergeMode,
 		})
 	}
+	queueTime := time.Duration(0)
+	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {
+		queueTime = time.Since(batch.items[0].queuedAt)
+	}
+	observeMetric(l.writer.observer, MetricEvent{
+		Kind: MetricWriteBatch, Operation: MetricOperationKVWrite,
+		Duration: metricDuration(started), QueueTime: queueTime,
+		QueueSize: len(l.writer.commands), Records: int64(len(batch.records)), Bytes: int64(len(encoded)),
+		Failed: err != nil, ErrorClass: metricErrorClass(err),
+	})
 	if err != nil {
 		l.poisoned[bucket] = err
 		l.writer.completeKVBatch(batch, bucket, 0, err)

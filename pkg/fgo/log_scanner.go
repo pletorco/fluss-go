@@ -304,6 +304,7 @@ type LogScanner struct {
 	schema      Schema
 	projection  []int32
 	compacted   bool
+	observer    MetricsObserver
 
 	pollMu      sync.Mutex
 	mu          sync.RWMutex
@@ -318,7 +319,11 @@ type LogScanner struct {
 }
 
 func (c *Client) NewLogScanner(ctx context.Context, table Table, start ScanOffset, options ...LogScannerOption) (*LogScanner, error) {
-	return newLogScanner(ctx, clientLogScannerBackend{client: c}, table, start, options...)
+	scanner, err := newLogScanner(ctx, clientLogScannerBackend{client: c}, table, start, options...)
+	if err == nil {
+		scanner.observer = c.observer
+	}
+	return scanner, err
 }
 
 func newLogScanner(
@@ -532,17 +537,27 @@ func (s *LogScanner) pollBucket(
 	offset int64,
 	result *ScanResult,
 ) error {
+	started := metricStart(s.observer)
 	fetched, err := s.backend.fetch(requestCtx, logFetchRequest{
 		path: s.path, bucket: bucket, tableID: s.tableID, partitionID: s.partitionID,
 		offset: offset, projection: s.projection, config: s.config,
 	})
+	fetchDuration := metricDuration(started)
 	if err != nil {
+		observeMetric(s.observer, MetricEvent{
+			Kind: MetricScannerFetch, Operation: MetricOperationLogScan,
+			Duration: fetchDuration, Failed: true, ErrorClass: metricErrorClass(err),
+		})
 		return s.recordFetchError(callerCtx, bucket, err, result)
 	}
 	next, rows, arrows, err := decodeFetchedLogFormat(
 		s.schema, bucket, offset, fetched.records, s.compacted,
 	)
 	if err != nil {
+		observeMetric(s.observer, MetricEvent{
+			Kind: MetricDecodeFailure, Operation: MetricOperationLogScan,
+			Bytes: int64(len(fetched.records)), Failed: true, ErrorClass: metricErrorClass(err),
+		})
 		result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
 		return nil
 	}
@@ -551,6 +566,14 @@ func (s *LogScanner) pollBucket(
 	result.ArrowBatches = append(result.ArrowBatches, arrows...)
 	result.HighWatermark[bucket] = fetched.highWatermark
 	s.advanceOffset(bucket, offset, boundedNext, delivered)
+	lag := fetched.highWatermark - boundedNext
+	if lag < 0 {
+		lag = 0
+	}
+	observeMetric(s.observer, MetricEvent{
+		Kind: MetricScannerFetch, Operation: MetricOperationLogScan,
+		Duration: fetchDuration, Records: delivered, Bytes: int64(len(fetched.records)), Lag: lag,
+	})
 	return nil
 }
 

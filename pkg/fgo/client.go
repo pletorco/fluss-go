@@ -68,6 +68,7 @@ type config struct {
 	timeout     time.Duration
 	limits      transport.Config
 	retry       RetryPolicy
+	observer    MetricsObserver
 }
 
 // RetryPolicy bounds automatic retries of safe, read-only requests.
@@ -162,6 +163,16 @@ func WithRetryPolicy(policy RetryPolicy) Option {
 	}
 }
 
+func WithMetricsObserver(observer MetricsObserver) Option {
+	return func(c *config) error {
+		if observer == nil {
+			return fmt.Errorf("%w: nil metrics observer", ErrInvalidConfig)
+		}
+		c.observer = observer
+		return nil
+	}
+}
+
 type Client struct {
 	requester fmsg.Requester
 	close     func() error
@@ -170,6 +181,7 @@ type Client struct {
 	serverID  int32
 	address   string
 	role      ServerRole
+	observer  MetricsObserver
 
 	mu         sync.RWMutex
 	closed     bool
@@ -256,22 +268,37 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 }
 
 func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
+	var requestErr error
+	if c.observer != nil {
+		started := time.Now()
+		defer func() {
+			observeMetric(c.observer, MetricEvent{
+				Kind: MetricRequest, Operation: MetricOperationRPC, APIKey: request.APIKey(),
+				ServerRole: c.role, Duration: time.Since(started),
+				Failed: requestErr != nil, ErrorClass: metricErrorClass(requestErr),
+			})
+		}()
+	}
 	c.mu.RLock()
 	if c.closed {
 		c.mu.RUnlock()
-		return nil, ErrClosed
+		requestErr = ErrClosed
+		return nil, requestErr
 	}
 	version, ok := c.versions[request.APIKey()]
 	c.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("%w: %d", ErrUnsupportedAPI, request.APIKey())
+		requestErr = fmt.Errorf("%w: %d", ErrUnsupportedAPI, request.APIKey())
+		return nil, requestErr
 	}
 	if err := request.SetVersion(version); err != nil {
-		return nil, err
+		requestErr = err
+		return nil, requestErr
 	}
 	response, err := c.requester.Request(ctx, request)
 	if err != nil {
-		return nil, serverError(err, request.APIKey(), c.address)
+		requestErr = serverError(err, request.APIKey(), c.address)
+		return nil, requestErr
 	}
 	return response, nil
 }

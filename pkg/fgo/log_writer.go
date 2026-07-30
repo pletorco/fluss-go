@@ -272,6 +272,7 @@ type LogWriter struct {
 	closed      bool
 	roundRobin  int
 	stickyIndex int
+	observer    MetricsObserver
 }
 
 type writerCommand struct {
@@ -281,13 +282,14 @@ type writerCommand struct {
 }
 
 type pendingWrite struct {
-	ctx     context.Context
-	row     Row
-	arrow   arrow.RecordBatch
-	changes []ChangeType
-	bucket  *int32
-	size    int
-	future  *WriteFuture
+	ctx      context.Context
+	row      Row
+	arrow    arrow.RecordBatch
+	changes  []ChangeType
+	bucket   *int32
+	size     int
+	queuedAt time.Time
+	future   *WriteFuture
 }
 
 type bucketBatch struct {
@@ -306,7 +308,11 @@ type logWriterLoop struct {
 }
 
 func (c *Client) NewLogWriter(ctx context.Context, table Table, options ...LogWriterOption) (*LogWriter, error) {
-	return newLogWriter(ctx, clientLogWriterBackend{client: c}, table, options...)
+	writer, err := newLogWriter(ctx, clientLogWriterBackend{client: c}, table, options...)
+	if err == nil {
+		writer.observer = c.observer
+	}
+	return writer, err
 }
 
 func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, options ...LogWriterOption) (*LogWriter, error) {
@@ -412,7 +418,13 @@ func (w *LogWriter) Append(ctx context.Context, row Row) *WriteFuture {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
-	w.enqueue(ctx, &pendingWrite{ctx: ctx, row: append(Row(nil), row...), size: len(encoded) + 5, future: future})
+	item := &pendingWrite{
+		ctx: ctx, row: append(Row(nil), row...), size: len(encoded) + 5, future: future,
+	}
+	if w.observer != nil {
+		item.queuedAt = time.Now()
+	}
+	w.enqueue(ctx, item)
 	return future
 }
 
@@ -449,10 +461,14 @@ func (w *LogWriter) AppendArrow(ctx context.Context, bucket int32, batch arrow.R
 			return future
 		}
 	}
-	w.enqueue(ctx, &pendingWrite{
+	item := &pendingWrite{
 		ctx: ctx, arrow: batch, changes: append([]ChangeType(nil), changes...),
 		bucket: &bucket, size: int(batch.NumRows()), future: future,
-	})
+	}
+	if w.observer != nil {
+		item.queuedAt = time.Now()
+	}
+	w.enqueue(ctx, item)
 	return future
 }
 
@@ -642,14 +658,25 @@ func (l *logWriterLoop) flushBucket(bucket int32) error {
 		l.writer.completeBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
 		return err
 	}
-	encoded, _, err := l.writer.encodeBatch(batch, l.sequences[bucket])
+	encoded, records, err := l.writer.encodeBatch(batch, l.sequences[bucket])
 	var baseOffset int64
+	started := metricStart(l.writer.observer)
 	if err == nil {
 		baseOffset, err = l.writer.backend.produce(context.Background(), logProduceRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 			records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
 		})
 	}
+	queueTime := time.Duration(0)
+	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {
+		queueTime = time.Since(batch.items[0].queuedAt)
+	}
+	observeMetric(l.writer.observer, MetricEvent{
+		Kind: MetricWriteBatch, Operation: MetricOperationLogWrite,
+		Duration: metricDuration(started), QueueTime: queueTime,
+		QueueSize: len(l.writer.commands), Records: int64(records), Bytes: int64(len(encoded)),
+		Failed: err != nil, ErrorClass: metricErrorClass(err),
+	})
 	if err != nil {
 		l.poisoned[bucket] = err
 		l.writer.completeBatch(batch, bucket, 0, err)
