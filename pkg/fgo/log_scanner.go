@@ -667,13 +667,43 @@ func (s *LogScanner) applyBounds(
 	decodedNext int64,
 ) ([]ScanRecord, []ScanArrowBatch, int64, int64) {
 	if s.config.RowLimit == 0 && s.config.StoppingOffsets == nil {
-		delivered := int64(len(rows))
-		for index := range arrows {
-			delivered += arrows[index].Batch.Record.NumRows()
-		}
-		return rows, arrows, delivered, decodedNext
+		return rows, arrows, scanResultRows(rows, arrows), decodedNext
 	}
+	remaining, stop := s.scanBounds(bucket)
+	segments := orderedScanSegments(rows, arrows)
+	boundedRows := make([]ScanRecord, 0, len(rows))
+	boundedArrows := make([]ScanArrowBatch, 0, len(arrows))
+	var delivered int64
+	next := decodedNext
+	for _, segment := range segments {
+		if segment.row >= 0 {
+			appendBoundedRow(
+				rows[segment.row], stop, &remaining, &delivered, &next, &boundedRows,
+			)
+			continue
+		}
+		appendBoundedArrow(
+			bucket, segment, &arrows[segment.arrow],
+			stop, &remaining, &delivered, &next, &boundedArrows,
+		)
+	}
+	if next > stop {
+		next = stop
+	}
+	return boundedRows, boundedArrows, delivered, next
+}
+
+func scanResultRows(rows []ScanRecord, arrows []ScanArrowBatch) int64 {
+	delivered := int64(len(rows))
+	for index := range arrows {
+		delivered += arrows[index].Batch.Record.NumRows()
+	}
+	return delivered
+}
+
+func (s *LogScanner) scanBounds(bucket int32) (int64, int64) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	remaining := int64(math.MaxInt64)
 	if s.config.RowLimit > 0 {
 		remaining = s.config.RowLimit - s.delivered
@@ -682,8 +712,10 @@ func (s *LogScanner) applyBounds(
 	if configured, ok := s.config.StoppingOffsets[bucket]; ok {
 		stop = configured
 	}
-	s.mu.RUnlock()
+	return remaining, stop
+}
 
+func orderedScanSegments(rows []ScanRecord, arrows []ScanArrowBatch) []scanSegment {
 	segments := make([]scanSegment, 0, len(rows)+len(arrows))
 	for index := range rows {
 		segments = append(segments, scanSegment{offset: rows[index].Record.Offset, row: index, arrow: -1})
@@ -692,51 +724,57 @@ func (s *LogScanner) applyBounds(
 		segments = append(segments, scanSegment{offset: arrows[index].Batch.BaseOffset, row: -1, arrow: index})
 	}
 	sort.SliceStable(segments, func(i, j int) bool { return segments[i].offset < segments[j].offset })
+	return segments
+}
 
-	boundedRows := make([]ScanRecord, 0, len(rows))
-	boundedArrows := make([]ScanArrowBatch, 0, len(arrows))
-	var delivered int64
-	next := decodedNext
-	for _, segment := range segments {
-		if segment.row >= 0 {
-			if remaining > 0 && segment.offset < stop {
-				boundedRows = append(boundedRows, rows[segment.row])
-				remaining--
-				delivered++
-				next = segment.offset + 1
-			}
-			continue
-		}
-		batch := &arrows[segment.arrow].Batch
-		count := batch.Record.NumRows()
-		allowed := count
-		if stop-segment.offset < allowed {
-			allowed = stop - segment.offset
-		}
-		if remaining < allowed {
-			allowed = remaining
-		}
-		if allowed <= 0 {
-			batch.Release()
-			continue
-		}
-		if allowed == count {
-			boundedArrows = append(boundedArrows, arrows[segment.arrow])
-		} else {
-			boundedArrows = append(boundedArrows, ScanArrowBatch{
-				Bucket: bucket,
-				Batch:  sliceArrowLogBatch(batch, allowed),
-			})
-			batch.Release()
-		}
-		remaining -= allowed
-		delivered += allowed
-		next = segment.offset + allowed
+func appendBoundedRow(
+	row ScanRecord,
+	stop int64,
+	remaining, delivered, next *int64,
+	bounded *[]ScanRecord,
+) {
+	if *remaining <= 0 || row.Record.Offset >= stop {
+		return
 	}
-	if next > stop {
-		next = stop
+	*bounded = append(*bounded, row)
+	*remaining = *remaining - 1
+	*delivered = *delivered + 1
+	*next = row.Record.Offset + 1
+}
+
+func appendBoundedArrow(
+	bucket int32,
+	segment scanSegment,
+	item *ScanArrowBatch,
+	stop int64,
+	remaining, delivered, next *int64,
+	bounded *[]ScanArrowBatch,
+) {
+	batch := &item.Batch
+	count := batch.Record.NumRows()
+	allowed := count
+	if stop-segment.offset < allowed {
+		allowed = stop - segment.offset
 	}
-	return boundedRows, boundedArrows, delivered, next
+	if *remaining < allowed {
+		allowed = *remaining
+	}
+	if allowed <= 0 {
+		batch.Release()
+		return
+	}
+	if allowed == count {
+		*bounded = append(*bounded, *item)
+	} else {
+		*bounded = append(*bounded, ScanArrowBatch{
+			Bucket: bucket,
+			Batch:  sliceArrowLogBatch(batch, allowed),
+		})
+		batch.Release()
+	}
+	*remaining -= allowed
+	*delivered += allowed
+	*next = segment.offset + allowed
 }
 
 func sliceArrowLogBatch(batch *ArrowLogBatch, rows int64) ArrowLogBatch {

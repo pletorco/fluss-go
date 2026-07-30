@@ -343,24 +343,12 @@ func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, op
 	if err != nil {
 		return nil, err
 	}
-	if config.arrowCompressionSet &&
-		config.Format != LogWriteFormatAuto && config.Format != LogWriteFormatArrow {
-		return nil, fmt.Errorf("%w: Arrow compression requires Arrow or auto format", ErrInvalidConfig)
-	}
-	if configured := strings.TrimSpace(table.Properties["table.log.format"]); configured != "" &&
-		config.Format != LogWriteFormatAuto && !strings.EqualFold(configured, string(config.Format)) {
-		return nil, fmt.Errorf(
-			"%w: writer format %s does not match table.log.format %s",
-			ErrInvalidConfig, config.Format, configured,
-		)
+	if err := validateLogWriterFormat(table, config); err != nil {
+		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
-	if backend, ok := backend.(interface {
-		ensurePartition(context.Context, PhysicalTablePath, []string) error
-	}); ok {
-		if err := backend.ensurePartition(ctx, path, table.Schema.PartitionKey); err != nil {
-			return nil, err
-		}
+	if err := ensureLogWriterPartition(ctx, backend, path, table.Schema.PartitionKey); err != nil {
+		return nil, err
 	}
 	physicalID, locations, err := backend.metadata(ctx, path)
 	if err != nil {
@@ -390,6 +378,37 @@ func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, op
 	}
 	go writer.run()
 	return writer, nil
+}
+
+func validateLogWriterFormat(table Table, config LogWriterConfig) error {
+	if config.arrowCompressionSet &&
+		config.Format != LogWriteFormatAuto && config.Format != LogWriteFormatArrow {
+		return fmt.Errorf("%w: Arrow compression requires Arrow or auto format", ErrInvalidConfig)
+	}
+	configured := strings.TrimSpace(table.Properties["table.log.format"])
+	if configured != "" && config.Format != LogWriteFormatAuto &&
+		!strings.EqualFold(configured, string(config.Format)) {
+		return fmt.Errorf(
+			"%w: writer format %s does not match table.log.format %s",
+			ErrInvalidConfig, config.Format, configured,
+		)
+	}
+	return nil
+}
+
+func ensureLogWriterPartition(
+	ctx context.Context,
+	backend logWriterBackend,
+	path PhysicalTablePath,
+	partitionKeys []string,
+) error {
+	ensurer, ok := backend.(interface {
+		ensurePartition(context.Context, PhysicalTablePath, []string) error
+	})
+	if !ok {
+		return nil
+	}
+	return ensurer.ensurePartition(ctx, path, partitionKeys)
 }
 
 func validateLogWriterTable(table Table) error {

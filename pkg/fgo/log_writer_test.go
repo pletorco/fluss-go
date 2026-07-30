@@ -274,34 +274,39 @@ func TestLogWriterRowFormats(t *testing.T) {
 		{LogWriteFormatIndexed, false},
 	} {
 		t.Run(string(test.format), func(t *testing.T) {
-			table := logWriterTable()
-			table.Properties = map[string]string{"table.log.format": strings.ToUpper(string(test.format))}
-			backend := logBackend(0)
-			writer, err := newLogWriter(
-				context.Background(), backend, table,
-				WithLogWriteFormat(test.format), WithLogLinger(0),
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			result := writer.Append(context.Background(), Row{int32(1), "one"}).
-				Await(context.Background())
-			if result.Err != nil {
-				t.Fatal(result.Err)
-			}
-			batch, err := DecodeLogBatchRows(table.Schema, backend.produced()[0].records, test.compacted)
-			if err != nil || len(batch.Records) != 1 || batch.Records[0].Value[1] != "one" {
-				t.Fatalf("decoded %s batch = %#v, %v", test.format, batch, err)
-			}
-			if err := writer.Close(context.Background()); err != nil {
-				t.Fatal(err)
-			}
+			testLogWriterRowFormat(t, test.format, test.compacted)
 		})
 	}
 	config, err := logWriterConfig(nil)
 	if err != nil || config.Format != LogWriteFormatAuto ||
 		config.ArrowCompression != ArrowCompressionNone {
 		t.Fatalf("default format config = %#v, %v", config, err)
+	}
+}
+
+func testLogWriterRowFormat(t *testing.T, format LogWriteFormat, compacted bool) {
+	t.Helper()
+	table := logWriterTable()
+	table.Properties = map[string]string{"table.log.format": strings.ToUpper(string(format))}
+	backend := logBackend(0)
+	writer, err := newLogWriter(
+		context.Background(), backend, table,
+		WithLogWriteFormat(format), WithLogLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := writer.Append(context.Background(), Row{int32(1), "one"}).
+		Await(context.Background())
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	batch, err := DecodeLogBatchRows(table.Schema, backend.produced()[0].records, compacted)
+	if err != nil || len(batch.Records) != 1 || batch.Records[0].Value[1] != "one" {
+		t.Fatalf("decoded %s batch = %#v, %v", format, batch, err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -77,7 +77,7 @@ func TestMetricsObserverRequestsAndIsolation(t *testing.T) {
 	}
 }
 
-func TestMetricsObserverWriterAndScannerEvents(t *testing.T) {
+func TestMetricsObserverLogWriterEvent(t *testing.T) {
 	recorder := &metricRecorder{}
 	logBackend := logBackend(0)
 	logWriter, err := newLogWriter(
@@ -96,7 +96,10 @@ func TestMetricsObserverWriterAndScannerEvents(t *testing.T) {
 		t.Fatalf("log writer metric = %#v, found=%v", event, ok)
 	}
 	_ = logWriter.Close(context.Background())
+}
 
+func TestMetricsObserverKVWriterEvent(t *testing.T) {
+	recorder := &metricRecorder{}
 	kvBackend := kvBackend(0)
 	kvWriter, err := newKVWriter(
 		context.Background(), kvBackend, kvWriterTable(), WithKVLinger(0),
@@ -114,7 +117,10 @@ func TestMetricsObserverWriterAndScannerEvents(t *testing.T) {
 		t.Fatalf("KV writer metric = %#v, found=%v", event, ok)
 	}
 	_ = kvWriter.Close(context.Background())
+}
 
+func TestMetricsObserverScannerEvents(t *testing.T) {
+	recorder := &metricRecorder{}
 	table := logWriterTable()
 	scanBackend := scannerBackend(0)
 	scanBackend.fetches[0] = scannerFetch{

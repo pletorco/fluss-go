@@ -482,43 +482,55 @@ func testLogWriteFormats(
 		fgo.LogWriteFormatIndexed,
 		fgo.LogWriteFormatArrow,
 	} {
-		path := fgo.TablePath{Database: database, Table: "format_" + string(format)}
-		if err := admin.CreateTable(context.Background(), path, fadm.TableDefinition{
-			Schema: schema, BucketCount: 1,
-			Properties: map[string]string{"table.log.format": strings.ToUpper(string(format))},
-		}, false); err != nil {
-			t.Fatalf("create %s table: %v", format, err)
-		}
-		waitForTableReady(t, admin, path)
-		table, err := client.OpenTable(context.Background(), path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		options := []fgo.LogWriterOption{
-			fgo.WithLogWriteFormat(format),
-			fgo.WithLogLinger(0),
-		}
-		if format == fgo.LogWriteFormatArrow {
-			options = append(options, fgo.WithLogArrowCompression(fgo.ArrowCompressionZSTD))
-		}
-		writer, err := client.NewLogWriter(context.Background(), table, options...)
-		if err != nil {
-			t.Fatalf("create %s writer: %v", format, err)
-		}
-		if format == fgo.LogWriteFormatArrow {
-			appendArrowFormatRow(t, writer, table)
-		} else {
-			result := writer.Append(context.Background(), fgo.Row{int32(1), string(format)}).
-				Await(context.Background())
-			if result.Err != nil {
-				t.Fatalf("append %s row: %v", format, result.Err)
-			}
-		}
-		if err := writer.Close(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		assertFormatRow(t, client, table, format)
+		testLogWriteFormat(t, client, admin, database, schema, format)
 	}
+}
+
+func testLogWriteFormat(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	database string,
+	schema fgo.Schema,
+	format fgo.LogWriteFormat,
+) {
+	t.Helper()
+	path := fgo.TablePath{Database: database, Table: "format_" + string(format)}
+	if err := admin.CreateTable(context.Background(), path, fadm.TableDefinition{
+		Schema: schema, BucketCount: 1,
+		Properties: map[string]string{"table.log.format": strings.ToUpper(string(format))},
+	}, false); err != nil {
+		t.Fatalf("create %s table: %v", format, err)
+	}
+	waitForTableReady(t, admin, path)
+	table, err := client.OpenTable(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := []fgo.LogWriterOption{
+		fgo.WithLogWriteFormat(format),
+		fgo.WithLogLinger(0),
+	}
+	if format == fgo.LogWriteFormatArrow {
+		options = append(options, fgo.WithLogArrowCompression(fgo.ArrowCompressionZSTD))
+	}
+	writer, err := client.NewLogWriter(context.Background(), table, options...)
+	if err != nil {
+		t.Fatalf("create %s writer: %v", format, err)
+	}
+	if format == fgo.LogWriteFormatArrow {
+		appendArrowFormatRow(t, writer, table)
+	} else {
+		result := writer.Append(context.Background(), fgo.Row{int32(1), string(format)}).
+			Await(context.Background())
+		if result.Err != nil {
+			t.Fatalf("append %s row: %v", format, result.Err)
+		}
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertFormatRow(t, client, table, format)
 }
 
 func appendArrowFormatRow(t *testing.T, writer *fgo.LogWriter, table fgo.Table) {

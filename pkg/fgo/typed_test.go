@@ -286,7 +286,7 @@ func TestTypedBatchScannerConstructors(t *testing.T) {
 	}
 }
 
-func TestTypedWrappersValidateNilValues(t *testing.T) {
+func TestTypedConstructorsValidateNilValues(t *testing.T) {
 	codec, keyCodec := typedRowCodec(), typedKeyCodec()
 	if _, err := NewTypedLogWriter(context.Background(), nil, Table{}, codec); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("log constructor error = %v", err)
@@ -310,6 +310,10 @@ func TestTypedWrappersValidateNilValues(t *testing.T) {
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("snapshot constructor error = %v", err)
 	}
+}
+
+func TestTypedWrappersValidateNilValues(t *testing.T) {
+	codec, keyCodec := typedRowCodec(), typedKeyCodec()
 	for name, err := range map[string]error{
 		"log wrapper": func() error { _, err := wrapTypedLogWriter[typedRow](nil, codec); return err }(),
 		"KV wrapper": func() error {
@@ -376,7 +380,9 @@ func TestTypedWrappersValidateNilValues(t *testing.T) {
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil snapshot codec error = %v", err)
 	}
+}
 
+func TestTypedNilWriterReceivers(t *testing.T) {
 	var logWriter *TypedLogWriter[typedRow]
 	if result := logWriter.Append(context.Background(), typedRow{}).Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
 		t.Fatalf("nil log append error = %v", result.Err)
@@ -400,6 +406,9 @@ func TestTypedWrappersValidateNilValues(t *testing.T) {
 	if err := kvWriter.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestTypedNilReaderReceivers(t *testing.T) {
 	var lookup *TypedLookupClient[typedRow, typedKey]
 	if result := lookup.Lookup(context.Background(), typedKey{}); !errors.Is(result[0].Err, ErrInvalidConfig) {
 		t.Fatalf("nil lookup error = %v", result[0].Err)

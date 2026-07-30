@@ -103,10 +103,11 @@ func waitTokenTest(t *testing.T, condition func() bool) {
 	t.Fatal("timed out waiting for security token state")
 }
 
-func TestSecurityTokenManagerRefreshAndCopies(t *testing.T) {
-	clock := &fakeSecurityTokenClock{now: time.Unix(1_000, 0)}
-	var calls atomic.Int32
-	provider := FileSystemSecurityTokenProviderFunc(func(context.Context) (FileSystemSecurityToken, error) {
+func refreshingTokenProvider(
+	clock *fakeSecurityTokenClock,
+	calls *atomic.Int32,
+) FileSystemSecurityTokenProvider {
+	return FileSystemSecurityTokenProviderFunc(func(context.Context) (FileSystemSecurityToken, error) {
 		call := calls.Add(1)
 		token := FileSystemSecurityToken{
 			Schema: "hadoop", Token: []byte(fmt.Sprintf("secret-%d", call)),
@@ -117,6 +118,21 @@ func TestSecurityTokenManagerRefreshAndCopies(t *testing.T) {
 		}
 		return token, nil
 	})
+}
+
+func assertTokenRedacted(t *testing.T, token FileSystemSecurityToken) {
+	t.Helper()
+	for _, formatted := range []string{fmt.Sprintf("%v", token), fmt.Sprintf("%#v", token)} {
+		if strings.Contains(formatted, "secret-1") || !strings.Contains(formatted, "[REDACTED]") {
+			t.Fatalf("token formatting leaked material: %s", formatted)
+		}
+	}
+}
+
+func TestSecurityTokenManagerRefreshAndCopies(t *testing.T) {
+	clock := &fakeSecurityTokenClock{now: time.Unix(1_000, 0)}
+	var calls atomic.Int32
+	provider := refreshingTokenProvider(clock, &calls)
 	received := make(chan FileSystemSecurityToken, 2)
 	receiver := FileSystemSecurityTokenReceiverFunc(func(token FileSystemSecurityToken) error {
 		received <- token.Clone()
@@ -140,11 +156,7 @@ func TestSecurityTokenManagerRefreshAndCopies(t *testing.T) {
 	if string(again.Token) != "secret-1" || again.AdditionalInfo["service"] != "filesystem" {
 		t.Fatalf("cached token was aliased: %#v", again)
 	}
-	for _, formatted := range []string{fmt.Sprintf("%v", again), fmt.Sprintf("%#v", again)} {
-		if strings.Contains(formatted, "secret-1") || !strings.Contains(formatted, "[REDACTED]") {
-			t.Fatalf("token formatting leaked material: %s", formatted)
-		}
-	}
+	assertTokenRedacted(t, again)
 	clock.Advance(49 * time.Second)
 	if calls.Load() != 1 {
 		t.Fatalf("early refresh calls = %d", calls.Load())

@@ -228,28 +228,12 @@ func newLookupClient(ctx context.Context, backend lookupBackend, table Table, op
 	if err := table.Schema.Validate(); err != nil {
 		return nil, err
 	}
-	config := LookupConfig{
-		MaxBatchKeys: 1000, MaxConcurrent: 8,
-		Timeout: 30 * time.Second, Acks: -1,
+	config, err := lookupConfig(options)
+	if err != nil {
+		return nil, err
 	}
-	for _, option := range options {
-		if option == nil {
-			return nil, fmt.Errorf("%w: nil lookup option", ErrInvalidConfig)
-		}
-		if err := option(&config); err != nil {
-			return nil, err
-		}
-	}
-	if config.InsertIfNotExists {
-		for _, column := range table.Schema.Columns {
-			if !column.Nullable && !contains(table.Schema.PrimaryKey, column.Name) &&
-				!contains(table.Schema.AutoIncrement, column.Name) {
-				return nil, fmt.Errorf(
-					"%w: insert-if-not-exists cannot fill required column %q",
-					ErrInvalidSchema, column.Name,
-				)
-			}
-		}
+	if err := validateLookupInsertSchema(table.Schema, config); err != nil {
+		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	physicalID, locations, err := backend.metadata(ctx, path)
@@ -272,6 +256,38 @@ func newLookupClient(ctx context.Context, backend lookupBackend, table Table, op
 	}
 	client.life, client.cancel = context.WithCancel(context.Background())
 	return client, nil
+}
+
+func lookupConfig(options []LookupOption) (LookupConfig, error) {
+	config := LookupConfig{
+		MaxBatchKeys: 1000, MaxConcurrent: 8,
+		Timeout: 30 * time.Second, Acks: -1,
+	}
+	for _, option := range options {
+		if option == nil {
+			return LookupConfig{}, fmt.Errorf("%w: nil lookup option", ErrInvalidConfig)
+		}
+		if err := option(&config); err != nil {
+			return LookupConfig{}, err
+		}
+	}
+	return config, nil
+}
+
+func validateLookupInsertSchema(schema Schema, config LookupConfig) error {
+	if !config.InsertIfNotExists {
+		return nil
+	}
+	for _, column := range schema.Columns {
+		if !column.Nullable && !contains(schema.PrimaryKey, column.Name) &&
+			!contains(schema.AutoIncrement, column.Name) {
+			return fmt.Errorf(
+				"%w: insert-if-not-exists cannot fill required column %q",
+				ErrInvalidSchema, column.Name,
+			)
+		}
+	}
+	return nil
 }
 
 type lookupInput struct {
