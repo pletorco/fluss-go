@@ -29,6 +29,7 @@ func (p TablePath) Validate() error {
 type Node struct {
 	ID      int32
 	Address string
+	Role    ServerRole
 }
 
 type TableMetadata struct {

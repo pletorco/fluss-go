@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/pletorco/fluss-go/internal/transport"
+	"github.com/pletorco/fluss-go/pkg/fmsg"
 )
 
 // ServerRole identifies a Fluss RPC server advertised by ApiVersions.
@@ -22,6 +23,7 @@ const (
 var ErrServerRole = errors.New("fgo: unexpected server role")
 
 type connectionKey struct {
+	id      int32
 	address string
 	role    ServerRole
 }
@@ -65,10 +67,18 @@ func (m *connectionManager) bootstrap(ctx context.Context) (*Client, error) {
 }
 
 func (m *connectionManager) get(ctx context.Context, address string, role ServerRole) (*Client, error) {
+	return m.getNode(ctx, Node{ID: -1, Address: address, Role: role})
+}
+
+func (m *connectionManager) getNode(ctx context.Context, node Node) (*Client, error) {
+	address, role := node.Address, node.Role
 	if address == "" {
 		return nil, fmt.Errorf("%w: empty server address", ErrInvalidConfig)
 	}
-	key := connectionKey{address: address, role: role}
+	if _, err := serverRole(int32(role)); err != nil {
+		return nil, err
+	}
+	key := connectionKey{id: node.ID, address: address, role: role}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -99,6 +109,7 @@ func (m *connectionManager) get(ctx context.Context, address string, role Server
 		err = ErrClosed
 	}
 	if err == nil {
+		client.serverID = node.ID
 		m.clients[key] = client
 	}
 	flight.client, flight.err = client, err
@@ -160,12 +171,25 @@ func (m *connectionManager) open(ctx context.Context, address string, expectedRo
 }
 
 func (m *connectionManager) remove(address string, role ServerRole, client *Client) {
-	key := connectionKey{address: address, role: role}
+	key := connectionKey{id: client.serverID, address: address, role: role}
 	m.mu.Lock()
 	if m.clients[key] == client {
 		delete(m.clients, key)
 	}
 	m.mu.Unlock()
+}
+
+func (m *connectionManager) request(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
+	client, err := m.getNode(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	response, err := client.request(ctx, request)
+	if shouldReplaceConnection(err) {
+		m.remove(node.Address, node.Role, client)
+		_ = client.shutdown()
+	}
+	return response, err
 }
 
 func (m *connectionManager) Close() error {

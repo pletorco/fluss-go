@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -145,6 +146,7 @@ type Client struct {
 	requester fmsg.Requester
 	close     func() error
 	manager   *connectionManager
+	serverID  int32
 	address   string
 	role      ServerRole
 
@@ -185,6 +187,22 @@ func newClient(requester fmsg.Requester, close func() error) *Client {
 func (c *Client) Requester() fmsg.Requester { return c }
 
 func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
+	if c.manager != nil {
+		return c.manager.request(ctx, Node{ID: c.serverID, Address: c.address, Role: c.role}, request)
+	}
+	return c.request(ctx, request)
+}
+
+// RequestTo sends a raw request to the connection for node. It is intended for protocol helpers;
+// higher-level clients select the appropriate coordinator or tablet server from metadata.
+func (c *Client) RequestTo(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
+	if c.manager == nil {
+		return nil, fmt.Errorf("%w: client does not manage server connections", ErrClosed)
+	}
+	return c.manager.request(ctx, node, request)
+}
+
+func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
 	c.mu.RLock()
 	if c.closed {
 		c.mu.RUnlock()
@@ -364,4 +382,15 @@ func min(left, right int32) int32 {
 		return left
 	}
 	return right
+}
+
+func shouldReplaceConnection(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, ErrClosed) || errors.Is(err, transport.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
+		return true
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError)
 }
