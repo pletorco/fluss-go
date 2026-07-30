@@ -2,6 +2,7 @@ package fgo
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"sync"
 	"testing"
@@ -139,11 +140,20 @@ func putLookupValue(t *testing.T, backend *fakeLookupBackend, table Table, key P
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := EncodeCompactedRow(table.Schema, row)
+	value := encodeLookupValue(t, table, row)
+	backend.values[string(encodedKey)] = value
+}
+
+func encodeLookupValue(t *testing.T, table Table, row Row) []byte {
+	t.Helper()
+	encoded, err := EncodeCompactedRow(table.Schema, row)
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend.values[string(encodedKey)] = value
+	value := make([]byte, 2+len(encoded))
+	binary.LittleEndian.PutUint16(value, uint16(table.SchemaID))
+	copy(value[2:], encoded)
+	return value
 }
 
 func TestLookupClientPreservesInputAndNotFound(t *testing.T) {
@@ -171,6 +181,18 @@ func TestLookupClientPreservesInputAndNotFound(t *testing.T) {
 	_ = client.Close()
 }
 
+func TestDecodeLookupValueRejectsInvalidEnvelope(t *testing.T) {
+	table := lookupTable()
+	if _, err := decodeLookupValue(table, []byte{1}); !errors.Is(err, ErrMalformedRow) {
+		t.Fatalf("short lookup value error = %v", err)
+	}
+	value := encodeLookupValue(t, table, Row{"a", int32(1), "one"})
+	binary.LittleEndian.PutUint16(value, uint16(table.SchemaID+1))
+	if _, err := decodeLookupValue(table, value); !errors.Is(err, ErrInvalidSchema) {
+		t.Fatalf("schema mismatch error = %v", err)
+	}
+}
+
 func TestPrefixLookupClientDecodesRows(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
@@ -179,10 +201,7 @@ func TestPrefixLookupClientDecodesRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, row := range []Row{{"a", int32(1), "one"}, {"a", int32(2), "two"}} {
-		value, encodeErr := EncodeCompactedRow(table.Schema, row)
-		if encodeErr != nil {
-			t.Fatal(encodeErr)
-		}
+		value := encodeLookupValue(t, table, row)
 		backend.prefixes[string(key)] = append(backend.prefixes[string(key)], value)
 	}
 	client, err := newLookupClient(context.Background(), backend, table)
@@ -282,7 +301,7 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 	table := lookupTable()
 	path := table.Path
-	pointValue, _ := EncodeCompactedRow(table.Schema, Row{"a", int32(1), "one"})
+	pointValue := encodeLookupValue(t, table, Row{"a", int32(1), "one"})
 	var pointRequest *fmsg.LookupRequest
 	var prefixRequest *fmsg.PrefixLookupRequest
 	client := routedWriterClient(t,

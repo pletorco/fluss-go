@@ -62,6 +62,16 @@ func TestCoreAdminCatalogLifecycle(t *testing.T) {
 				!json.Valid(message.GetDatabaseJson()) {
 				t.Fatalf("CreateDatabase request = %#v", message)
 			}
+			var descriptor struct {
+				Version          int               `json:"version"`
+				Comment          string            `json:"comment"`
+				CustomProperties map[string]string `json:"custom_properties"`
+			}
+			if err := json.Unmarshal(message.GetDatabaseJson(), &descriptor); err != nil ||
+				descriptor.Version != 1 || descriptor.Comment != "main" ||
+				descriptor.CustomProperties["owner"] != "team" {
+				t.Fatalf("database descriptor = %s, %v", message.GetDatabaseJson(), err)
+			}
 		case *fmsg.DropDatabaseRequest:
 			if !message.GetIgnoreIfNotExists() || !message.GetCascade() {
 				t.Fatalf("DropDatabase request = %#v", message)
@@ -77,7 +87,7 @@ func TestCoreAdminCatalogLifecycle(t *testing.T) {
 			response.Message().(*fmsg.DatabaseExistsResponse).Exists = proto.Bool(true)
 		case *fmsg.GetDatabaseInfoRequest:
 			info := response.Message().(*fmsg.GetDatabaseInfoResponse)
-			info.DatabaseJson = []byte(`{"comment":"main","properties":{"owner":"team"}}`)
+			info.DatabaseJson = []byte(`{"comment":"main","custom_properties":{"owner":"team"}}`)
 			info.CreatedTime, info.ModifiedTime = proto.Int64(1000), proto.Int64(2000)
 		case *fmsg.CreateTableRequest:
 			if message.GetTablePath().GetTableName() != "users" || !message.GetIgnoreIfExists() {

@@ -106,12 +106,71 @@ func (s Schema) JSON() ([]byte, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
+	assignIDs := s.hasUnassignedFieldIDs()
+	nextID := 0
 	columns := make([]schemaColumnJSON, len(s.Columns))
 	for i, column := range s.Columns {
 		logicalType := logicalTypeForColumn(column)
-		columns[i] = schemaColumnJSON{Name: column.Name, DataType: logicalType, Comment: column.Description, ID: column.ID}
+		id := column.ID
+		if assignIDs {
+			id = nextID
+			nextID++
+			assignLogicalFieldIDs(&logicalType, &nextID)
+		}
+		columns[i] = schemaColumnJSON{Name: column.Name, DataType: logicalType, Comment: column.Description, ID: id}
 	}
-	return json.Marshal(schemaJSON{Version: 1, Columns: columns, PrimaryKey: s.PrimaryKey, AutoIncrement: s.AutoIncrement, HighestFieldID: s.HighestFieldID})
+	highestFieldID := s.HighestFieldID
+	if assignIDs {
+		highestFieldID = nextID - 1
+	}
+	return json.Marshal(schemaJSON{
+		Version: 1, Columns: columns, PrimaryKey: s.PrimaryKey,
+		AutoIncrement: s.AutoIncrement, HighestFieldID: highestFieldID,
+	})
+}
+
+func (s Schema) hasUnassignedFieldIDs() bool {
+	if s.HighestFieldID != 0 {
+		return false
+	}
+	for _, column := range s.Columns {
+		if column.ID != 0 || !logicalFieldIDsAreZero(logicalTypeForColumn(column)) {
+			return false
+		}
+	}
+	return true
+}
+
+func logicalFieldIDsAreZero(logicalType LogicalType) bool {
+	for _, field := range logicalType.Fields {
+		if field.ID != 0 || !logicalFieldIDsAreZero(field.Type) {
+			return false
+		}
+	}
+	if logicalType.Element != nil && !logicalFieldIDsAreZero(*logicalType.Element) {
+		return false
+	}
+	if logicalType.Key != nil && !logicalFieldIDsAreZero(*logicalType.Key) {
+		return false
+	}
+	return logicalType.Value == nil || logicalFieldIDsAreZero(*logicalType.Value)
+}
+
+func assignLogicalFieldIDs(logicalType *LogicalType, nextID *int) {
+	for index := range logicalType.Fields {
+		logicalType.Fields[index].ID = *nextID
+		*nextID++
+		assignLogicalFieldIDs(&logicalType.Fields[index].Type, nextID)
+	}
+	if logicalType.Element != nil {
+		assignLogicalFieldIDs(logicalType.Element, nextID)
+	}
+	if logicalType.Key != nil {
+		assignLogicalFieldIDs(logicalType.Key, nextID)
+	}
+	if logicalType.Value != nil {
+		assignLogicalFieldIDs(logicalType.Value, nextID)
+	}
 }
 
 func ParseSchemaJSON(data []byte) (Schema, error) {

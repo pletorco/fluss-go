@@ -2,6 +2,7 @@ package fgo
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -396,7 +397,7 @@ func (c *LookupClient) runPointLookups(ctx context.Context, groups map[int32][]l
 						results[chunk[index].index].Err = ErrNotFound
 						continue
 					}
-					row, err := DecodeCompactedRow(c.table.Schema, value)
+					row, err := decodeLookupValue(c.table, value)
 					results[chunk[index].index].Row = row
 					results[chunk[index].index].Found = err == nil
 					results[chunk[index].index].Err = err
@@ -442,7 +443,7 @@ func (c *LookupClient) runPrefixLookups(
 				}
 				for index, rows := range values {
 					for _, value := range rows {
-						row, err := DecodeCompactedRow(c.table.Schema, value)
+						row, err := decodeLookupValue(c.table, value)
 						if err != nil {
 							results[chunk[index].index].Err = err
 							break
@@ -454,6 +455,20 @@ func (c *LookupClient) runPrefixLookups(
 		}
 	}
 	wait.Wait()
+}
+
+func decodeLookupValue(table Table, value []byte) (Row, error) {
+	if len(value) < 2 {
+		return nil, fmt.Errorf("%w: lookup value omits schema ID", ErrMalformedRow)
+	}
+	schemaID := int16(binary.LittleEndian.Uint16(value))
+	if int32(schemaID) != table.SchemaID {
+		return nil, fmt.Errorf(
+			"%w: lookup value schema ID %d does not match table schema ID %d",
+			ErrInvalidSchema, schemaID, table.SchemaID,
+		)
+	}
+	return DecodeCompactedRow(table.Schema, value[2:])
 }
 
 func setPointErrors(inputs []lookupInput, results []LookupResult, err error) {

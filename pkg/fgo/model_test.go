@@ -1,6 +1,7 @@
 package fgo
 
 import (
+	"encoding/json"
 	"errors"
 	"math/big"
 	"testing"
@@ -19,6 +20,34 @@ func TestSchemaJSONRoundTrip(t *testing.T) {
 	}
 	if got.Columns[1].Name != "value" || got.Columns[1].Description != "payload" || got.PrimaryKey[0] != "id" {
 		t.Fatalf("round trip = %#v", got)
+	}
+}
+
+func TestSchemaJSONAssignsFlussFieldIDs(t *testing.T) {
+	nested := LogicalType{
+		Root: "ROW",
+		Fields: []LogicalField{
+			{Name: "city", Type: LogicalType{Root: "STRING"}},
+			{Name: "zip", Type: LogicalType{Root: "INTEGER"}},
+		},
+	}
+	schema := Schema{Columns: []Column{
+		{Name: "id", Type: BigIntType},
+		{Name: "address", Type: RowType, LogicalType: &nested},
+	}}
+	data, err := schema.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var encoded schemaJSON
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		t.Fatal(err)
+	}
+	if encoded.Columns[0].ID != 0 || encoded.Columns[1].ID != 1 ||
+		encoded.Columns[1].DataType.Fields[0].ID != 2 ||
+		encoded.Columns[1].DataType.Fields[1].ID != 3 ||
+		encoded.HighestFieldID != 3 {
+		t.Fatalf("assigned schema = %#v", encoded)
 	}
 }
 

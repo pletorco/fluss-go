@@ -1,0 +1,24 @@
+name: Fluss 0.9.1 Integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '31 2 * * 3'
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.0.0
+        with:
+          go-version: 1.26.x
+          check-latest: true
+      - uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.0.0
+        with:
+          version: 3.51.1
+      - run: task test:integration

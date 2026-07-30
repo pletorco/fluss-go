@@ -173,6 +173,29 @@ func TestAuthenticateDoesNotExposeToken(t *testing.T) {
 	}
 }
 
+func TestAuthenticateAcceptsFinalChallengeAfterClientCompletion(t *testing.T) {
+	for _, challenge := range [][]byte{{}, []byte("server-final-data")} {
+		requests := 0
+		client := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+			requests++
+			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+			response.Message().(*fmsg.AuthenticateResponse).Challenge = challenge
+			return response, nil
+		}), nil)
+		client.versions[fmsg.APIKeyAuthenticate] = 0
+		auth := &testAuthenticator{
+			protocol: "PLAIN", initial: true,
+			tokens: [][]byte{[]byte("\x00alice\x00secret")}, completeAfter: 1,
+		}
+		if err := client.authenticate(context.Background(), auth); err != nil {
+			t.Fatalf("challenge %q: authenticate() error = %v", challenge, err)
+		}
+		if requests != 1 || auth.calls != 1 {
+			t.Fatalf("challenge %q: requests = %d, authenticator calls = %d", challenge, requests, auth.calls)
+		}
+	}
+}
+
 func TestAuthenticateCompletesMultiStepExchange(t *testing.T) {
 	var got [][]byte
 	requester := requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {

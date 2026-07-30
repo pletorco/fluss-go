@@ -42,8 +42,8 @@ type Database struct {
 }
 
 type DatabaseDefinition struct {
-	Comment    string            `json:"comment,omitempty"`
-	Properties map[string]string `json:"properties,omitempty"`
+	Comment    string
+	Properties map[string]string
 }
 
 func (c *Client) CreateDatabase(ctx context.Context, name string, definition DatabaseDefinition, ignoreIfExists bool) error {
@@ -51,9 +51,14 @@ func (c *Client) CreateDatabase(ctx context.Context, name string, definition Dat
 		return err
 	}
 	body, err := json.Marshal(struct {
-		Version int `json:"version"`
-		DatabaseDefinition
-	}{Version: 1, DatabaseDefinition: definition})
+		Version          int               `json:"version"`
+		Comment          string            `json:"comment,omitempty"`
+		CustomProperties map[string]string `json:"custom_properties"`
+	}{
+		Version:          1,
+		Comment:          definition.Comment,
+		CustomProperties: nonNilMap(definition.Properties),
+	})
 	if err != nil {
 		return err
 	}
@@ -151,14 +156,14 @@ func (c *Client) DescribeDatabase(ctx context.Context, name string) (Database, e
 		return Database{}, unexpected("describe database", response)
 	}
 	var definition struct {
-		Comment    string            `json:"comment"`
-		Properties map[string]string `json:"properties"`
+		Comment          string            `json:"comment"`
+		CustomProperties map[string]string `json:"custom_properties"`
 	}
 	if err := json.Unmarshal(message.GetDatabaseJson(), &definition); err != nil {
 		return Database{}, fmt.Errorf("%w: invalid database descriptor: %v", fgo.ErrValidation, err)
 	}
 	return Database{
-		Name: name, Comment: definition.Comment, Properties: definition.Properties,
+		Name: name, Comment: definition.Comment, Properties: definition.CustomProperties,
 		CreatedAt: millis(message.GetCreatedTime()), ModifiedAt: millis(message.GetModifiedTime()),
 	}, nil
 }

@@ -1,0 +1,462 @@
+//go:build integration
+
+package integration_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/pletorco/fluss-go/internal/transport"
+	"github.com/pletorco/fluss-go/pkg/fadm"
+	"github.com/pletorco/fluss-go/pkg/fgo"
+	"github.com/pletorco/fluss-go/pkg/fmsg"
+	"google.golang.org/protobuf/proto"
+)
+
+const (
+	expectedVersion = "0.9.1-incubating"
+	expectedCommit  = "6bf969f71af8d6f9cc37383ab89ae46a58b0e227"
+	expectedImage   = "apache/fluss@sha256:65f5513b33dde10ace4f8adb3956f17226a2a1e2663f92b3096e4769b0ee1d1c"
+)
+
+func TestFluss091Integration(t *testing.T) {
+	requireEnvironment(t)
+	plainAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_COORDINATOR_PORT", "19123"))
+	saslAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_SASL_COORDINATOR_PORT", "19223"))
+
+	t.Run("protocol negotiation and role", func(t *testing.T) {
+		verifyProtocolRegistry(t, map[string]fgo.ServerRole{
+			plainAddress: fgo.Coordinator,
+			net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_0_PORT", "19124")): fgo.TabletServer,
+			net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_1_PORT", "19125")): fgo.TabletServer,
+			net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_2_PORT", "19126")): fgo.TabletServer,
+		})
+	})
+
+	client := openClient(t, []string{"127.0.0.1:1", plainAddress})
+	defer client.Close()
+
+	t.Run("plaintext bootstrap failover", func(t *testing.T) {
+		admin, err := fadm.New(client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := admin.DatabaseExists(context.Background(), "fluss_go_missing"); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("SASL PLAIN", func(t *testing.T) {
+		username, password := os.Getenv("FLUSS_SASL_USERNAME"), os.Getenv("FLUSS_SASL_PASSWORD")
+		authenticated := openClient(t, []string{saslAddress}, fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)))
+		defer authenticated.Close()
+		admin, err := fadm.New(authenticated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := admin.ListDatabases(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err = fgo.Open(ctx,
+			fgo.WithSeedBrokers(saslAddress),
+			fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password+"-wrong")),
+		)
+		if !errors.Is(err, fgo.ErrAuthentication) || strings.Contains(fmt.Sprint(err), password) {
+			t.Fatalf("invalid credential error = %v", err)
+		}
+	})
+
+	database := fmt.Sprintf("go_it_%d", time.Now().UnixNano())
+	logPath := fgo.TablePath{Database: database, Table: "events"}
+	kvPath := fgo.TablePath{Database: database, Table: "users"}
+	admin, err := fadm.New(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDefinition{
+		Comment: "fluss-go live integration",
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := admin.DropDatabase(context.Background(), database, true, true); err != nil {
+			t.Errorf("cleanup database: %v", err)
+		}
+	}()
+
+	t.Run("catalog", func(t *testing.T) {
+		createTables(t, admin, logPath, kvPath)
+		tables, err := admin.ListTables(context.Background(), database)
+		if err != nil || len(tables) != 2 {
+			t.Fatalf("ListTables() = %#v, %v", tables, err)
+		}
+	})
+
+	t.Run("append and scan", func(t *testing.T) {
+		testLogData(t, client, logPath)
+	})
+
+	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
+		testKVData(t, client, kvPath)
+	})
+
+	t.Run("multi-node routing and leader failover", func(t *testing.T) {
+		testLeaderFailover(t, client, logPath)
+	})
+}
+
+func requireEnvironment(t *testing.T) {
+	t.Helper()
+	for key, want := range map[string]string{
+		"FLUSS_INTEGRATION": "1",
+		"FLUSS_VERSION":     expectedVersion,
+		"FLUSS_COMMIT":      expectedCommit,
+		"FLUSS_IMAGE":       expectedImage,
+	} {
+		if got := os.Getenv(key); got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
+	}
+	upstream, err := os.ReadFile(filepath.Join("..", "third_party", "apache-fluss", "UPSTREAM.md"))
+	if err != nil || !strings.Contains(string(upstream), expectedCommit) {
+		t.Fatalf("pinned upstream metadata does not contain %s: %v", expectedCommit, err)
+	}
+}
+
+func verifyProtocolRegistry(t *testing.T, endpoints map[string]fgo.ServerRole) {
+	t.Helper()
+	server := make(map[fmsg.APIKey][2]int32)
+	for address, expectedRole := range endpoints {
+		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rpc, err := transport.New(conn, transport.Config{})
+		if err != nil {
+			conn.Close()
+			t.Fatal(err)
+		}
+		request, err := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
+		if err != nil {
+			rpc.Close()
+			t.Fatal(err)
+		}
+		message := request.Message().(*fmsg.ApiVersionsRequest)
+		message.ClientSoftwareName, message.ClientSoftwareVersion = proto.String("fluss-go-integration"), proto.String("0.1")
+		response, err := rpc.Request(context.Background(), request)
+		if err != nil {
+			rpc.Close()
+			t.Fatal(err)
+		}
+		versions := response.Message().(*fmsg.ApiVersionsResponse)
+		if got := fgo.ServerRole(versions.GetServerType()); got != expectedRole {
+			rpc.Close()
+			t.Fatalf("%s server role = %d, want %d", address, got, expectedRole)
+		}
+		for _, version := range versions.GetApiVersions() {
+			server[fmsg.APIKey(version.GetApiKey())] = [2]int32{
+				version.GetMinVersion(), version.GetMaxVersion(),
+			}
+		}
+		if err := rpc.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, local := range fmsg.APIKeys() {
+		if !local.Public {
+			continue
+		}
+		got, ok := server[local.Key]
+		if !ok || got != [2]int32{int32(local.MinVersion), int32(local.MaxVersion)} {
+			t.Fatalf("API %s versions = %v, present=%v, want [%d %d]", local.Name, got, ok, local.MinVersion, local.MaxVersion)
+		}
+	}
+}
+
+func openClient(t *testing.T, seeds []string, options ...fgo.Option) *fgo.Client {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		all := []fgo.Option{fgo.WithSeedBrokers(seeds...), fgo.WithDialTimeout(3 * time.Second)}
+		all = append(all, options...)
+		client, err := fgo.Open(ctx, all...)
+		cancel()
+		if err == nil {
+			return client
+		}
+		lastErr = err
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("open Fluss client: %v", lastErr)
+	return nil
+}
+
+func createTables(t *testing.T, admin *fadm.Client, logPath, kvPath fgo.TablePath) {
+	t.Helper()
+	logSchema := fgo.Schema{Columns: []fgo.Column{
+		{Name: "id", Type: fgo.IntType},
+		{Name: "message", Type: fgo.StringType},
+	}}
+	if err := admin.CreateTable(context.Background(), logPath, fadm.TableDefinition{
+		Schema: logSchema, BucketCount: 3,
+	}, false); err != nil {
+		t.Fatalf("create log table: %v", err)
+	}
+	kvSchema := fgo.Schema{
+		Columns: []fgo.Column{
+			{Name: "tenant", Type: fgo.StringType},
+			{Name: "id", Type: fgo.IntType},
+			{Name: "name", Type: fgo.StringType, Nullable: true},
+		},
+		PrimaryKey: []string{"tenant", "id"},
+		BucketKey:  []string{"tenant"},
+	}
+	if err := admin.CreateTable(context.Background(), kvPath, fadm.TableDefinition{
+		Schema: kvSchema, BucketCount: 3,
+	}, false); err != nil {
+		t.Fatalf("create KV table: %v", err)
+	}
+	waitForTableReady(t, admin, logPath)
+	waitForTableReady(t, admin, kvPath)
+}
+
+func waitForTableReady(t *testing.T, admin *fadm.Client, path fgo.TablePath) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	var last []fadm.OffsetResult
+	for time.Now().Before(deadline) {
+		table, err := admin.DescribeTable(context.Background(), path)
+		if err == nil {
+			buckets := make([]int32, table.BucketCount)
+			for index := range buckets {
+				buckets[index] = int32(index)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			last = admin.ListOffsets(
+				ctx, table, fgo.PhysicalTablePath{TablePath: path}, -1, buckets, fgo.Earliest(),
+			)
+			cancel()
+			ready := len(last) == table.BucketCount
+			for _, result := range last {
+				ready = ready && result.Err == nil
+			}
+			if ready {
+				return
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("table %s did not become ready: %#v", path, last)
+}
+
+func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	table, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := client.NewLogWriter(ctx, table, fgo.WithLogLinger(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, message := range []string{"first", "second", "third"} {
+		result := writer.Append(ctx, fgo.Row{int32(index + 1), message}).Await(ctx)
+		if result.Err != nil {
+			t.Fatalf("append %d: %v", index, result.Err)
+		}
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := client.NewLogScanner(ctx, table, fgo.Earliest(), fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	found := make(map[int32]string)
+	for len(found) < 3 && ctx.Err() == nil {
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range result.Records {
+			found[record.Record.Value[0].(int32)] = record.Record.Value[1].(string)
+		}
+		result.Release()
+	}
+	if found[1] != "first" || found[2] != "second" || found[3] != "third" {
+		t.Fatalf("scanned rows = %#v", found)
+	}
+}
+
+func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	table, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := client.NewKVWriter(ctx, table, fgo.WithKVLinger(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []fgo.Row{
+		{"team-a", int32(1), "alice"},
+		{"team-a", int32(2), "bob"},
+		{"team-b", int32(1), "carol"},
+	}
+	for index, row := range rows {
+		if result := writer.Upsert(ctx, row).Await(ctx); result.Err != nil {
+			t.Fatalf("upsert %d: %v", index, result.Err)
+		}
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lookup, err := client.NewLookupClient(ctx, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+	points := lookup.Lookup(ctx, fgo.PrimaryKey{"team-a", int32(1)}, fgo.PrimaryKey{"team-b", int32(1)})
+	for index, point := range points {
+		if point.Err != nil {
+			t.Fatalf("point lookup %d for %#v: %v", index, point.Key, point.Err)
+		}
+	}
+	if len(points) != 2 || points[0].Err != nil || !points[0].Found || points[0].Row[2] != "alice" ||
+		points[1].Err != nil || !points[1].Found || points[1].Row[2] != "carol" {
+		t.Fatalf("point lookup = %#v", points)
+	}
+	prefix := lookup.PrefixLookup(ctx, fgo.PrimaryKey{"team-a"})
+	if len(prefix) != 1 || prefix[0].Err != nil || len(prefix[0].Rows) != 2 {
+		t.Fatalf("prefix lookup = %#v", prefix)
+	}
+	deleteWriter, err := client.NewKVWriter(ctx, table, fgo.WithKVLinger(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := deleteWriter.Delete(ctx, fgo.PrimaryKey{"team-a", int32(1)}).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if err := deleteWriter.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	deleted := lookup.Lookup(ctx, fgo.PrimaryKey{"team-a", int32(1)})
+	if len(deleted) != 1 || !errors.Is(deleted[0].Err, fgo.ErrNotFound) || deleted[0].Found {
+		t.Fatalf("deleted lookup = %#v", deleted)
+	}
+}
+
+func testLeaderFailover(t *testing.T, client *fgo.Client, path fgo.TablePath) {
+	t.Helper()
+	before := metadataLeaders(t, client, path)
+	var stopped int32 = -1
+	for _, leader := range before {
+		stopped = leader
+		break
+	}
+	if stopped < 0 || stopped > 2 {
+		t.Fatalf("initial leaders = %#v", before)
+	}
+	service := fmt.Sprintf("plaintext-tablet-%d", stopped)
+	compose(t, "stop", service)
+	defer compose(t, "up", "--detach", service)
+
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		leaders, err := tryMetadataLeaders(client, path)
+		if err == nil && len(leaders) == len(before) {
+			changed := false
+			valid := true
+			for bucket, leader := range leaders {
+				if leader == stopped {
+					valid = false
+				}
+				if before[bucket] != leader {
+					changed = true
+				}
+			}
+			if valid && changed {
+				return
+			}
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("leaders did not move away from tablet %d; before=%#v", stopped, before)
+}
+
+func metadataLeaders(t *testing.T, client *fgo.Client, path fgo.TablePath) map[int32]int32 {
+	t.Helper()
+	leaders, err := tryMetadataLeaders(client, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return leaders
+}
+
+func tryMetadataLeaders(client *fgo.Client, path fgo.TablePath) (map[int32]int32, error) {
+	request, err := fmsg.NewRequest(fmsg.APIKeyGetMetadata, 0)
+	if err != nil {
+		return nil, err
+	}
+	request.Message().(*fmsg.MetadataRequest).TablePath = []*fmsg.PbTablePath{{
+		DatabaseName: proto.String(path.Database), TableName: proto.String(path.Table),
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	response, err := client.RequestCoordinator(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	metadata := response.Message().(*fmsg.MetadataResponse)
+	for _, table := range metadata.GetTableMetadata() {
+		if table.GetTablePath().GetDatabaseName() != path.Database ||
+			table.GetTablePath().GetTableName() != path.Table {
+			continue
+		}
+		leaders := make(map[int32]int32, len(table.GetBucketMetadata()))
+		for _, bucket := range table.GetBucketMetadata() {
+			if bucket.LeaderId == nil {
+				return nil, errors.New("metadata contains a bucket without a leader")
+			}
+			leaders[bucket.GetBucketId()] = bucket.GetLeaderId()
+		}
+		return leaders, nil
+	}
+	return nil, errors.New("metadata omitted integration table")
+}
+
+func compose(t *testing.T, arguments ...string) {
+	t.Helper()
+	file, project := os.Getenv("FLUSS_COMPOSE_FILE"), os.Getenv("FLUSS_COMPOSE_PROJECT")
+	args := []string{"compose", "--project-name", project, "--file", file}
+	args = append(args, arguments...)
+	command := exec.Command("docker", args...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker compose %s: %v: %s", strings.Join(arguments, " "), err, output)
+	}
+}
+
+func env(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}

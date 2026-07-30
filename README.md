@@ -33,7 +33,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Point and prefix lookups | Supported | `LookupClient` validates and batches v0/v1 keys by bucket, preserves input association, distinguishes not-found results, bounds concurrency, and supports routable leading-key prefixes. |
 | Core `fadm` catalog client | Supported | `pkg/fadm` shares the `fgo` connection pool and implements database, table, schema, alter, partition, and per-bucket offset operations. |
 | Advanced `fadm` operations | Supported | ACL, cluster config, server tag, rebalance, producer-offset, KV snapshot lease, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
-| Live Fluss 0.9.1 compatibility | Not yet verified | Unit, golden, and race tests run in `task verify`; the opt-in live integration harness is tracked in [#27](https://github.com/pletorco/fluss-go/issues/27). Do not infer production compatibility from generated protocol types alone. |
+| Live Fluss 0.9.1 compatibility | Verified | `task test:integration` runs Java-compatible golden fixtures and live plaintext, SASL PLAIN, multi-tablet, catalog, log, KV, lookup, prefix-lookup, and leader-failover checks against the digest-pinned official 0.9.1 image. |
 
 ## Development
 
@@ -42,8 +42,8 @@ see available checks; task verify runs formatting, generation verification,
 static analysis, unit and golden tests, bounded fuzz smoke tests, race tests,
 per-file coverage checks, and security gates.
 
-Local security scans require Trivy v0.72.0. Integration tests require an
-explicitly configured Apache Fluss cluster and FLUSS_INTEGRATION=1.
+Local security scans require Trivy v0.72.0. Integration tests require Docker,
+Docker Compose, and OpenSSL; the task creates and removes isolated clusters.
 
 ## Compatibility Matrix
 

@@ -88,12 +88,16 @@ tasks:
           awk 'NR > 1 && $1 !~ /FlussApi\.pb\.go|api_keys_gen\.go/ { split($1, path, ":"); total[path[1]] += $2; if ($3 > 0) covered[path[1]] += $2 } END { failed = 0; for (file in total) { percent = 100 * covered[file] / total[file]; printf "%s: %.1f%% (%d/%d statements)\n", file, percent, covered[file], total[file]; if (percent < 80) failed = 1 } exit failed }' coverage.out
 
   test:integration:
-    desc: Run integration tests against an explicitly configured Fluss cluster
+    desc: Run live tests against pinned plaintext and SASL Fluss 0.9.1 clusters
     preconditions:
-      - sh: test -n "$FLUSS_INTEGRATION"
-        msg: Set FLUSS_INTEGRATION=1 after configuring the integration environment.
+      - sh: command -v docker >/dev/null 2>&1
+        msg: Docker is required for the Fluss integration environment.
+      - sh: docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required for the Fluss integration environment.
+      - sh: command -v openssl >/dev/null 2>&1
+        msg: OpenSSL is required to generate ephemeral SASL credentials.
     cmds:
-      - go test -tags=integration ./...
+      - ./integration/run.sh
 
   sonar:
     desc: Generate coverage and submit a local SonarQube analysis

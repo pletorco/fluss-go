@@ -379,11 +379,13 @@ func (c *Client) authenticationChallenge(ctx context.Context, auth Authenticator
 		classified := serverError(err, fmsg.APIKeyAuthenticate, c.address)
 		return nil, false, authenticationError(classified, isRetriableAuthenticationError(classified))
 	}
-	if response.Challenge != nil {
-		return append([]byte(nil), response.Challenge...), false, nil
-	}
+	// Fluss SASL/PLAIN returns a present, empty final challenge. The Java 0.9.1
+	// client treats any server response received after local completion as success.
 	if auth.Complete() {
 		return nil, true, nil
+	}
+	if response.Challenge != nil {
+		return append([]byte(nil), response.Challenge...), false, nil
 	}
 	return nil, false, authenticationError(fmt.Errorf("server completed exchange before authenticator completed"), false)
 }
