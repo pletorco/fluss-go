@@ -102,6 +102,18 @@ func WithKVPartition(partition string) KVWriterOption {
 	}
 }
 
+// WithKVPartitionSpec selects a partition using the table schema's partition-key order.
+func WithKVPartitionSpec(schema Schema, spec PartitionSpec) KVWriterOption {
+	return func(config *KVWriterConfig) error {
+		partition, err := schema.PartitionName(spec)
+		if err != nil {
+			return err
+		}
+		config.Partition = partition
+		return nil
+	}
+}
+
 type kvWriterBackend interface {
 	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
@@ -109,6 +121,14 @@ type kvWriterBackend interface {
 }
 
 type clientKVWriterBackend struct{ client *Client }
+
+func (b clientKVWriterBackend) ensurePartition(
+	ctx context.Context,
+	path PhysicalTablePath,
+	partitionKeys []string,
+) error {
+	return b.client.ensureDynamicPartition(ctx, path, partitionKeys)
+}
 
 type kvPutRequest struct {
 	path        PhysicalTablePath
@@ -239,6 +259,13 @@ func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, opti
 		)
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	if backend, ok := backend.(interface {
+		ensurePartition(context.Context, PhysicalTablePath, []string) error
+	}); ok {
+		if err := backend.ensurePartition(ctx, path, table.Schema.PartitionKey); err != nil {
+			return nil, err
+		}
+	}
 	physicalID, locations, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err

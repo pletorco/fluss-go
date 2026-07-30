@@ -114,6 +114,18 @@ func WithLogPartition(partition string) LogWriterOption {
 	}
 }
 
+// WithLogPartitionSpec selects a partition using the table schema's partition-key order.
+func WithLogPartitionSpec(schema Schema, spec PartitionSpec) LogWriterOption {
+	return func(config *LogWriterConfig) error {
+		partition, err := schema.PartitionName(spec)
+		if err != nil {
+			return err
+		}
+		config.Partition = partition
+		return nil
+	}
+}
+
 // WithLogWriteFormat selects the server-supported encoding used by this writer.
 func WithLogWriteFormat(format LogWriteFormat) LogWriterOption {
 	return func(config *LogWriterConfig) error {
@@ -182,6 +194,14 @@ type logWriterBackend interface {
 }
 
 type clientLogWriterBackend struct{ client *Client }
+
+func (b clientLogWriterBackend) ensurePartition(
+	ctx context.Context,
+	path PhysicalTablePath,
+	partitionKeys []string,
+) error {
+	return b.client.ensureDynamicPartition(ctx, path, partitionKeys)
+}
 
 type logProduceRequest struct {
 	path        PhysicalTablePath
@@ -335,6 +355,13 @@ func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, op
 		)
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	if backend, ok := backend.(interface {
+		ensurePartition(context.Context, PhysicalTablePath, []string) error
+	}); ok {
+		if err := backend.ensurePartition(ctx, path, table.Schema.PartitionKey); err != nil {
+			return nil, err
+		}
+	}
 	physicalID, locations, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err

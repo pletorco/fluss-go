@@ -76,6 +76,10 @@ func TestFluss091Integration(t *testing.T) {
 		testCatalog(t, admin, database, logPath, kvPath)
 	})
 
+	t.Run("dynamic partition creation and routing", func(t *testing.T) {
+		testDynamicPartition(t, plainAddress, admin, database)
+	})
+
 	t.Run("append and scan", func(t *testing.T) {
 		testLogData(t, client, logPath)
 	})
@@ -364,6 +368,70 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 		t.Fatalf("scanned rows = %#v", found)
 	}
 	testBoundedLogScan(t, ctx, client, table)
+}
+
+func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, database string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	path := fgo.TablePath{Database: database, Table: "partitioned_events"}
+	schema := fgo.Schema{
+		Columns: []fgo.Column{
+			{Name: "id", Type: fgo.IntType},
+			{Name: "region", Type: fgo.StringType},
+			{Name: "message", Type: fgo.StringType},
+		},
+		PartitionKey: []string{"region"},
+	}
+	if err := admin.CreateTable(ctx, path, fadm.TableDefinition{
+		Schema: schema, BucketCount: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	client := openClient(t, []string{address}, fgo.WithDynamicPartitionCreation(
+		fgo.DynamicPartitionCreationConfig{MetadataAttempts: 10, RetryBackoff: 100 * time.Millisecond},
+	))
+	defer client.Close()
+	table, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := fgo.PartitionSpec{"region": "kr"}
+	writer, err := client.NewLogWriter(
+		ctx, table, fgo.WithLogPartitionSpec(table.Schema, spec), fgo.WithLogLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithScanPartitionSpec(table.Schema, spec),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	for ctx.Err() == nil {
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range result.Records {
+			if record.Record.Value[2] == "created" {
+				result.Release()
+				return
+			}
+		}
+		result.Release()
+	}
+	t.Fatal(ctx.Err())
 }
 
 func testBoundedLogScan(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {

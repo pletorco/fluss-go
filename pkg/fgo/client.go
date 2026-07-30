@@ -59,17 +59,18 @@ func (e *AuthenticationError) Is(target error) bool { return target == ErrAuthen
 type Option func(*config) error
 
 type config struct {
-	seeds       []string
-	name        string
-	version     string
-	dialContext DialContextFunc
-	tlsConfig   *tls.Config
-	authFactory AuthenticatorFactory
-	timeout     time.Duration
-	limits      transport.Config
-	retry       RetryPolicy
-	observer    MetricsObserver
-	tokens      securityTokenSettings
+	seeds             []string
+	name              string
+	version           string
+	dialContext       DialContextFunc
+	tlsConfig         *tls.Config
+	authFactory       AuthenticatorFactory
+	timeout           time.Duration
+	limits            transport.Config
+	retry             RetryPolicy
+	observer          MetricsObserver
+	tokens            securityTokenSettings
+	dynamicPartitions *DynamicPartitionCreationConfig
 }
 
 // RetryPolicy bounds automatic retries of safe, read-only requests.
@@ -175,15 +176,16 @@ func WithMetricsObserver(observer MetricsObserver) Option {
 }
 
 type Client struct {
-	requester    fmsg.Requester
-	close        func() error
-	manager      *connectionManager
-	router       *Router
-	serverID     int32
-	address      string
-	role         ServerRole
-	observer     MetricsObserver
-	tokenManager *securityTokenManager
+	requester        fmsg.Requester
+	close            func() error
+	manager          *connectionManager
+	router           *Router
+	serverID         int32
+	address          string
+	role             ServerRole
+	observer         MetricsObserver
+	tokenManager     *securityTokenManager
+	partitionCreator *dynamicPartitionCreator
 
 	mu         sync.RWMutex
 	closed     bool
@@ -214,6 +216,9 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 	client.manager = manager
 	client.router = NewRouter(Node{ID: client.serverID, Address: client.address, Role: Coordinator}, client.fetchTableMetadata).
 		WithPhysicalMetadataFetcher(client.fetchPartitionMetadata)
+	if cfg.dynamicPartitions != nil {
+		client.partitionCreator = newDynamicPartitionCreator(client, *cfg.dynamicPartitions)
+	}
 	if cfg.tokens.enabled {
 		provider := cfg.tokens.provider
 		if provider == nil {

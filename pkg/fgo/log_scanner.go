@@ -92,6 +92,18 @@ func WithScanPartition(partition string) LogScannerOption {
 	}
 }
 
+// WithScanPartitionSpec selects a partition using the table schema's partition-key order.
+func WithScanPartitionSpec(schema Schema, spec PartitionSpec) LogScannerOption {
+	return func(config *LogScannerConfig) error {
+		partition, err := schema.PartitionName(spec)
+		if err != nil {
+			return err
+		}
+		config.Partition = partition
+		return nil
+	}
+}
+
 func WithScanLimits(maxBytes, maxBucketBytes, minBytes int32, maxWait time.Duration) LogScannerOption {
 	return func(config *LogScannerConfig) error {
 		if maxBytes <= 0 || maxBucketBytes <= 0 || minBytes < 0 || minBytes > maxBytes ||
