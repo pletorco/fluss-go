@@ -100,35 +100,53 @@ func (s Schema) ValidateRow(row Row, columns []string) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	if len(columns) == 0 {
-		columns = make([]string, len(s.Columns))
-		for i, column := range s.Columns {
-			columns[i] = column.Name
-		}
-	}
+	columns = s.selectedColumns(columns)
 	if len(row) != len(columns) {
 		return fmt.Errorf("%w: got %d values for %d columns", ErrInvalidRow, len(row), len(columns))
 	}
-	byName := make(map[string]Column, len(s.Columns))
-	for _, column := range s.Columns {
-		byName[column.Name] = column
-	}
+	byName := s.columnsByName()
 	for i, name := range columns {
 		column, ok := byName[name]
 		if !ok {
 			return fmt.Errorf("%w: unknown column %q", ErrInvalidRow, name)
 		}
-		if row[i] == nil {
-			if !column.Nullable {
-				return fmt.Errorf("%w: column %q is not nullable", ErrInvalidRow, name)
-			}
-			continue
-		}
-		if !validValue(column.Type, row[i]) {
-			return fmt.Errorf("%w: column %q expects %s", ErrInvalidRow, name, column.Type)
+		if err := validateColumnValue(column, row[i]); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func (s Schema) selectedColumns(columns []string) []string {
+	if len(columns) != 0 {
+		return columns
+	}
+	columns = make([]string, len(s.Columns))
+	for i, column := range s.Columns {
+		columns[i] = column.Name
+	}
+	return columns
+}
+
+func (s Schema) columnsByName() map[string]Column {
+	columns := make(map[string]Column, len(s.Columns))
+	for _, column := range s.Columns {
+		columns[column.Name] = column
+	}
+	return columns
+}
+
+func validateColumnValue(column Column, value any) error {
+	if value == nil {
+		if column.Nullable {
+			return nil
+		}
+		return fmt.Errorf("%w: column %q is not nullable", ErrInvalidRow, column.Name)
+	}
+	if validValue(column.Type, value) {
+		return nil
+	}
+	return fmt.Errorf("%w: column %q expects %s", ErrInvalidRow, column.Name, column.Type)
 }
 
 func validValue(kind DataType, value any) bool {
