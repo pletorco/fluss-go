@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -264,6 +265,46 @@ func TestLogWriterFailurePoisonsOnlyBucket(t *testing.T) {
 	}
 }
 
+func TestLogWriterRowFormats(t *testing.T) {
+	for _, test := range []struct {
+		format    LogWriteFormat
+		compacted bool
+	}{
+		{LogWriteFormatCompacted, true},
+		{LogWriteFormatIndexed, false},
+	} {
+		t.Run(string(test.format), func(t *testing.T) {
+			table := logWriterTable()
+			table.Properties = map[string]string{"table.log.format": strings.ToUpper(string(test.format))}
+			backend := logBackend(0)
+			writer, err := newLogWriter(
+				context.Background(), backend, table,
+				WithLogWriteFormat(test.format), WithLogLinger(0),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := writer.Append(context.Background(), Row{int32(1), "one"}).
+				Await(context.Background())
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			batch, err := DecodeLogBatchRows(table.Schema, backend.produced()[0].records, test.compacted)
+			if err != nil || len(batch.Records) != 1 || batch.Records[0].Value[1] != "one" {
+				t.Fatalf("decoded %s batch = %#v, %v", test.format, batch, err)
+			}
+			if err := writer.Close(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	config, err := logWriterConfig(nil)
+	if err != nil || config.Format != LogWriteFormatAuto ||
+		config.ArrowCompression != ArrowCompressionNone {
+		t.Fatalf("default format config = %#v, %v", config, err)
+	}
+}
+
 func TestLogWriterArrowAndPartition(t *testing.T) {
 	table := logWriterTable()
 	table.BucketCount = 2
@@ -279,7 +320,11 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 	builder.Release()
 	defer record.Release()
 
-	writer, err := newLogWriter(context.Background(), backend, table, WithLogPartition("day=1"), WithLogLinger(0))
+	writer, err := newLogWriter(
+		context.Background(), backend, table,
+		WithLogPartition("day=1"), WithLogLinger(0),
+		WithLogWriteFormat(LogWriteFormatArrow), WithLogArrowCompression(ArrowCompressionLZ4),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,15 +341,49 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded.Release()
+	if result := writer.Append(context.Background(), Row{int32(2), "two"}).
+		Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("row passed to Arrow writer = %#v", result)
+	}
 	if err := writer.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+
+	rowWriter, err := newLogWriter(
+		context.Background(), logBackend(1, 3), table,
+		WithLogWriteFormat(LogWriteFormatIndexed),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := rowWriter.AppendArrow(context.Background(), 1, record, []ChangeType{Append}).
+		Await(context.Background()); !errors.Is(result.Err, ErrInvalidConfig) {
+		t.Fatalf("Arrow passed to indexed writer = %#v", result)
+	}
+	badSchema := arrow.NewSchema([]arrow.Field{{Name: "other", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	badBuilder := array.NewRecordBuilder(memory.DefaultAllocator, badSchema)
+	badBuilder.Field(0).(*array.Int32Builder).Append(1)
+	badRecord := badBuilder.NewRecordBatch()
+	badBuilder.Release()
+	defer badRecord.Release()
+	autoWriter, err := newLogWriter(context.Background(), logBackend(1, 3), table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := autoWriter.AppendArrow(context.Background(), 1, badRecord, []ChangeType{Append}).
+		Await(context.Background()); !errors.Is(result.Err, ErrInvalidSchema) {
+		t.Fatalf("mismatched Arrow schema = %#v", result)
+	}
+	_ = rowWriter.Close(context.Background())
+	_ = autoWriter.Close(context.Background())
 }
 
 func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 	table := logWriterTable()
 	primary := table
 	primary.Kind = PrimaryKeyTable
+	arrowTable := table
+	arrowTable.Properties = map[string]string{"table.log.format": "arrow"}
 	for _, test := range []struct {
 		name    string
 		table   Table
@@ -319,6 +398,10 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"bad linger", table, logBackend(0), []LogWriterOption{WithLogLinger(-1)}, ErrInvalidConfig},
 		{"bad request", table, logBackend(0), []LogWriterOption{WithLogRequest(0, 2)}, ErrInvalidConfig},
 		{"bad assignment", table, logBackend(0), []LogWriterOption{WithLogBucketAssignment("random")}, ErrInvalidConfig},
+		{"bad format", table, logBackend(0), []LogWriterOption{WithLogWriteFormat("unknown")}, ErrInvalidConfig},
+		{"bad compression", table, logBackend(0), []LogWriterOption{WithLogArrowCompression(ArrowCompression(99))}, ErrInvalidConfig},
+		{"row compression", table, logBackend(0), []LogWriterOption{WithLogWriteFormat(LogWriteFormatIndexed), WithLogArrowCompression(ArrowCompressionZSTD)}, ErrInvalidConfig},
+		{"table format", arrowTable, logBackend(0), []LogWriterOption{WithLogWriteFormat(LogWriteFormatCompacted)}, ErrInvalidConfig},
 		{"no buckets", table, logBackend(), nil, ErrMetadata},
 		{"metadata error", table, &fakeLogWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"init error", table, &fakeLogWriterBackend{physicalID: 9, locations: logBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},

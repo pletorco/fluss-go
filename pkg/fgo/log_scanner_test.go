@@ -234,6 +234,37 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	_ = scanner.Close()
 }
 
+func TestLogScannerDecodesIndexedTable(t *testing.T) {
+	table := logWriterTable()
+	table.Properties = map[string]string{"table.log.format": "INDEXED"}
+	backend := scannerBackend(0)
+	encoded, err := (LogBatch{
+		Magic: 0, BaseOffset: 3, SchemaID: int16(table.SchemaID), AppendOnly: true,
+		Records: []Record{{Value: Row{int32(7), "indexed"}, Change: Append}},
+	}).EncodeRows(table.Schema, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.fetches[0] = scannerFetch{records: encoded}
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.Records) != 1 || result.Records[0].Record.Value[1] != "indexed" {
+		t.Fatalf("indexed Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	_ = scanner.Close()
+
+	if _, err := newLogScanner(
+		context.Background(), scannerBackend(0), table, AtOffset(0),
+		WithScanProjection("name"),
+	); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("indexed projection error = %v", err)
+	}
+}
+
 func TestLogScannerArrowBatchOwnership(t *testing.T) {
 	table := logWriterTable()
 	backend := scannerBackend(0)

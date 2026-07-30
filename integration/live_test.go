@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/pletorco/fluss-go/internal/transport"
 	"github.com/pletorco/fluss-go/pkg/fadm"
 	"github.com/pletorco/fluss-go/pkg/fgo"
@@ -72,6 +74,10 @@ func TestFluss091Integration(t *testing.T) {
 
 	t.Run("append and scan", func(t *testing.T) {
 		testLogData(t, client, logPath)
+	})
+
+	t.Run("log write formats", func(t *testing.T) {
+		testLogWriteFormats(t, client, admin, database)
 	})
 
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
@@ -364,6 +370,112 @@ func testBoundedLogScan(t *testing.T, ctx context.Context, client *fgo.Client, t
 	result, err := scanner.Poll(ctx)
 	if err != nil || !result.Done || len(result.Records) != 0 || len(result.ArrowBatches) != 0 {
 		t.Fatalf("terminal bounded poll = %#v, %v", result, err)
+	}
+}
+
+func testLogWriteFormats(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	database string,
+) {
+	t.Helper()
+	schema := fgo.Schema{Columns: []fgo.Column{
+		{Name: "id", Type: fgo.IntType},
+		{Name: "message", Type: fgo.StringType, Nullable: true},
+	}}
+	for _, format := range []fgo.LogWriteFormat{
+		fgo.LogWriteFormatCompacted,
+		fgo.LogWriteFormatIndexed,
+		fgo.LogWriteFormatArrow,
+	} {
+		path := fgo.TablePath{Database: database, Table: "format_" + string(format)}
+		if err := admin.CreateTable(context.Background(), path, fadm.TableDefinition{
+			Schema: schema, BucketCount: 1,
+			Properties: map[string]string{"table.log.format": strings.ToUpper(string(format))},
+		}, false); err != nil {
+			t.Fatalf("create %s table: %v", format, err)
+		}
+		waitForTableReady(t, admin, path)
+		table, err := client.OpenTable(context.Background(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		options := []fgo.LogWriterOption{
+			fgo.WithLogWriteFormat(format),
+			fgo.WithLogLinger(0),
+		}
+		if format == fgo.LogWriteFormatArrow {
+			options = append(options, fgo.WithLogArrowCompression(fgo.ArrowCompressionZSTD))
+		}
+		writer, err := client.NewLogWriter(context.Background(), table, options...)
+		if err != nil {
+			t.Fatalf("create %s writer: %v", format, err)
+		}
+		if format == fgo.LogWriteFormatArrow {
+			appendArrowFormatRow(t, writer, table)
+		} else {
+			result := writer.Append(context.Background(), fgo.Row{int32(1), string(format)}).
+				Await(context.Background())
+			if result.Err != nil {
+				t.Fatalf("append %s row: %v", format, result.Err)
+			}
+		}
+		if err := writer.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		assertFormatRow(t, client, table, format)
+	}
+}
+
+func appendArrowFormatRow(t *testing.T, writer *fgo.LogWriter, table fgo.Table) {
+	t.Helper()
+	schema, err := table.Schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int32Builder).Append(1)
+	builder.Field(1).(*array.StringBuilder).Append("arrow")
+	record := builder.NewRecordBatch()
+	builder.Release()
+	defer record.Release()
+	result := writer.AppendArrow(context.Background(), 0, record, []fgo.ChangeType{fgo.Append}).
+		Await(context.Background())
+	if result.Err != nil {
+		t.Fatalf("append Arrow row: %v", result.Err)
+	}
+}
+
+func assertFormatRow(
+	t *testing.T,
+	client *fgo.Client,
+	table fgo.Table,
+	format fgo.LogWriteFormat,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanRowLimit(1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	result, err := scanner.Poll(ctx)
+	if err != nil {
+		t.Fatalf("scan %s row: %v", format, err)
+	}
+	defer result.Release()
+	rows := len(result.Records)
+	for _, batch := range result.ArrowBatches {
+		rows += int(batch.Batch.Record.NumRows())
+	}
+	if rows != 1 || !result.Done {
+		t.Fatalf("%s scan result = %#v", format, result)
 	}
 }
 

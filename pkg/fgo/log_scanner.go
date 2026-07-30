@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -302,6 +303,7 @@ type LogScanner struct {
 	buckets     []int32
 	schema      Schema
 	projection  []int32
+	compacted   bool
 
 	pollMu      sync.Mutex
 	mu          sync.RWMutex
@@ -351,6 +353,10 @@ func newLogScanner(
 	scanner := &LogScanner{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, buckets: buckets, schema: table.Schema, offset: make(map[int32]int64, len(buckets)),
+		compacted: true,
+	}
+	if strings.EqualFold(strings.TrimSpace(table.Properties["table.log.format"]), string(LogWriteFormatIndexed)) {
+		scanner.compacted = false
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background())
 	if path.Partition != "" {
@@ -387,6 +393,9 @@ func scannerConfig(options []LogScannerOption) (LogScannerConfig, error) {
 func (s *LogScanner) configureProjection() error {
 	if len(s.config.Projection) == 0 {
 		return nil
+	}
+	if !s.compacted {
+		return fmt.Errorf("%w: indexed log format does not support projection", ErrInvalidConfig)
 	}
 	schema, err := projectSchema(s.table.Schema, s.config.Projection)
 	if err != nil {
@@ -530,7 +539,9 @@ func (s *LogScanner) pollBucket(
 	if err != nil {
 		return s.recordFetchError(callerCtx, bucket, err, result)
 	}
-	next, rows, arrows, err := decodeFetchedLog(s.schema, bucket, offset, fetched.records)
+	next, rows, arrows, err := decodeFetchedLogFormat(
+		s.schema, bucket, offset, fetched.records, s.compacted,
+	)
 	if err != nil {
 		result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
 		return nil
@@ -762,6 +773,16 @@ func decodeFetchedLog(
 	fetchOffset int64,
 	encoded []byte,
 ) (int64, []ScanRecord, []ScanArrowBatch, error) {
+	return decodeFetchedLogFormat(schema, bucket, fetchOffset, encoded, true)
+}
+
+func decodeFetchedLogFormat(
+	schema Schema,
+	bucket int32,
+	fetchOffset int64,
+	encoded []byte,
+	compacted bool,
+) (int64, []ScanRecord, []ScanArrowBatch, error) {
 	next := fetchOffset
 	var rows []ScanRecord
 	var arrows []ScanArrowBatch
@@ -772,7 +793,9 @@ func decodeFetchedLog(
 			return fetchOffset, nil, nil, err
 		}
 		payload := encoded[:size]
-		batchNext, batchRows, arrowBatch, err := decodeFetchedBatch(schema, bucket, next, payload)
+		batchNext, batchRows, arrowBatch, err := decodeFetchedBatch(
+			schema, bucket, next, payload, compacted,
+		)
 		if err != nil {
 			releaseScanArrows(arrows)
 			return fetchOffset, nil, nil, err
@@ -803,8 +826,9 @@ func decodeFetchedBatch(
 	bucket int32,
 	current int64,
 	payload []byte,
+	compacted bool,
 ) (int64, []ScanRecord, *ScanArrowBatch, error) {
-	batch, rowErr := DecodeLogBatchRows(schema, payload, true)
+	batch, rowErr := DecodeLogBatchRows(schema, payload, compacted)
 	if rowErr == nil {
 		rows := make([]ScanRecord, len(batch.Records))
 		for index, record := range batch.Records {
