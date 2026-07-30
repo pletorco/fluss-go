@@ -107,9 +107,9 @@ func TestClientOptions(t *testing.T) {
 	if err := WithTransportLimits(transport.Config{MaxFrameSize: 1})(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := WithAuthenticator(func(context.Context, []byte) (string, []byte, error) {
-		return "test", nil, nil
-	})(&cfg); err != nil || cfg.auth == nil {
+	if err := WithAuthenticator(func() (Authenticator, error) {
+		return &testAuthenticator{protocol: "test", completeAfter: 1}, nil
+	})(&cfg); err != nil || cfg.authFactory == nil {
 		t.Fatalf("WithAuthenticator() = %#v, %v", cfg, err)
 	}
 	for _, option := range []Option{
@@ -145,21 +145,94 @@ func TestClientRequestErrors(t *testing.T) {
 
 func TestAuthenticateDoesNotExposeToken(t *testing.T) {
 	token := []byte("top-secret")
+	requests := 0
 	requester := requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		requests++
+		message := request.(*fmsg.MessageRequest).Message().(*fmsg.AuthenticateRequest)
+		if message.GetProtocol() != "test" || string(message.GetToken()) != string(token) {
+			t.Fatalf("authenticate request = protocol %q token %q", message.GetProtocol(), message.GetToken())
+		}
 		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-		if request.APIKey() == fmsg.APIKeyAuthenticate {
-			message := response.Message().(*fmsg.AuthenticateResponse)
-			message.Challenge = []byte("challenge")
+		return response, nil
+	})
+	client := newClient(requester, nil)
+	client.versions[fmsg.APIKeyAuthenticate] = 0
+	err := client.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, tokens: [][]byte{token}, completeAfter: 1})
+	if err != nil {
+		t.Fatalf("authenticate() error = %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("authenticate requests = %d, want 1", requests)
+	}
+}
+
+func TestAuthenticateCompletesMultiStepExchange(t *testing.T) {
+	var got [][]byte
+	requester := requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		got = append(got, append([]byte(nil), request.(*fmsg.MessageRequest).Message().(*fmsg.AuthenticateRequest).GetToken()...))
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		if len(got) == 1 {
+			response.Message().(*fmsg.AuthenticateResponse).Challenge = []byte("challenge")
 		}
 		return response, nil
 	})
 	client := newClient(requester, nil)
 	client.versions[fmsg.APIKeyAuthenticate] = 0
-	err := client.authenticate(context.Background(), func(context.Context, []byte) (string, []byte, error) {
-		return "test", token, nil
-	})
-	if err != nil {
+	auth := &testAuthenticator{protocol: "test", initial: true, tokens: [][]byte{[]byte("initial"), []byte("reply")}, completeAfter: 2}
+	if err := client.authenticate(context.Background(), auth); err != nil {
 		t.Fatalf("authenticate() error = %v", err)
+	}
+	if got, want := string(got[0])+":"+string(got[1]), "initial:reply"; got != want {
+		t.Fatalf("tokens = %q, want %q", got, want)
+	}
+}
+
+func TestAuthenticateWaitsForServerChallengeWhenNeeded(t *testing.T) {
+	requests := 0
+	requester := requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		requests++
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		if requests == 1 {
+			if got := request.(*fmsg.MessageRequest).Message().(*fmsg.AuthenticateRequest).GetToken(); len(got) != 0 {
+				t.Fatalf("initial token = %q, want empty", got)
+			}
+			response.Message().(*fmsg.AuthenticateResponse).Challenge = []byte("challenge")
+		}
+		return response, nil
+	})
+	client := newClient(requester, nil)
+	client.versions[fmsg.APIKeyAuthenticate] = 0
+	auth := &testAuthenticator{protocol: "test", initial: false, tokens: [][]byte{[]byte("response")}, completeAfter: 1}
+	if err := client.authenticate(context.Background(), auth); err != nil {
+		t.Fatalf("authenticate() error = %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("authenticate requests = %d, want 2", requests)
+	}
+}
+
+func TestAuthenticateErrors(t *testing.T) {
+	unsupported := newClient(requesterFunc(func(context.Context, fmsg.Request) (fmsg.Response, error) {
+		return nil, nil
+	}), nil)
+	if err := unsupported.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, tokens: [][]byte{[]byte("token")}, completeAfter: 1}); !errors.Is(err, ErrUnsupportedAPI) {
+		t.Fatalf("unsupported error = %v", err)
+	}
+	client := newClient(requesterFunc(func(context.Context, fmsg.Request) (fmsg.Response, error) {
+		return fmsg.NewResponse(fmsg.APIKeyLookup, 0)
+	}), nil)
+	client.versions[fmsg.APIKeyAuthenticate] = 0
+	if err := client.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, tokens: [][]byte{[]byte("token")}, completeAfter: 1}); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("unexpected response error = %v", err)
+	}
+	client.requester = requesterFunc(func(context.Context, fmsg.Request) (fmsg.Response, error) {
+		return fmsg.NewResponse(fmsg.APIKeyAuthenticate, 0)
+	})
+	if err := client.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, tokens: [][]byte{[]byte("token")}}); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("incomplete error = %v", err)
+	}
+	if err := client.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, authenticateErr: context.Canceled}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled error = %v", err)
 	}
 }
 
@@ -193,6 +266,63 @@ func TestOpenNegotiatesOverTransport(t *testing.T) {
 	}
 }
 
+func TestOpenAuthenticatesWithPlain(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer serverConn.Close()
+	var auth *testAuthenticator
+	go func() {
+		id, key, _ := readTransportRequest(t, serverConn)
+		if key != fmsg.APIKeyApiVersions {
+			t.Errorf("first API key = %d, want API_VERSIONS", key)
+			return
+		}
+		apiKey := int32(fmsg.APIKeyApiVersions)
+		minimum, maximum := int32(0), int32(0)
+		authenticateKey := int32(fmsg.APIKeyAuthenticate)
+		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ApiVersions: []*fmsg.PbApiVersion{
+			{ApiKey: &apiKey, MinVersion: &minimum, MaxVersion: &maximum},
+			{ApiKey: &authenticateKey, MinVersion: &minimum, MaxVersion: &maximum},
+		}})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		writeTransportResponse(t, serverConn, id, body)
+
+		id, key, body = readTransportRequest(t, serverConn)
+		if key != fmsg.APIKeyAuthenticate {
+			t.Errorf("second API key = %d, want AUTHENTICATE", key)
+			return
+		}
+		request := &fmsg.AuthenticateRequest{}
+		if err := proto.Unmarshal(body, request); err != nil {
+			t.Error(err)
+			return
+		}
+		if got, want := request.GetProtocol()+":"+string(request.GetToken()), "PLAIN:\x00alice\x00secret"; got != want {
+			t.Errorf("authenticate request = %q, want %q", got, want)
+		}
+		writeTransportResponse(t, serverConn, id, nil)
+	}()
+	client, err := Open(context.Background(),
+		WithSeedBrokers("seed:9123"),
+		WithDialContext(func(context.Context, string, string) (net.Conn, error) { return clientConn, nil }),
+		WithAuthenticator(func() (Authenticator, error) {
+			auth = &testAuthenticator{protocol: "PLAIN", initial: true, tokens: [][]byte{[]byte("\x00alice\x00secret")}, completeAfter: 1}
+			return auth, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if auth == nil || !auth.closed {
+		t.Fatal("Open() did not close the connection authenticator")
+	}
+}
+
 func TestOpenDialFailure(t *testing.T) {
 	_, err := Open(context.Background(), WithSeedBrokers("seed:9123"), WithDialContext(func(context.Context, string, string) (net.Conn, error) {
 		return nil, errors.New("dial failure")
@@ -220,14 +350,39 @@ func TestNegotiationAndAuthenticationErrors(t *testing.T) {
 		return response, nil
 	}), nil)
 	client.versions[fmsg.APIKeyAuthenticate] = 0
-	if err := client.authenticate(context.Background(), func(context.Context, []byte) (string, []byte, error) {
-		return "", nil, errors.New("authentication failure")
-	}); err == nil {
+	if err := client.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, authenticateErr: errors.New("authentication failure")}); err == nil {
 		t.Fatal("authenticate callback error = nil")
 	}
 	if min(2, 1) != 1 {
 		t.Fatal("min() returned the wrong right value")
 	}
+}
+
+type testAuthenticator struct {
+	protocol        string
+	initial         bool
+	tokens          [][]byte
+	completeAfter   int
+	authenticateErr error
+	calls           int
+	closed          bool
+}
+
+func (a *testAuthenticator) Protocol() string         { return a.protocol }
+func (a *testAuthenticator) HasInitialResponse() bool { return a.initial }
+func (a *testAuthenticator) Complete() bool           { return a.completeAfter > 0 && a.calls >= a.completeAfter }
+func (a *testAuthenticator) Close() error             { a.closed = true; return nil }
+
+func (a *testAuthenticator) Authenticate(_ context.Context, _ []byte) ([]byte, error) {
+	if a.authenticateErr != nil {
+		return nil, a.authenticateErr
+	}
+	if a.calls >= len(a.tokens) {
+		return nil, nil
+	}
+	token := append([]byte(nil), a.tokens[a.calls]...)
+	a.calls++
+	return token, nil
 }
 
 func apiVersion(key fmsg.APIKey, minVersion, maxVersion int32) *fmsg.PbApiVersion {
@@ -236,18 +391,27 @@ func apiVersion(key fmsg.APIKey, minVersion, maxVersion int32) *fmsg.PbApiVersio
 }
 
 func readTransportRequestID(t *testing.T, conn net.Conn) int32 {
+	id, _, _ := readTransportRequest(t, conn)
+	return id
+}
+
+func readTransportRequest(t *testing.T, conn net.Conn) (int32, fmsg.APIKey, []byte) {
 	t.Helper()
 	var size [4]byte
 	if _, err := io.ReadFull(conn, size[:]); err != nil {
 		t.Error(err)
-		return 0
+		return 0, 0, nil
 	}
 	frame := make([]byte, binary.BigEndian.Uint32(size[:]))
 	if _, err := io.ReadFull(conn, frame); err != nil {
 		t.Error(err)
-		return 0
+		return 0, 0, nil
 	}
-	return int32(binary.BigEndian.Uint32(frame[4:8]))
+	if len(frame) < 8 {
+		t.Errorf("request frame is too short: %d", len(frame))
+		return 0, 0, nil
+	}
+	return int32(binary.BigEndian.Uint32(frame[4:8])), fmsg.APIKey(binary.BigEndian.Uint16(frame[:2])), append([]byte(nil), frame[8:]...)
 }
 
 func writeTransportResponse(t *testing.T, conn net.Conn, id int32, body []byte) {

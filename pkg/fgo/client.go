@@ -19,11 +19,41 @@ var (
 	ErrClosed         = errors.New("fgo: client closed")
 	ErrUnsupportedAPI = errors.New("fgo: server does not support API")
 	ErrInvalidConfig  = errors.New("fgo: invalid client configuration")
+	ErrAuthentication = errors.New("fgo: authentication failed")
 )
 
 type DialContextFunc func(context.Context, string, string) (net.Conn, error)
 
-type Authenticator func(context.Context, []byte) (protocol string, token []byte, err error)
+// Authenticator performs one Fluss Authenticate challenge exchange. An instance belongs to one
+// server connection and must not be shared by concurrent connections.
+type Authenticator interface {
+	Protocol() string
+	HasInitialResponse() bool
+	Authenticate(context.Context, []byte) ([]byte, error)
+	Complete() bool
+	Close() error
+}
+
+// AuthenticatorFactory creates a fresh authenticator for each server connection.
+type AuthenticatorFactory func() (Authenticator, error)
+
+// AuthenticationError reports whether a failed authentication exchange may be retried on a new
+// connection. Its message intentionally never includes authentication tokens or credentials.
+type AuthenticationError struct {
+	Err       error
+	Retriable bool
+}
+
+func (e *AuthenticationError) Error() string {
+	if e == nil || e.Err == nil {
+		return ErrAuthentication.Error()
+	}
+	return fmt.Sprintf("%s: %v", ErrAuthentication, e.Err)
+}
+
+func (e *AuthenticationError) Unwrap() error { return e.Err }
+
+func (e *AuthenticationError) Is(target error) bool { return target == ErrAuthentication }
 
 type Option func(*config) error
 
@@ -33,7 +63,7 @@ type config struct {
 	version     string
 	dialContext DialContextFunc
 	tlsConfig   *tls.Config
-	auth        Authenticator
+	authFactory AuthenticatorFactory
 	timeout     time.Duration
 	limits      transport.Config
 }
@@ -78,12 +108,12 @@ func WithTLSConfig(tlsConfig *tls.Config) Option {
 	}
 }
 
-func WithAuthenticator(auth Authenticator) Option {
+func WithAuthenticator(factory AuthenticatorFactory) Option {
 	return func(c *config) error {
-		if auth == nil {
+		if factory == nil {
 			return fmt.Errorf("%w: nil authenticator", ErrInvalidConfig)
 		}
-		c.auth = auth
+		c.authFactory = factory
 		return nil
 	}
 }
@@ -145,13 +175,20 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 		_ = conn.Close()
 		return nil, err
 	}
-	client := newClient(requester, requester.Close)
+	close := func() error { return requester.Close() }
+	client := newClient(requester, close)
 	if err := client.negotiate(ctx, cfg.name, cfg.version); err != nil {
 		_ = client.Close()
 		return nil, err
 	}
-	if cfg.auth != nil {
-		if err := client.authenticate(ctx, cfg.auth); err != nil {
+	if cfg.authFactory != nil {
+		auth, err := cfg.authFactory()
+		if err != nil {
+			_ = client.Close()
+			return nil, authenticationError(err, false)
+		}
+		client.close = closeAll(requester.Close, auth.Close)
+		if err := client.authenticate(ctx, auth); err != nil {
 			_ = client.Close()
 			return nil, err
 		}
@@ -231,33 +268,105 @@ func (c *Client) negotiate(ctx context.Context, name, version string) error {
 }
 
 func (c *Client) authenticate(ctx context.Context, auth Authenticator) error {
+	if auth == nil || auth.Protocol() == "" {
+		return authenticationError(fmt.Errorf("invalid authenticator"), false)
+	}
+
+	var token []byte
+	var err error
+	if auth.HasInitialResponse() {
+		token, err = auth.Authenticate(ctx, nil)
+		if err != nil {
+			return authenticationError(err, false)
+		}
+		if token == nil {
+			return authenticationError(fmt.Errorf("initial response is missing"), false)
+		}
+	}
+
+	for step := 0; step < 16; step++ {
+		response, err := c.authenticateRequest(ctx, auth.Protocol(), token)
+		if err != nil {
+			return authenticationError(err, isRetriableAuthenticationError(err))
+		}
+		if response.Challenge == nil {
+			if auth.Complete() {
+				return nil
+			}
+			return authenticationError(fmt.Errorf("server completed exchange before authenticator completed"), false)
+		}
+
+		token, err = auth.Authenticate(ctx, append([]byte(nil), response.Challenge...))
+		if err != nil {
+			return authenticationError(err, false)
+		}
+		if token == nil {
+			if auth.Complete() {
+				return nil
+			}
+			return authenticationError(fmt.Errorf("authenticator returned no response before completion"), false)
+		}
+	}
+	return authenticationError(fmt.Errorf("authentication exchange exceeded 16 steps"), false)
+}
+
+func (c *Client) authenticateRequest(ctx context.Context, protocol string, token []byte) (*fmsg.AuthenticateResponse, error) {
+	c.mu.RLock()
+	if c.closed {
+		c.mu.RUnlock()
+		return nil, ErrClosed
+	}
+	version, ok := c.versions[fmsg.APIKeyAuthenticate]
+	c.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: AUTHENTICATE", ErrUnsupportedAPI)
+	}
 	request, err := fmsg.NewRequest(fmsg.APIKeyAuthenticate, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	response, err := c.Request(ctx, request)
-	if err != nil {
-		return fmt.Errorf("fgo: authentication challenge: %w", err)
-	}
-	challenge, ok := response.Message().(*fmsg.AuthenticateResponse)
-	if !ok {
-		return fmt.Errorf("fgo: authentication challenge: unexpected response")
-	}
-	protocol, token, err := auth(ctx, append([]byte(nil), challenge.Challenge...))
-	if err != nil {
-		return fmt.Errorf("fgo: authenticate: %w", err)
-	}
-	request, err = fmsg.NewRequest(fmsg.APIKeyAuthenticate, 0)
-	if err != nil {
-		return err
+	if err := request.SetVersion(version); err != nil {
+		return nil, err
 	}
 	message := request.Message().(*fmsg.AuthenticateRequest)
 	message.Protocol = proto.String(protocol)
 	message.Token = append([]byte(nil), token...)
-	if _, err := c.Request(ctx, request); err != nil {
-		return fmt.Errorf("fgo: authenticate: %w", err)
+	response, err := c.requester.Request(ctx, request)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	authenticateResponse, ok := response.Message().(*fmsg.AuthenticateResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected authentication response %T", response.Message())
+	}
+	return authenticateResponse, nil
+}
+
+func authenticationError(err error, retriable bool) error {
+	if err == nil {
+		return nil
+	}
+	return &AuthenticationError{Err: err, Retriable: retriable}
+}
+
+func isRetriableAuthenticationError(err error) bool {
+	var authenticationError *AuthenticationError
+	return errors.As(err, &authenticationError) && authenticationError.Retriable
+}
+
+func closeAll(closers ...func() error) func() error {
+	return func() error {
+		var result error
+		for _, close := range closers {
+			if close == nil {
+				continue
+			}
+			if err := close(); err != nil && result == nil {
+				result = err
+			}
+		}
+		return result
+	}
 }
 
 func min(left, right int32) int32 {
