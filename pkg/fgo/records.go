@@ -2,6 +2,7 @@ package fgo
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -21,6 +22,22 @@ func (p PhysicalTablePath) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (p PhysicalTablePath) String() string {
+	if len(p.Partition) == 0 {
+		return p.TablePath.String()
+	}
+	keys := make([]string, 0, len(p.Partition))
+	for key := range p.Partition {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+p.Partition[key])
+	}
+	return p.TablePath.String() + "." + strings.Join(parts, ",")
 }
 
 type TableInfo struct {
