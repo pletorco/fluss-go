@@ -12,8 +12,24 @@ remaining centered on the Apache Fluss table model:
 - `pkg/fgo`: data client for log and primary-key table operations.
 - `pkg/fadm`: administrative client for databases, tables, partitions, and clusters.
 
-Current status: package and public API design. No client implementation has been
-committed yet.
+## Fluss 0.9.1 Feature Matrix
+
+This matrix is the source of truth for public capability claims. A feature is
+only marked complete after its implementation and verification evidence are
+updated here. Protocol-message coverage is not end-user feature parity.
+
+| Area | Status | Evidence and scope |
+| --- | --- | --- |
+| `fmsg` public API registry and protobuf messages | Implemented | Generated from the pinned Fluss 0.9.1 protocol; includes API/version and server-error registries. |
+| Protocol framing and request correlation | Implemented | [`internal/transport`](internal/transport) has bounded framing, cancellation, and protocol tests. |
+| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, and retries safe reads only. Live authentication coverage is tracked in [#27](https://github.com/pletorco/fluss-go/issues/27). |
+| Coordinator/tablet metadata routing | Implemented | [`pkg/fgo/metadata.go`](pkg/fgo/metadata.go) and [`pkg/fgo/metadata_client.go`](pkg/fgo/metadata_client.go) cache table and partition leaders, coalesce refreshes, and reroute once after stale metadata. |
+| Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables and load authoritative schemas through `OpenTable`. |
+| Arrow schema conversion | Partial | Schema conversion is available; Arrow record-batch wire codecs are tracked in [#9](https://github.com/pletorco/fluss-go/issues/9). |
+| Row, key, KV and log record-batch codecs | Planned | No interoperable writer or reader is exposed yet. Tracked in [#24](https://github.com/pletorco/fluss-go/issues/24). |
+| Log writers, scanners, upserts and lookups | Planned | These user operations depend on the record codecs and are tracked in [#10](https://github.com/pletorco/fluss-go/issues/10), [#11](https://github.com/pletorco/fluss-go/issues/11), [#12](https://github.com/pletorco/fluss-go/issues/12), and [#13](https://github.com/pletorco/fluss-go/issues/13). |
+| `fadm` administrative client | Planned | No `pkg/fadm` package is published. Core and advanced administrative APIs are tracked in [#14](https://github.com/pletorco/fluss-go/issues/14) and [#15](https://github.com/pletorco/fluss-go/issues/15). |
+| Live Fluss 0.9.1 compatibility | Not yet verified | Unit, golden, and race tests run in `task verify`; the opt-in live integration harness is tracked in [#27](https://github.com/pletorco/fluss-go/issues/27). Do not infer production compatibility from generated protocol types alone. |
 
 ## Development
 
