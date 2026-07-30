@@ -1,0 +1,33 @@
+Fluss-Go
+Copyright 2026 Pletorco contributors
+
+This distribution includes unmodified Apache Fluss v0.9.1-incubating protocol
+inputs under third_party/apache-fluss. The following notices are retained from
+the upstream Apache Fluss NOTICE file:
+
+Apache Fluss (incubating)
+Copyright 2025-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+Apache Flink
+Copyright 2014-2024 The Apache Software Foundation
+
+Apache Kafka
+Copyright 2012-2024 The Apache Software Foundation
+
+Apache Paimon
+Copyright 2023-2024 The Apache Software Foundation
+
+This project includes code from Project LightProto, developed at Splunk.
+LightProto
+Copyright 2020 Splunk Inc.
+
+This product contains code from the Apache Maven Wrapper Project.
+Apache Maven Wrapper
+Copyright 2013-2025 The Apache Software Foundation
+
+The original idea and initial implementation of the maven-wrapper module is
+derived from the Gradle Wrapper, written by Hans Dockter and Adam Murdoch.
+Copyright 2007 the original author or authors.

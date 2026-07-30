@@ -16,7 +16,7 @@
 | 코드 포맷 | `gofmt` | 모든 Go 소스에 적용한다. |
 | 정적 분석 | `go vet` | 추가 linter는 도입 전에 필요성과 의존성을 검토한다. |
 | 취약점 검사 | `govulncheck` v1.6.0 | 표준 라이브러리와 Go module의 도달 가능한 알려진 취약점을 검사한다. |
-| 저장소 보안 검사 | [Trivy](https://trivy.dev/) v0.70.0 | 의존성 취약점, secret, misconfiguration과 license를 검사한다. |
+| 저장소 보안 검사 | [Trivy](https://trivy.dev/) v0.72.0 | 의존성 취약점, secret, misconfiguration과 license를 검사한다. |
 | 의존성 검토 | GitHub Dependency Review | PR에서 새로 도입되는 취약한 의존성을 차단한다. |
 | 테스트 | `go test` | unit, race, fuzz와 integration 검증을 목적별 task로 제공한다. |
 | 버전 관리 | Git과 GitHub | 모든 변경은 기능 브랜치와 PR로 관리한다. |
@@ -236,7 +236,7 @@
 - `task security:go`는 `govulncheck ./...`를 실행한다.
 - `task security:repo`는 Trivy filesystem scan을 실행한다.
 - `govulncheck`는 v1.6.0으로 고정하고 Go 공식 vulnerability database를 사용한다.
-- Trivy는 v0.70.0으로 고정하고 release checksum을 검증하여 설치한다.
+- Trivy는 v0.72.0으로 고정하고 release checksum을 검증하여 설치한다.
 - 지원하는 최신 Go 1.25 및 1.26 patch release에서 검사하여 표준 라이브러리 취약점도
   확인한다.
 - 도달 가능한 알려진 취약점을 발견하면 severity와 관계없이 CI를 실패시킨다.

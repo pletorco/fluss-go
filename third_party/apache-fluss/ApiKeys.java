@@ -1,0 +1,148 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.fluss.rpc.protocol;
+
+import java.util.Arrays;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import static org.apache.fluss.rpc.protocol.ApiKeys.ApiVisibility.PRIVATE;
+import static org.apache.fluss.rpc.protocol.ApiKeys.ApiVisibility.PUBLIC;
+
+/** Identifiers for all the Fluss wire protocol APIs. */
+public enum ApiKeys {
+    // reserve 0~999 for kafka protocol compatibility
+    API_VERSIONS(1000, 0, 0, PUBLIC),
+    CREATE_DATABASE(1001, 0, 0, PUBLIC),
+    DROP_DATABASE(1002, 0, 0, PUBLIC),
+    LIST_DATABASES(1003, 0, 0, PUBLIC),
+    DATABASE_EXISTS(1004, 0, 0, PUBLIC),
+    CREATE_TABLE(1005, 0, 0, PUBLIC),
+    DROP_TABLE(1006, 0, 0, PUBLIC),
+    GET_TABLE_INFO(1007, 0, 0, PUBLIC),
+    LIST_TABLES(1008, 0, 0, PUBLIC),
+    LIST_PARTITION_INFOS(1009, 0, 0, PUBLIC),
+    TABLE_EXISTS(1010, 0, 0, PUBLIC),
+    GET_TABLE_SCHEMA(1011, 0, 0, PUBLIC),
+    GET_METADATA(1012, 0, 0, PUBLIC),
+    UPDATE_METADATA(1013, 0, 0, PRIVATE),
+    PRODUCE_LOG(1014, 0, 0, PUBLIC),
+    FETCH_LOG(1015, 0, 0, PUBLIC),
+
+    // Version 0: Uses lake's encoder for primary key encoding (legacy behavior).
+    // Version 1: Uses CompactedKeyEncoder for primary key encoding when bucket key differs from
+    //            primary key, enabling prefix lookup support.
+    PUT_KV(1016, 0, 1, PUBLIC),
+
+    // Version 0: Uses lake's encoder for primary key encoding (legacy behavior).
+    // Version 1: Uses CompactedKeyEncoder for primary key encoding when bucket key differs from
+    //            primary key, enabling prefix lookup support.
+    LOOKUP(1017, 0, 1, PUBLIC),
+
+    NOTIFY_LEADER_AND_ISR(1018, 0, 0, PRIVATE),
+    STOP_REPLICA(1019, 0, 0, PRIVATE),
+    ADJUST_ISR(1020, 0, 0, PRIVATE),
+    LIST_OFFSETS(1021, 0, 0, PUBLIC),
+    COMMIT_KV_SNAPSHOT(1022, 0, 0, PRIVATE),
+    GET_LATEST_KV_SNAPSHOTS(1023, 0, 0, PUBLIC),
+    GET_KV_SNAPSHOT_METADATA(1024, 0, 0, PUBLIC),
+    GET_FILESYSTEM_SECURITY_TOKEN(1025, 0, 0, PUBLIC),
+    INIT_WRITER(1026, 0, 0, PUBLIC),
+    COMMIT_REMOTE_LOG_MANIFEST(1027, 0, 0, PRIVATE),
+    NOTIFY_REMOTE_LOG_OFFSETS(1028, 0, 0, PRIVATE),
+    NOTIFY_KV_SNAPSHOT_OFFSET(1029, 0, 0, PRIVATE),
+    COMMIT_LAKE_TABLE_SNAPSHOT(1030, 0, 0, PRIVATE),
+    NOTIFY_LAKE_TABLE_OFFSET(1031, 0, 0, PRIVATE),
+    GET_LAKE_SNAPSHOT(1032, 0, 0, PUBLIC),
+    LIMIT_SCAN(1033, 0, 0, PUBLIC),
+
+    // Version 0: Uses lake's encoder for prefix key encoding (legacy behavior).
+    // Version 1: Uses CompactedKeyEncoder for prefix key encoding when bucket key differs from
+    //            primary key, ensuring encoded bucket key bytes are a prefix of primary key bytes.
+    PREFIX_LOOKUP(1034, 0, 1, PUBLIC),
+
+    GET_DATABASE_INFO(1035, 0, 0, PUBLIC),
+    CREATE_PARTITION(1036, 0, 0, PUBLIC),
+    DROP_PARTITION(1037, 0, 0, PUBLIC),
+    AUTHENTICATE(1038, 0, 0, PUBLIC),
+    CREATE_ACLS(1039, 0, 0, PUBLIC),
+    LIST_ACLS(1040, 0, 0, PUBLIC),
+    DROP_ACLS(1041, 0, 0, PUBLIC),
+    LAKE_TIERING_HEARTBEAT(1042, 0, 0, PRIVATE),
+    CONTROLLED_SHUTDOWN(1043, 0, 0, PRIVATE),
+    ALTER_TABLE(1044, 0, 0, PUBLIC),
+    DESCRIBE_CLUSTER_CONFIGS(1045, 0, 0, PUBLIC),
+    ALTER_CLUSTER_CONFIGS(1046, 0, 0, PUBLIC),
+    ADD_SERVER_TAG(1047, 0, 0, PUBLIC),
+    REMOVE_SERVER_TAG(1048, 0, 0, PUBLIC),
+    REBALANCE(1049, 0, 0, PUBLIC),
+    LIST_REBALANCE_PROGRESS(1050, 0, 0, PUBLIC),
+    CANCEL_REBALANCE(1051, 0, 0, PUBLIC),
+    PREPARE_LAKE_TABLE_SNAPSHOT(1052, 0, 0, PRIVATE),
+    REGISTER_PRODUCER_OFFSETS(1053, 0, 0, PUBLIC),
+    GET_PRODUCER_OFFSETS(1054, 0, 0, PUBLIC),
+    DELETE_PRODUCER_OFFSETS(1055, 0, 0, PUBLIC),
+    ACQUIRE_KV_SNAPSHOT_LEASE(1056, 0, 0, PUBLIC),
+    RELEASE_KV_SNAPSHOT_LEASE(1057, 0, 0, PUBLIC),
+    DROP_KV_SNAPSHOT_LEASE(1058, 0, 0, PUBLIC),
+    GET_TABLE_STATS(1059, 0, 0, PUBLIC);
+
+    private static final Map<Integer, ApiKeys> ID_TO_TYPE =
+            Arrays.stream(ApiKeys.values())
+                    .collect(Collectors.toMap(key -> (int) key.id, Function.identity()));
+
+    /** the permanent and immutable id of an API - this can't change ever. */
+    public final short id;
+
+    public final short lowestSupportedVersion;
+    public final short highestSupportedVersion;
+    public final ApiVisibility visibility;
+
+    ApiKeys(
+            int apiKey,
+            int lowestSupportedVersion,
+            int highestSupportedVersion,
+            ApiVisibility visibility) {
+        this.id = (short) apiKey;
+        this.lowestSupportedVersion = (short) lowestSupportedVersion;
+        this.highestSupportedVersion = (short) highestSupportedVersion;
+        this.visibility = visibility;
+    }
+
+    @Override
+    public String toString() {
+        return name() + "(" + id + ")";
+    }
+
+    public static ApiKeys forId(int id) {
+        return ID_TO_TYPE.get(id);
+    }
+
+    public static boolean hasId(int id) {
+        return ID_TO_TYPE.containsKey(id);
+    }
+
+    /** The API visibility describes who can access the API. */
+    public enum ApiVisibility {
+        // The API is visible to all the clients.
+        PUBLIC,
+        // The API is only used for the internal communication between servers of Fluss cluster.
+        PRIVATE
+    }
+}

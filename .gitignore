@@ -1,0 +1,8 @@
+.env
+sonar-project.properties
+.scannerwork/
+.tools/
+.task/
+coverage.out
+coverage.html
+dist/
