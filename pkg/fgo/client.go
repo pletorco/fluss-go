@@ -1,4 +1,3 @@
-// Package fgo provides the Apache Fluss data-plane client.
 package fgo
 
 import (
@@ -16,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Client lifecycle, protocol support, configuration, and authentication errors.
 var (
 	ErrClosed         = errors.New("fgo: client closed")
 	ErrUnsupportedAPI = errors.New("fgo: server does not support API")
@@ -23,6 +23,7 @@ var (
 	ErrAuthentication = errors.New("fgo: authentication failed")
 )
 
+// DialContextFunc opens one network connection for the client.
 type DialContextFunc func(context.Context, string, string) (net.Conn, error)
 
 // Authenticator performs one Fluss Authenticate challenge exchange. An instance belongs to one
@@ -54,8 +55,10 @@ func (e *AuthenticationError) Error() string {
 
 func (e *AuthenticationError) Unwrap() error { return e.Err }
 
+// Is reports whether target is [ErrAuthentication].
 func (e *AuthenticationError) Is(target error) bool { return target == ErrAuthentication }
 
+// Option configures a [Client].
 type Option func(*config) error
 
 type config struct {
@@ -81,6 +84,7 @@ type RetryPolicy struct {
 	Backoff     func(attempt int) time.Duration
 }
 
+// WithSeedBrokers sets coordinator bootstrap addresses.
 func WithSeedBrokers(seeds ...string) Option {
 	return func(c *config) error {
 		if len(seeds) == 0 {
@@ -91,6 +95,7 @@ func WithSeedBrokers(seeds ...string) Option {
 	}
 }
 
+// WithClientIdentity sets the name and version sent during API negotiation.
 func WithClientIdentity(name, version string) Option {
 	return func(c *config) error {
 		if name == "" || version == "" {
@@ -101,6 +106,7 @@ func WithClientIdentity(name, version string) Option {
 	}
 }
 
+// WithDialContext replaces the network dialer.
 func WithDialContext(dial DialContextFunc) Option {
 	return func(c *config) error {
 		if dial == nil {
@@ -111,6 +117,7 @@ func WithDialContext(dial DialContextFunc) Option {
 	}
 }
 
+// WithTLSConfig enables TLS using a clone of tlsConfig.
 func WithTLSConfig(tlsConfig *tls.Config) Option {
 	return func(c *config) error {
 		if tlsConfig == nil {
@@ -121,6 +128,8 @@ func WithTLSConfig(tlsConfig *tls.Config) Option {
 	}
 }
 
+// WithAuthenticator enables authentication with a fresh mechanism instance
+// for each server connection.
 func WithAuthenticator(factory AuthenticatorFactory) Option {
 	return func(c *config) error {
 		if factory == nil {
@@ -131,6 +140,7 @@ func WithAuthenticator(factory AuthenticatorFactory) Option {
 	}
 }
 
+// WithDialTimeout bounds each connection attempt.
 func WithDialTimeout(timeout time.Duration) Option {
 	return func(c *config) error {
 		if timeout <= 0 {
@@ -141,6 +151,7 @@ func WithDialTimeout(timeout time.Duration) Option {
 	}
 }
 
+// WithTransportLimits sets request and response frame limits.
 func WithTransportLimits(limits transport.Config) Option {
 	return func(c *config) error {
 		if limits.MaxFrameSize != 0 && limits.MaxFrameSize < 5 {
@@ -154,6 +165,8 @@ func WithTransportLimits(limits transport.Config) Option {
 	}
 }
 
+// WithRetryPolicy configures bounded retries for safe read-only requests.
+// Mutations are not blindly retried.
 func WithRetryPolicy(policy RetryPolicy) Option {
 	return func(c *config) error {
 		if policy.MaxAttempts < 1 {
@@ -167,6 +180,8 @@ func WithRetryPolicy(policy RetryPolicy) Option {
 	}
 }
 
+// WithMetricsObserver registers a synchronous bounded-cardinality event
+// observer. Observer panics are isolated from client operations.
 func WithMetricsObserver(observer MetricsObserver) Option {
 	return func(c *config) error {
 		if observer == nil {
@@ -177,6 +192,8 @@ func WithMetricsObserver(observer MetricsObserver) Option {
 	}
 }
 
+// Client owns negotiated coordinator and tablet connections.
+// A Client is safe for concurrent use. Close child resources before closing it.
 type Client struct {
 	requester        fmsg.Requester
 	close            func() error
@@ -197,6 +214,8 @@ type Client struct {
 	serverType int32
 }
 
+// Open connects to a coordinator, negotiates protocol versions, and returns a
+// shared client.
 func Open(ctx context.Context, options ...Option) (*Client, error) {
 	cfg := config{name: "fluss-go", version: "dev", timeout: 10 * time.Second, retry: RetryPolicy{MaxAttempts: 1, Backoff: func(int) time.Duration { return 0 }}}
 	for _, option := range options {
@@ -243,8 +262,10 @@ func newClient(requester fmsg.Requester, close func() error) *Client {
 	return &Client{requester: requester, close: close, versions: make(map[fmsg.APIKey]int16)}
 }
 
+// Requester exposes the low-level protocol requester implemented by the client.
 func (c *Client) Requester() fmsg.Requester { return c }
 
+// Request sends a coordinator-scoped protocol request.
 func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {
 	if request == nil {
 		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
@@ -336,6 +357,8 @@ func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 	return response, nil
 }
 
+// Close stops token refresh and closes all managed connections.
+// Close is idempotent.
 func (c *Client) Close() error {
 	if c.tokenManager != nil {
 		c.tokenManager.Stop()

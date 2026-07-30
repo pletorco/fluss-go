@@ -7,6 +7,7 @@ import (
 	"sync"
 )
 
+// Metadata lookup and routing errors.
 var (
 	ErrUnknownTable     = errors.New("fgo: unknown table")
 	ErrUnknownPartition = errors.New("fgo: unknown partition")
@@ -14,6 +15,7 @@ var (
 	ErrNoBucketLeader   = errors.New("fgo: bucket has no tablet leader")
 )
 
+// TablePath identifies a logical table by database and table name.
 type TablePath struct {
 	Database string
 	Table    string
@@ -21,6 +23,7 @@ type TablePath struct {
 
 func (p TablePath) String() string { return p.Database + "." + p.Table }
 
+// Validate checks that both path components are present.
 func (p TablePath) Validate() error {
 	if p.Database == "" || p.Table == "" {
 		return fmt.Errorf("%w: table path requires database and table", ErrInvalidConfig)
@@ -28,12 +31,14 @@ func (p TablePath) Validate() error {
 	return nil
 }
 
+// Node identifies one coordinator or tablet endpoint.
 type Node struct {
 	ID      int32
 	Address string
 	Role    ServerRole
 }
 
+// TableMetadata contains table IDs, bucket leaders, and named partitions.
 type TableMetadata struct {
 	Path       TablePath
 	ID         int64
@@ -55,18 +60,22 @@ type PartitionMetadata struct {
 	tablets     map[int32]Node
 }
 
+// Metadata is an immutable snapshot of coordinator, tablet, and table routing.
 type Metadata struct {
 	Coordinator Node
 	Tablets     map[int32]Node
 	Tables      map[TablePath]TableMetadata
 }
 
+// MetadataFetcher loads authoritative metadata for one logical table.
 type MetadataFetcher func(context.Context, TablePath) (TableMetadata, error)
 
 // PhysicalMetadataFetcher refreshes a single named partition. It is optional because a table
 // metadata response can include all of its partitions.
 type PhysicalMetadataFetcher func(context.Context, PhysicalTablePath) (PartitionMetadata, error)
 
+// Router caches table and partition leaders and coalesces concurrent refreshes.
+// A Router is safe for concurrent use.
 type Router struct {
 	mu               sync.RWMutex
 	metadata         Metadata
@@ -86,6 +95,7 @@ type partitionMetadataFlight struct {
 	err  error
 }
 
+// NewRouter creates an empty metadata router.
 func NewRouter(coordinator Node, fetch MetadataFetcher) *Router {
 	return &Router{
 		metadata:         Metadata{Coordinator: coordinator, Tablets: make(map[int32]Node), Tables: make(map[TablePath]TableMetadata)},
@@ -104,12 +114,15 @@ func (r *Router) WithPhysicalMetadataFetcher(fetch PhysicalMetadataFetcher) *Rou
 	return r
 }
 
+// Coordinator returns the current coordinator snapshot.
 func (r *Router) Coordinator() Node {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.metadata.Coordinator
 }
 
+// Route returns the current tablet leader for a logical table bucket,
+// refreshing missing metadata once.
 func (r *Router) Route(ctx context.Context, path TablePath, bucket int32) (Node, error) {
 	if err := path.Validate(); err != nil {
 		return Node{}, err
@@ -147,6 +160,7 @@ func (r *Router) RoutePhysical(ctx context.Context, path PhysicalTablePath, buck
 	return Node{}, fmt.Errorf("%w: %s bucket %d", ErrUnknownBucket, path, bucket)
 }
 
+// Refresh replaces cached metadata for path with an authoritative snapshot.
 func (r *Router) Refresh(ctx context.Context, path TablePath) error {
 	return r.refresh(ctx, path, true)
 }
@@ -290,6 +304,7 @@ func (r *Router) applyPhysicalMetadata(path PhysicalTablePath, key string, parti
 	return nil
 }
 
+// Invalidate removes cached metadata for path.
 func (r *Router) Invalidate(path TablePath) {
 	r.mu.Lock()
 	next := cloneMetadata(r.metadata)

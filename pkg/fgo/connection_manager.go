@@ -15,12 +15,15 @@ import (
 // ServerRole identifies a Fluss RPC server advertised by ApiVersions.
 type ServerRole int32
 
+// Fluss server roles reported during API negotiation.
 const (
+	// UnknownServerRole represents an unrecognized server role.
 	UnknownServerRole ServerRole = -1
 	Coordinator       ServerRole = 1
 	TabletServer      ServerRole = 2
 )
 
+// ErrServerRole reports that a connection negotiated an unexpected server role.
 var ErrServerRole = errors.New("fgo: unexpected server role")
 
 type connectionKey struct {

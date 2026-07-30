@@ -8,6 +8,7 @@ import (
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 )
 
+// Server-side error classifications used with errors.Is.
 var (
 	ErrServerFailure = errors.New("fgo: server failure")
 	ErrAuthorization = errors.New("fgo: authorization failure")
@@ -45,6 +46,7 @@ func (e *ServerError) Error() string {
 	return fmt.Sprintf("%s: %s%s: %s", ErrServerFailure, e.Name, location, e.Message)
 }
 
+// Is reports whether target matches the server error classification.
 func (e *ServerError) Is(target error) bool {
 	return target == ErrServerFailure || (e != nil && target == e.category)
 }

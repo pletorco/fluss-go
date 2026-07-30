@@ -12,8 +12,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ErrNotFound reports a missing primary-key row.
 var ErrNotFound = fmt.Errorf("fgo: record not found")
 
+// LookupConfig controls batching, concurrency, partition routing, and optional
+// atomic insertion of missing rows.
 type LookupConfig struct {
 	MaxBatchKeys      int
 	MaxConcurrent     int
@@ -23,8 +26,10 @@ type LookupConfig struct {
 	Acks              int32
 }
 
+// LookupOption configures a [LookupClient].
 type LookupOption func(*LookupConfig) error
 
+// WithLookupBatch sets the maximum keys per request and concurrent requests.
 func WithLookupBatch(keys, concurrent int) LookupOption {
 	return func(config *LookupConfig) error {
 		if keys <= 0 || concurrent <= 0 {
@@ -35,6 +40,7 @@ func WithLookupBatch(keys, concurrent int) LookupOption {
 	}
 }
 
+// WithLookupPartition routes lookups to the named physical partition.
 func WithLookupPartition(partition string) LookupOption {
 	return func(config *LookupConfig) error {
 		path := PhysicalTablePath{TablePath: TablePath{Database: "d", Table: "t"}, Partition: partition}
@@ -59,6 +65,7 @@ func WithLookupInsertIfNotExists(timeout time.Duration, acks int32) LookupOption
 	}
 }
 
+// LookupResult is the outcome associated with one requested primary key.
 type LookupResult struct {
 	Key    PrimaryKey
 	Row    Row
@@ -67,6 +74,7 @@ type LookupResult struct {
 	Err    error
 }
 
+// PrefixLookupResult contains rows matching one leading primary-key prefix.
 type PrefixLookupResult struct {
 	Prefix PrimaryKey
 	Rows   []Row
@@ -202,6 +210,8 @@ func cloneBytesList(values [][]byte) [][]byte {
 	return cloned
 }
 
+// LookupClient performs batched point and prefix lookups for a primary-key
+// table. A LookupClient is safe for concurrent calls and must be closed.
 type LookupClient struct {
 	table       Table
 	path        PhysicalTablePath
@@ -217,6 +227,7 @@ type LookupClient struct {
 	cancel context.CancelFunc
 }
 
+// NewLookupClient creates a point and prefix lookup client for table.
 func (c *Client) NewLookupClient(ctx context.Context, table Table, options ...LookupOption) (*LookupClient, error) {
 	return newLookupClient(ctx, clientLookupBackend{client: c}, table, options...)
 }
@@ -296,6 +307,7 @@ type lookupInput struct {
 	encoded []byte
 }
 
+// Lookup returns one result for each input key in input order.
 func (c *LookupClient) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupResult {
 	results := make([]LookupResult, len(keys))
 	if len(keys) == 0 {
@@ -324,6 +336,8 @@ func (c *LookupClient) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupR
 	return results
 }
 
+// PrefixLookup returns one result for each leading primary-key prefix in input
+// order.
 func (c *LookupClient) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey) []PrefixLookupResult {
 	results := make([]PrefixLookupResult, len(prefixes))
 	if len(prefixes) == 0 {
@@ -587,6 +601,8 @@ func setPrefixErrors(inputs []lookupInput, results []PrefixLookupResult, err err
 	}
 }
 
+// Close cancels active requests and rejects new lookups.
+// Close is idempotent.
 func (c *LookupClient) Close() error {
 	c.mu.Lock()
 	if !c.closed {

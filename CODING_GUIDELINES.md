@@ -19,6 +19,7 @@
 | 저장소 보안 검사 | [Trivy](https://trivy.dev/) v0.72.0 | 의존성 취약점, secret, misconfiguration과 license를 검사한다. |
 | 의존성 검토 | GitHub Dependency Review | PR에서 새로 도입되는 취약한 의존성을 차단한다. |
 | 테스트 | `go test` | unit, race, fuzz와 integration 검증을 목적별 task로 제공한다. |
+| 공개 API 문서 | `pkg.go.dev`, `go doc` | package manual, exported API comment와 실행 가능한 example을 검증한다. |
 | 버전 관리 | Git과 GitHub | 모든 변경은 기능 브랜치와 PR로 관리한다. |
 
 ### Task 규칙
@@ -213,6 +214,7 @@
 - `task test:race`: 동시성 관련 package의 race test
 - `task test:fuzz`: CI에서 실행 가능한 bounded fuzz smoke test
 - `task test:integration`: Apache Fluss 0.9.1 integration test
+- `task docs:check`: 공개 package manual과 canonical example 검증
 - `task security`: `govulncheck`, Trivy와 의존성 무결성 검사를 포함하는 로컬 보안 gate
 - `task verify`: PR 전에 필요한 formatter, generation, static analysis와 테스트 검증
 - `task ci`: CI에서 사용하는 전체 필수 검증
@@ -298,6 +300,17 @@
   `panic`을 사용하지 않는다.
 - 전역 변경 가능 상태와 암묵적인 초기화를 피한다.
 - 공개 타입과 메서드는 동시 호출 가능 여부, 소유권과 수명 주기를 문서화한다.
+- 각 공개 package는 전용 `doc.go`에 package의 목적, 주요 진입점과 사용 시 주의사항을
+  설명한다.
+- 직접 작성한 exported identifier에는 이름으로 시작하는 정확한 doc comment를 작성한다.
+  생성 도구가 관리하는 소스는 수동으로 수정하지 않는다.
+- 공개 API 문서에는 해당되는 경우 zero value의 유효성, 동시 호출 가능 여부, 자원
+  소유권과 수명, `Close` 책임, context 취소와 부분 실패의 의미를 포함한다.
+- 대표 사용법은 외부 test package의 canonical example로 작성하고 실제 cluster, network,
+  credential에 의존하지 않게 한다. 출력 계약을 보여 줄 필요가 있는 예제만 `Output:`
+  주석으로 실행한다.
+- 공개 API나 사용법을 변경하면 package manual, example과 README의 온라인 문서 링크를
+  함께 검토하고 `task docs:check`로 검증한다.
 - callback이나 사용자 코드는 내부 lock을 잡은 상태에서 호출하지 않는다.
 - channel을 닫는 책임은 channel을 생성하고 송신을 소유한 코드에 둔다.
 - background goroutine에는 명확한 소유자와 종료 조건이 있어야 한다. `Close`, context

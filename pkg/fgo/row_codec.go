@@ -8,6 +8,7 @@ import (
 
 const maxRowBytes = 16 << 20
 
+// ErrMalformedRow reports an invalid compacted or indexed row encoding.
 var ErrMalformedRow = errors.New("fgo: malformed row encoding")
 
 type rowEncoding uint8
@@ -48,6 +49,7 @@ func EncodeCompactedProjectedRow(schema Schema, columns []string, row Row) ([]by
 	return encodeRow(projected, row, compactedEncoding)
 }
 
+// DecodeCompactedProjectedRow decodes compacted values for columns.
 func DecodeCompactedProjectedRow(schema Schema, columns []string, encoded []byte) (Row, error) {
 	projected, err := projectSchema(schema, columns)
 	if err != nil {
@@ -56,6 +58,7 @@ func DecodeCompactedProjectedRow(schema Schema, columns []string, encoded []byte
 	return decodeRow(projected, encoded, compactedEncoding)
 }
 
+// EncodeIndexedProjectedRow encodes indexed values for columns.
 func EncodeIndexedProjectedRow(schema Schema, columns []string, row Row) ([]byte, error) {
 	projected, err := projectSchema(schema, columns)
 	if err != nil {
@@ -64,6 +67,7 @@ func EncodeIndexedProjectedRow(schema Schema, columns []string, row Row) ([]byte
 	return encodeRow(projected, row, indexedEncoding)
 }
 
+// DecodeIndexedProjectedRow decodes indexed values for columns.
 func DecodeIndexedProjectedRow(schema Schema, columns []string, encoded []byte) (Row, error) {
 	projected, err := projectSchema(schema, columns)
 	if err != nil {
@@ -99,6 +103,7 @@ func EncodePrefixKey(schema Schema, prefix PrimaryKey) ([]byte, error) {
 	return encodeKeyColumns(schema, schema.PrimaryKey[:len(prefix)], prefix)
 }
 
+// EncodePrefixLookupKey selects the negotiated PrefixLookup key contract.
 func EncodePrefixLookupKey(schema Schema, prefix PrimaryKey, version int16) ([]byte, error) {
 	if version != 0 && version != 1 {
 		return nil, fmt.Errorf("%w: unsupported PrefixLookup version %d", ErrInvalidConfig, version)

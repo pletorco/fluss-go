@@ -1,4 +1,3 @@
-// Package fmsg contains generated Apache Fluss wire messages and protocol metadata.
 package fmsg
 
 import (
@@ -9,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Protocol construction and decoding errors.
 var (
 	ErrInvalidArgument    = errors.New("fmsg: invalid argument")
 	ErrUnknownAPIKey      = errors.New("fmsg: unknown API key")
@@ -65,6 +65,7 @@ func (r *MessageRequest) Message() proto.Message {
 	return r.message
 }
 
+// APIKey returns the request API key.
 func (r *MessageRequest) APIKey() APIKey {
 	if r == nil {
 		return 0
@@ -72,6 +73,7 @@ func (r *MessageRequest) APIKey() APIKey {
 	return r.api.Key
 }
 
+// Version returns the negotiated request version.
 func (r *MessageRequest) Version() int16 {
 	if r == nil {
 		return 0
@@ -91,6 +93,7 @@ func (r *MessageRequest) SetVersion(version int16) error {
 	return nil
 }
 
+// Marshal validates and serializes the generated protobuf request.
 func (r *MessageRequest) Marshal() ([]byte, error) {
 	if r == nil || r.message == nil {
 		return nil, fmt.Errorf("%w: nil request message", ErrInvalidArgument)
@@ -102,6 +105,7 @@ func (r *MessageRequest) Marshal() ([]byte, error) {
 	return body, nil
 }
 
+// NewResponse creates the response paired with the request API and version.
 func (r *MessageRequest) NewResponse() Response {
 	if r == nil {
 		return nil
@@ -125,6 +129,7 @@ func NewResponse(key APIKey, version int16) (*MessageResponse, error) {
 	return &MessageResponse{api: api, version: version, message: newResponseProto(key)}, nil
 }
 
+// APIKey returns the response API key.
 func (r *MessageResponse) APIKey() APIKey {
 	if r == nil {
 		return 0
@@ -132,6 +137,7 @@ func (r *MessageResponse) APIKey() APIKey {
 	return r.api.Key
 }
 
+// Version returns the negotiated response version.
 func (r *MessageResponse) Version() int16 {
 	if r == nil {
 		return 0
@@ -139,6 +145,7 @@ func (r *MessageResponse) Version() int16 {
 	return r.version
 }
 
+// Message returns the generated protobuf response.
 func (r *MessageResponse) Message() proto.Message {
 	if r == nil {
 		return nil
@@ -146,6 +153,7 @@ func (r *MessageResponse) Message() proto.Message {
 	return r.message
 }
 
+// Unmarshal decodes body into the generated protobuf response.
 func (r *MessageResponse) Unmarshal(body []byte) error {
 	if r == nil || r.message == nil {
 		return fmt.Errorf("%w: nil response message", ErrInvalidArgument)

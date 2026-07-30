@@ -16,8 +16,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ScanOffsetKind identifies how a scanner resolves its initial position.
 type ScanOffsetKind uint8
 
+// Supported initial-position strategies for log scans.
 const (
 	ScanFromOffset ScanOffsetKind = iota
 	ScanFromEarliest
@@ -25,19 +27,28 @@ const (
 	ScanFromTimestamp
 )
 
+// ScanOffset describes an explicit, symbolic, or timestamp-based start.
 type ScanOffset struct {
 	Kind      ScanOffsetKind
 	Offset    int64
 	Timestamp time.Time
 }
 
+// AtOffset starts at an explicit inclusive log offset.
 func AtOffset(offset int64) ScanOffset { return ScanOffset{Kind: ScanFromOffset, Offset: offset} }
-func Earliest() ScanOffset             { return ScanOffset{Kind: ScanFromEarliest} }
-func Latest() ScanOffset               { return ScanOffset{Kind: ScanFromLatest} }
+
+// Earliest starts at the oldest available log offset.
+func Earliest() ScanOffset { return ScanOffset{Kind: ScanFromEarliest} }
+
+// Latest starts at the current log end.
+func Latest() ScanOffset { return ScanOffset{Kind: ScanFromLatest} }
+
+// AtTimestamp starts at the first offset whose timestamp is not before timestamp.
 func AtTimestamp(timestamp time.Time) ScanOffset {
 	return ScanOffset{Kind: ScanFromTimestamp, Timestamp: timestamp}
 }
 
+// Validate checks that exactly the fields required by Kind are set.
 func (s ScanOffset) Validate() error {
 	switch s.Kind {
 	case ScanFromOffset:
@@ -58,6 +69,8 @@ func (s ScanOffset) Validate() error {
 	return nil
 }
 
+// LogScannerConfig controls projection, partition selection, fetch limits, and
+// optional completion bounds.
 type LogScannerConfig struct {
 	Projection      []string
 	Partition       string
@@ -69,8 +82,10 @@ type LogScannerConfig struct {
 	StoppingOffsets map[int32]int64
 }
 
+// LogScannerOption configures a [LogScanner].
 type LogScannerOption func(*LogScannerConfig) error
 
+// WithScanProjection selects result columns in the requested order.
 func WithScanProjection(columns ...string) LogScannerOption {
 	return func(config *LogScannerConfig) error {
 		if len(columns) == 0 {
@@ -81,6 +96,7 @@ func WithScanProjection(columns ...string) LogScannerOption {
 	}
 }
 
+// WithScanPartition scans the named physical partition.
 func WithScanPartition(partition string) LogScannerOption {
 	return func(config *LogScannerConfig) error {
 		path := PhysicalTablePath{TablePath: TablePath{Database: "d", Table: "t"}, Partition: partition}
@@ -104,6 +120,7 @@ func WithScanPartitionSpec(schema Schema, spec PartitionSpec) LogScannerOption {
 	}
 }
 
+// WithScanLimits sets aggregate and per-bucket fetch byte limits and wait time.
 func WithScanLimits(maxBytes, maxBucketBytes, minBytes int32, maxWait time.Duration) LogScannerOption {
 	return func(config *LogScannerConfig) error {
 		if maxBytes <= 0 || maxBucketBytes <= 0 || minBytes < 0 || minBytes > maxBytes ||
@@ -143,23 +160,29 @@ func WithScanStoppingOffsets(offsets map[int32]int64) LogScannerOption {
 	}
 }
 
+// ErrWakeup reports that [LogScanner.Wakeup] interrupted a poll.
 var ErrWakeup = errors.New("fgo: log scanner wakeup")
 
+// ScanRecord associates one decoded row record with its source bucket.
 type ScanRecord struct {
 	Bucket int32
 	Record Record
 }
 
+// ScanArrowBatch associates one owned Arrow batch with its source bucket.
 type ScanArrowBatch struct {
 	Bucket int32
 	Batch  ArrowLogBatch
 }
 
+// BucketScanError reports a bucket-local failure in a partial scan result.
 type BucketScanError struct {
 	Bucket int32
 	Err    error
 }
 
+// ScanResult contains rows, owned Arrow batches, and per-bucket outcomes from
+// one poll.
 type ScanResult struct {
 	Records       []ScanRecord
 	ArrowBatches  []ScanArrowBatch
@@ -168,6 +191,8 @@ type ScanResult struct {
 	Done          bool
 }
 
+// Release frees Arrow records owned by the result.
+// Release is safe to call more than once.
 func (r *ScanResult) Release() {
 	if r == nil {
 		return
@@ -334,6 +359,8 @@ func remoteLogFetchInfo(info *fmsg.PbRemoteLogFetchInfo) *RemoteLogFetchInfo {
 	return result
 }
 
+// LogScanner polls ordered records from subscribed log buckets.
+// Poll calls are serialized; Wakeup and Close may be called concurrently.
 type LogScanner struct {
 	table       Table
 	path        PhysicalTablePath
@@ -359,6 +386,7 @@ type LogScanner struct {
 	wakePending bool
 }
 
+// NewLogScanner creates a scanner subscribed to all current buckets at start.
 func (c *Client) NewLogScanner(ctx context.Context, table Table, start ScanOffset, options ...LogScannerOption) (*LogScanner, error) {
 	scanner, err := newLogScanner(ctx, clientLogScannerBackend{client: c}, table, start, options...)
 	if err == nil {
@@ -470,8 +498,10 @@ func (s *LogScanner) initializeOffsets(ctx context.Context, start ScanOffset) er
 	return nil
 }
 
+// Schema returns the result schema after projection.
 func (s *LogScanner) Schema() Schema { return s.schema }
 
+// Subscribe adds or resets one bucket at start.
 func (s *LogScanner) Subscribe(ctx context.Context, bucket int32, start ScanOffset) error {
 	if !s.hasBucket(bucket) {
 		return fmt.Errorf("%w: %d", ErrUnknownBucket, bucket)
@@ -493,6 +523,7 @@ func (s *LogScanner) Subscribe(ctx context.Context, bucket int32, start ScanOffs
 	return nil
 }
 
+// Unsubscribe removes bucket from subsequent polls.
 func (s *LogScanner) Unsubscribe(bucket int32) {
 	s.mu.Lock()
 	delete(s.offset, bucket)
@@ -500,6 +531,7 @@ func (s *LogScanner) Unsubscribe(bucket int32) {
 	s.mu.Unlock()
 }
 
+// Poll waits for records, a terminal bound, wakeup, close, or ctx cancellation.
 func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 	if ctx == nil {
 		return ScanResult{}, fmt.Errorf("%w: nil context", ErrInvalidConfig)
@@ -798,6 +830,8 @@ func (s *LogScanner) Wakeup() {
 	s.mu.Unlock()
 }
 
+// Close stops the scanner and interrupts an active poll.
+// Close is idempotent.
 func (s *LogScanner) Close() error {
 	s.mu.Lock()
 	s.closed = true

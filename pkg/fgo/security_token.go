@@ -13,11 +13,14 @@ import (
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 )
 
+// Filesystem security-token availability errors.
 var (
 	ErrFileSystemSecurityToken       = errors.New("fgo: filesystem security token unavailable")
 	ErrSecurityTokenProviderDisabled = errors.New("fgo: filesystem security token provider disabled")
 )
 
+// FileSystemSecurityToken contains temporary filesystem credentials.
+// String and GoString always redact Token.
 type FileSystemSecurityToken struct {
 	Schema         string
 	Token          []byte
@@ -26,6 +29,7 @@ type FileSystemSecurityToken struct {
 	Revoked        bool
 }
 
+// Clone returns a deep copy suitable for handing to another component.
 func (t FileSystemSecurityToken) Clone() FileSystemSecurityToken {
 	cloned := t
 	cloned.Token = append([]byte(nil), t.Token...)
@@ -43,32 +47,44 @@ func (t FileSystemSecurityToken) String() string {
 	)
 }
 
+// GoString returns a redacted Go-syntax representation.
 func (t FileSystemSecurityToken) GoString() string { return t.String() }
 
+// FileSystemSecurityTokenProvider acquires temporary filesystem credentials.
 type FileSystemSecurityTokenProvider interface {
 	AcquireFileSystemSecurityToken(context.Context) (FileSystemSecurityToken, error)
 }
 
+// FileSystemSecurityTokenProviderFunc adapts a function to
+// [FileSystemSecurityTokenProvider].
 type FileSystemSecurityTokenProviderFunc func(context.Context) (FileSystemSecurityToken, error)
 
+// AcquireFileSystemSecurityToken calls f.
 func (f FileSystemSecurityTokenProviderFunc) AcquireFileSystemSecurityToken(
 	ctx context.Context,
 ) (FileSystemSecurityToken, error) {
 	return f(ctx)
 }
 
+// FileSystemSecurityTokenReceiver receives a clone after each successful
+// acquisition.
 type FileSystemSecurityTokenReceiver interface {
 	ReceiveFileSystemSecurityToken(FileSystemSecurityToken) error
 }
 
+// FileSystemSecurityTokenReceiverFunc adapts a function to
+// [FileSystemSecurityTokenReceiver].
 type FileSystemSecurityTokenReceiverFunc func(FileSystemSecurityToken) error
 
+// ReceiveFileSystemSecurityToken calls f with token.
 func (f FileSystemSecurityTokenReceiverFunc) ReceiveFileSystemSecurityToken(
 	token FileSystemSecurityToken,
 ) error {
 	return f(token)
 }
 
+// FileSystemSecurityTokenRefreshConfig controls renewal timing and bounded
+// retry backoff. Zero fields use documented defaults.
 type FileSystemSecurityTokenRefreshConfig struct {
 	RenewalRatio    float64
 	RetryBackoff    time.Duration
@@ -116,6 +132,8 @@ type securityTokenSettings struct {
 	receivers []FileSystemSecurityTokenReceiver
 }
 
+// WithFileSystemSecurityTokenRefresh enables coordinator-backed token
+// acquisition and optional receivers.
 func WithFileSystemSecurityTokenRefresh(
 	config FileSystemSecurityTokenRefreshConfig,
 	receivers ...FileSystemSecurityTokenReceiver,
@@ -123,6 +141,7 @@ func WithFileSystemSecurityTokenRefresh(
 	return withFileSystemSecurityTokenProvider(nil, config, receivers)
 }
 
+// WithFileSystemSecurityTokenProvider enables refresh through a custom provider.
 func WithFileSystemSecurityTokenProvider(
 	provider FileSystemSecurityTokenProvider,
 	refresh FileSystemSecurityTokenRefreshConfig,
@@ -426,6 +445,8 @@ func (c *Client) fetchFileSystemSecurityToken(ctx context.Context) (FileSystemSe
 	return token, nil
 }
 
+// CurrentFileSystemSecurityToken returns a clone of the current valid,
+// non-revoked token.
 func (c *Client) CurrentFileSystemSecurityToken() (FileSystemSecurityToken, bool) {
 	if c.tokenManager == nil {
 		return FileSystemSecurityToken{}, false

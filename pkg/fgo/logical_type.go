@@ -19,6 +19,7 @@ type LogicalType struct {
 	Fields    []LogicalField `json:"fields,omitempty"`
 }
 
+// LogicalField describes one nested field of a ROW logical type.
 type LogicalField struct {
 	Name        string      `json:"name"`
 	Type        LogicalType `json:"field_type"`
@@ -38,6 +39,7 @@ type logicalTypeJSON struct {
 	Fields    []LogicalField `json:"fields,omitempty"`
 }
 
+// MarshalJSON encodes the Fluss logical-type JSON representation.
 func (t LogicalType) MarshalJSON() ([]byte, error) {
 	encoded := logicalTypeJSON{
 		Root: t.Root, Length: t.Length, Precision: t.Precision, Scale: t.Scale,
@@ -49,6 +51,7 @@ func (t LogicalType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(encoded)
 }
 
+// UnmarshalJSON decodes the Fluss logical-type JSON representation.
 func (t *LogicalType) UnmarshalJSON(data []byte) error {
 	var encoded logicalTypeJSON
 	if err := json.Unmarshal(data, &encoded); err != nil {
@@ -66,6 +69,7 @@ func (t *LogicalType) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// JSON validates and encodes the logical type.
 func (t LogicalType) JSON() ([]byte, error) {
 	if err := t.Validate(); err != nil {
 		return nil, err
@@ -73,6 +77,7 @@ func (t LogicalType) JSON() ([]byte, error) {
 	return json.Marshal(t)
 }
 
+// ParseLogicalTypeJSON decodes and validates a logical type.
 func ParseLogicalTypeJSON(data []byte) (LogicalType, error) {
 	var logicalType LogicalType
 	if err := json.Unmarshal(data, &logicalType); err != nil {
@@ -84,6 +89,7 @@ func ParseLogicalTypeJSON(data []byte) (LogicalType, error) {
 	return logicalType, nil
 }
 
+// Validate checks root-specific parameters and nested types.
 func (t LogicalType) Validate() error {
 	switch t.Root {
 	case "BOOLEAN", "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "FLOAT", "DOUBLE", "DATE", "STRING", "BYTES":

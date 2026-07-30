@@ -14,6 +14,7 @@ const (
 	logBatchV1HeaderSize = 52
 )
 
+// ErrMalformedRecordBatch reports an invalid KV, row, or Arrow batch encoding.
 var ErrMalformedRecordBatch = errors.New("fgo: malformed record batch")
 
 // KVRecord is one raw primary-key record. A nil Value represents a delete. Buffers returned by a
@@ -31,6 +32,7 @@ type KVBatch struct {
 	Records       []KVRecord
 }
 
+// Encode serializes the KV batch using the Apache Fluss 0.9.1 layout.
 func (b KVBatch) Encode() ([]byte, error) {
 	if len(b.Records) > int(^uint32(0)>>1) {
 		return nil, fmt.Errorf("%w: too many KV records", ErrMalformedRecordBatch)
@@ -61,6 +63,8 @@ func (b KVBatch) Encode() ([]byte, error) {
 	return encoded, nil
 }
 
+// DecodeKVBatch validates and decodes a KV batch.
+// Returned key and value buffers are owned by the caller.
 func DecodeKVBatch(encoded []byte) (KVBatch, error) {
 	if len(encoded) < kvBatchHeaderSize || len(encoded) > maxRowBytes || encoded[4] != 0 {
 		return KVBatch{}, fmt.Errorf("%w: invalid KV batch header", ErrMalformedRecordBatch)
@@ -123,6 +127,7 @@ type LogBatch struct {
 	Records       []Record
 }
 
+// EncodeRows serializes row records using compacted or indexed encoding.
 func (b LogBatch) EncodeRows(schema Schema, compacted bool) ([]byte, error) {
 	if b.Magic != 0 && b.Magic != 1 {
 		return nil, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, b.Magic)

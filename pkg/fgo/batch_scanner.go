@@ -17,6 +17,7 @@ import (
 // BatchScannerOption configures a bounded current-state or snapshot scan.
 type BatchScannerOption func(*BatchScannerConfig) error
 
+// BatchScannerConfig contains limits and projection for a bounded scan.
 type BatchScannerConfig struct {
 	Limit      int
 	Projection []string
@@ -51,6 +52,8 @@ type BatchResult struct {
 	Done         bool
 }
 
+// Release frees Arrow records owned by the result.
+// Release is safe to call more than once.
 func (r *BatchResult) Release() {
 	if r == nil {
 		return
@@ -84,6 +87,7 @@ type SnapshotBatchProvider interface {
 // SnapshotBatchProviderFunc adapts a function to SnapshotBatchProvider.
 type SnapshotBatchProviderFunc func(context.Context, SnapshotBatchRequest) (SnapshotBatchReader, error)
 
+// OpenSnapshot calls f with the requested snapshot and projection.
 func (f SnapshotBatchProviderFunc) OpenSnapshot(
 	ctx context.Context,
 	request SnapshotBatchRequest,
@@ -183,6 +187,9 @@ func (b clientBatchScanBackend) limitScan(
 	return scanned.GetIsLogTable(), append([]byte(nil), scanned.GetRecords()...), nil
 }
 
+// BatchScanner reads the bounded current state or one immutable snapshot of a
+// table bucket. Poll calls are serialized; call Close to interrupt an active
+// poll and release scanner resources.
 type BatchScanner struct {
 	table      Table
 	bucket     TableBucket
@@ -473,6 +480,7 @@ func (s *BatchScanner) markDone() {
 	s.mu.Unlock()
 }
 
+// Done reports whether the scanner reached its configured bound.
 func (s *BatchScanner) Done() bool {
 	if s == nil {
 		return true
@@ -482,6 +490,8 @@ func (s *BatchScanner) Done() bool {
 	return s.done
 }
 
+// Close stops the scanner and cancels an active poll.
+// Close is idempotent.
 func (s *BatchScanner) Close() error {
 	if s == nil {
 		return nil
