@@ -599,8 +599,50 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	}
 	defer lookup.Close()
 	testPointAndPrefixLookup(t, ctx, lookup)
+	testCurrentBatchScan(t, ctx, client, table)
 	deleteLookupRow(t, ctx, client, table, lookup)
 	testConcurrentInsertLookup(t, ctx, client, table)
+}
+
+func testCurrentBatchScan(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) {
+	t.Helper()
+	buckets, err := client.ResolveTableBuckets(ctx, fgo.PhysicalTablePath{TablePath: table.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := make(map[string]string)
+	for _, bucket := range buckets {
+		scanner, err := client.NewBatchScanner(
+			ctx, table, bucket,
+			fgo.WithBatchLimit(100), fgo.WithBatchProjection("tenant", "name"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			_ = scanner.Close()
+			t.Fatal(err)
+		}
+		for _, row := range result.Rows {
+			found[row[1].(string)] = row[0].(string)
+		}
+		result.Release()
+		if !result.Done {
+			t.Fatalf("current batch scan for bucket %d is not complete", bucket.BucketID)
+		}
+		if err := scanner.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if found["alice"] != "team-a" || found["bob"] != "team-a" || found["carol"] != "team-b" {
+		t.Fatalf("current batch rows = %#v", found)
+	}
 }
 
 func upsertRows(t *testing.T, ctx context.Context, writer *fgo.KVWriter, rows []fgo.Row) {

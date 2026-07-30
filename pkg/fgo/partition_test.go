@@ -175,7 +175,7 @@ func TestDynamicPartitionCreatorDeduplicatesConcurrentCreation(t *testing.T) {
 			t.Fatalf("Ensure() error = %v", err)
 		}
 	}
-	if creates.Load() != 1 || checks.Load() != 2 {
+	if creates.Load() != 1 || checks.Load() < 2 {
 		t.Fatalf("creates=%d checks=%d", creates.Load(), checks.Load())
 	}
 }

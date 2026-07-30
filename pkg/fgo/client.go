@@ -71,6 +71,7 @@ type config struct {
 	observer          MetricsObserver
 	tokens            securityTokenSettings
 	dynamicPartitions *DynamicPartitionCreationConfig
+	snapshotProvider  SnapshotBatchProvider
 }
 
 // RetryPolicy bounds automatic retries of safe, read-only requests.
@@ -186,6 +187,7 @@ type Client struct {
 	observer         MetricsObserver
 	tokenManager     *securityTokenManager
 	partitionCreator *dynamicPartitionCreator
+	snapshotProvider SnapshotBatchProvider
 
 	mu         sync.RWMutex
 	closed     bool
@@ -214,6 +216,7 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 		return nil, err
 	}
 	client.manager = manager
+	client.snapshotProvider = cfg.snapshotProvider
 	client.router = NewRouter(Node{ID: client.serverID, Address: client.address, Role: Coordinator}, client.fetchTableMetadata).
 		WithPhysicalMetadataFetcher(client.fetchPartitionMetadata)
 	if cfg.dynamicPartitions != nil {
