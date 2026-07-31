@@ -54,11 +54,12 @@ tasks:
       - docs:markdown
       - docs:snippets:compile
     cmds:
-      - go run ./cmd/doccheck ./pkg/fmsg ./pkg/fgo ./pkg/fadm ./adapters/s3 ./adapters/otel
+      - go run ./cmd/doccheck ./pkg/fmsg ./pkg/fgo ./pkg/fadm ./adapters/s3 ./adapters/oss ./adapters/otel
       - go doc ./pkg/fmsg >/dev/null
       - go doc ./pkg/fgo >/dev/null
       - go doc ./pkg/fadm >/dev/null
       - go doc ./adapters/s3 >/dev/null
+      - go doc ./adapters/oss >/dev/null
       - go doc ./adapters/otel >/dev/null
 
   docs:markdown:
@@ -81,13 +82,13 @@ tasks:
     desc: Compile all pkg.go.dev examples, including live-cluster workflows
     cmds:
       - echo "Compiling pkg.go.dev examples only; live Fluss workflows are not executed."
-      - go test ./pkg/fmsg ./pkg/fgo ./pkg/fadm ./adapters/s3 ./adapters/otel -run '^$'
+      - go test ./pkg/fmsg ./pkg/fgo ./pkg/fadm ./adapters/s3 ./adapters/oss ./adapters/otel -run '^$'
 
   docs:examples:run:
     desc: Execute deterministic pkg.go.dev examples with expected output
     cmds:
       - echo "Executing deterministic pkg.go.dev examples with Output directives."
-      - go test -v ./pkg/fmsg ./pkg/fgo ./pkg/fadm ./adapters/s3 ./adapters/otel -run '^Example'
+      - go test -v ./pkg/fmsg ./pkg/fgo ./pkg/fadm ./adapters/s3 ./adapters/oss ./adapters/otel -run '^Example'
 
   test:
     desc: Run the complete fast test suite
@@ -149,6 +150,11 @@ tasks:
     desc: Run the opt-in official AWS SDK S3 adapter service test
     cmds:
       - go test -v ./adapters/s3 -run '^TestS3AdapterLive$'
+
+  test:oss:
+    desc: Run the opt-in official Alibaba Cloud OSS SDK adapter service test
+    cmds:
+      - go test -v ./adapters/oss -run '^TestOSSAdapterLive$'
 
   sonar:
     desc: Generate coverage and submit a local SonarQube analysis

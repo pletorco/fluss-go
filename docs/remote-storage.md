@@ -129,9 +129,19 @@ an `aws.Config`, create the reader with `s3.NewFromConfig`, and pass it to
 as AWS credentials. See the [adapter manual](../adapters/s3/README.md) for the
 reviewed SDK version, endpoint guidance, and opt-in service-test variables.
 
-HDFS and Alibaba Cloud OSS remain separate adapter work because their official
-clients, credentials, token semantics, and integration environments require
-independent dependency and security reviews.
+## Alibaba Cloud OSS adapter
+
+The optional [`adapters/oss`](../adapters/oss) package uses the official
+Alibaba Cloud OSS SDK for Go v2. It accepts `oss://bucket/key` locations,
+requests standard exact byte ranges, validates returned lengths and content
+ranges, and preserves SDK error identity. Applications own region, endpoint,
+credential, retry, and SDK client configuration. Opaque Fluss filesystem-token
+bytes are not interpreted as OSS credentials. See the
+[adapter manual](../adapters/oss/README.md) for the reviewed SDK version and
+opt-in service-test variables.
+
+HDFS remains separate adapter work because no maintained Go client currently
+combines context-aware reads, Kerberos, and Hadoop delegation-token injection.
 
 Retries are limited to truncated reads and errors whose type explicitly reports
 temporary or timeout behavior. Authentication, permission, not-found,

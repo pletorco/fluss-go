@@ -10,6 +10,11 @@ breaking changes.
 
 ## [v0.1.0-beta.6] - 2026-07-31
 
+### Added
+
+- Added an optional Alibaba Cloud OSS remote-file adapter based on the official
+  OSS SDK for Go v2.
+
 ### Fixed
 
 - Preserved the reader-side connection failure when a peer closes immediately
