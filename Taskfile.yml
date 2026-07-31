@@ -216,9 +216,10 @@ tasks:
       - vet
       - test
       - test:race
-      - test:fuzz
       - coverage
       - security
+    cmds:
+      - task: test:fuzz
 
   ci:
     desc: Run the CI verification suite
