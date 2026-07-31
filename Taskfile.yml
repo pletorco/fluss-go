@@ -48,6 +48,7 @@ tasks:
   docs:check:
     desc: Verify public package manuals and canonical examples
     cmds:
+      - go run ./cmd/doccheck ./pkg/fmsg ./pkg/fgo ./pkg/fadm
       - go doc ./pkg/fmsg >/dev/null
       - go doc ./pkg/fgo >/dev/null
       - go doc ./pkg/fadm >/dev/null

@@ -12,6 +12,8 @@ breaking changes.
 
 - Expanded pkg.go.dev contracts for typed APIs, extension interfaces,
   configuration, result ownership, partial failures, and pre-v1 stability.
+- Added a CI documentation audit for public packages, declarations, methods,
+  and interface contracts in hand-written Go source.
 
 ## [v0.1.0-beta.2] - 2026-07-31
 
