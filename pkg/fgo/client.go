@@ -221,6 +221,7 @@ type Client struct {
 	partitionCreator *dynamicPartitionCreator
 	snapshotProvider SnapshotBatchProvider
 	remoteFiles      remoteFileSettings
+	schemas          *schemaCache
 
 	mu         sync.RWMutex
 	closed     bool
@@ -273,7 +274,9 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 }
 
 func newClient(requester fmsg.Requester, close func() error) *Client {
-	return &Client{requester: requester, close: close, versions: make(map[fmsg.APIKey]int16)}
+	client := &Client{requester: requester, close: close, versions: make(map[fmsg.APIKey]int16)}
+	client.schemas = newSchemaCache(defaultSchemaCacheEntries, client.fetchSchema)
+	return client
 }
 
 // Requester exposes the low-level protocol requester implemented by the client.
@@ -376,6 +379,9 @@ func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 func (c *Client) Close() error {
 	if c.tokenManager != nil {
 		c.tokenManager.Stop()
+	}
+	if c.schemas != nil {
+		c.schemas.close()
 	}
 	if c.manager != nil {
 		return c.manager.Close()

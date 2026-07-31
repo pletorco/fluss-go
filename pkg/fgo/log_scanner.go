@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
@@ -239,6 +241,13 @@ type logScannerBackend interface {
 
 type clientLogScannerBackend struct{ client *Client }
 
+func (b clientLogScannerBackend) schemaResolver() schemaResolver {
+	if b.client == nil || b.client.schemas == nil {
+		return nil
+	}
+	return b.client
+}
+
 type logFetchRequest struct {
 	path        PhysicalTablePath
 	bucket      int32
@@ -395,6 +404,8 @@ type LogScanner struct {
 	projection  []int32
 	compacted   bool
 	observer    MetricsObserver
+	resolver    schemaResolver
+	dynamic     bool
 
 	pollMu      sync.Mutex
 	mu          sync.RWMutex
@@ -449,7 +460,11 @@ func newLogScanner(
 	scanner := &LogScanner{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, buckets: buckets, schema: table.Schema, offset: make(map[int32]int64, len(buckets)),
-		compacted: true,
+		compacted: true, resolver: resolverFor(backend, table),
+	}
+	_, scanner.dynamic = backend.(schemaResolverProvider)
+	if provider, ok := backend.(schemaResolverProvider); ok && provider.schemaResolver() == nil {
+		scanner.dynamic = false
 	}
 	if strings.EqualFold(strings.TrimSpace(table.Properties["table.log.format"]), string(LogWriteFormatIndexed)) {
 		scanner.compacted = false
@@ -633,9 +648,13 @@ func (s *LogScanner) pollBucket(
 	result *ScanResult,
 ) error {
 	started := metricStart(s.observer)
+	projection := s.projection
+	if s.dynamic {
+		projection = nil
+	}
 	fetched, err := s.backend.fetch(requestCtx, logFetchRequest{
 		path: s.path, bucket: bucket, tableID: s.tableID, partitionID: s.partitionID,
-		offset: offset, projection: s.projection, config: s.config,
+		offset: offset, projection: projection, config: s.config,
 	})
 	fetchDuration := metricDuration(started)
 	if err != nil {
@@ -645,8 +664,16 @@ func (s *LogScanner) pollBucket(
 		})
 		return s.recordFetchError(callerCtx, bucket, err, result)
 	}
-	next, rows, arrows, err := decodeFetchedLogFormat(
-		s.schema, bucket, offset, fetched.records, s.compacted,
+	target := s.table
+	resolver := s.resolver
+	if !s.dynamic && len(s.projection) != 0 {
+		target.Schema = s.schema
+		resolver = fixedSchemaResolver{
+			path: target.Path, schemaID: target.SchemaID, schema: target.Schema,
+		}
+	}
+	next, rows, arrows, err := decodeFetchedLogWithResolver(
+		requestCtx, resolver, target, bucket, offset, fetched.records, s.compacted,
 	)
 	if err != nil {
 		observeMetric(s.observer, MetricEvent{
@@ -655,6 +682,13 @@ func (s *LogScanner) pollBucket(
 		})
 		result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
 		return nil
+	}
+	if s.dynamic {
+		rows = s.projectScanRows(rows)
+		if err := s.projectScanArrows(arrows); err != nil {
+			releaseScanArrows(arrows)
+			return err
+		}
 	}
 	rows, arrows, delivered, boundedNext := s.applyBounds(bucket, rows, arrows, next)
 	result.Records = append(result.Records, rows...)
@@ -934,6 +968,31 @@ func decodeFetchedLogFormat(
 	encoded []byte,
 	compacted bool,
 ) (int64, []ScanRecord, []ScanArrowBatch, error) {
+	table := Table{
+		SchemaID: schemaIDFromFetched(encoded),
+		Path:     TablePath{Database: "_", Table: "_"},
+		Schema:   schema,
+	}
+	return decodeFetchedLogWithResolver(
+		context.Background(),
+		fixedSchemaResolver{path: table.Path, schemaID: table.SchemaID, schema: schema},
+		table,
+		bucket,
+		fetchOffset,
+		encoded,
+		compacted,
+	)
+}
+
+func decodeFetchedLogWithResolver(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	bucket int32,
+	fetchOffset int64,
+	encoded []byte,
+	compacted bool,
+) (int64, []ScanRecord, []ScanArrowBatch, error) {
 	next := fetchOffset
 	var rows []ScanRecord
 	var arrows []ScanArrowBatch
@@ -944,12 +1003,40 @@ func decodeFetchedLogFormat(
 			return fetchOffset, nil, nil, err
 		}
 		payload := encoded[:size]
+		_, _, schemaOffset, err := logBatchHeader(payload)
+		if err != nil {
+			releaseScanArrows(arrows)
+			return fetchOffset, nil, nil, err
+		}
+		schemaID := int32(int16(binary.LittleEndian.Uint16(payload[schemaOffset:])))
+		writerSchema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
+		if err != nil {
+			releaseScanArrows(arrows)
+			return fetchOffset, nil, nil, fmt.Errorf("fgo: resolve log schema %d: %w", schemaID, err)
+		}
 		batchNext, batchRows, arrowBatch, err := decodeFetchedBatch(
-			schema, bucket, next, payload, compacted,
+			writerSchema, bucket, next, payload, compacted,
 		)
 		if err != nil {
 			releaseScanArrows(arrows)
 			return fetchOffset, nil, nil, err
+		}
+		for index := range batchRows {
+			batchRows[index].Record.Value, err = evolveRow(
+				writerSchema, table.Schema, batchRows[index].Record.Value,
+			)
+			if err != nil {
+				releaseScanArrows(arrows)
+				return fetchOffset, nil, nil, err
+			}
+		}
+		if arrowBatch != nil {
+			err = evolveArrowBatch(&arrowBatch.Batch, writerSchema, table.Schema)
+			if err != nil {
+				arrowBatch.Batch.Release()
+				releaseScanArrows(arrows)
+				return fetchOffset, nil, nil, err
+			}
 		}
 		next = batchNext
 		rows = append(rows, batchRows...)
@@ -959,6 +1046,92 @@ func decodeFetchedLogFormat(
 		encoded = encoded[size:]
 	}
 	return next, rows, arrows, nil
+}
+
+func schemaIDFromFetched(encoded []byte) int32 {
+	if len(encoded) < logBatchV0HeaderSize {
+		return 0
+	}
+	size, err := fetchedBatchSize(encoded)
+	if err != nil {
+		return 0
+	}
+	_, _, schemaOffset, err := logBatchHeader(encoded[:size])
+	if err != nil {
+		return 0
+	}
+	return int32(int16(binary.LittleEndian.Uint16(encoded[schemaOffset:])))
+}
+
+func evolveArrowBatch(batch *ArrowLogBatch, source, target Schema) error {
+	mapping, err := schemaColumnMapping(source, target)
+	if err != nil {
+		return err
+	}
+	targetSchema, err := target.ArrowSchema()
+	if err != nil {
+		return err
+	}
+	columns := make([]arrow.Array, len(mapping))
+	var temporary []arrow.Array
+	for index, sourceIndex := range mapping {
+		if sourceIndex < 0 {
+			column := array.MakeArrayOfNull(
+				memory.DefaultAllocator,
+				targetSchema.Field(index).Type,
+				int(batch.Record.NumRows()),
+			)
+			columns[index] = column
+			temporary = append(temporary, column)
+			continue
+		}
+		columns[index] = batch.Record.Column(sourceIndex)
+	}
+	record := array.NewRecordBatch(targetSchema, columns, batch.Record.NumRows())
+	for _, column := range temporary {
+		column.Release()
+	}
+	batch.Record.Release()
+	batch.Record = record
+	return nil
+}
+
+func (s *LogScanner) projectScanRows(rows []ScanRecord) []ScanRecord {
+	if len(s.projection) == 0 {
+		return rows
+	}
+	for index := range rows {
+		projected := make(Row, len(s.projection))
+		for columnIndex, position := range s.projection {
+			projected[columnIndex] = rows[index].Record.Value[position]
+		}
+		rows[index].Record.Value = projected
+	}
+	return rows
+}
+
+func (s *LogScanner) projectScanArrows(batches []ScanArrowBatch) error {
+	if len(s.projection) == 0 {
+		return nil
+	}
+	schema, err := s.schema.ArrowSchema()
+	if err != nil {
+		return err
+	}
+	for index := range batches {
+		source := batches[index].Batch.Record
+		columns := make([]arrow.Array, len(s.projection))
+		for columnIndex, position := range s.projection {
+			if position < 0 || int(position) >= int(source.NumCols()) {
+				return fmt.Errorf("%w: projected Arrow column %d is unavailable", ErrInvalidSchema, position)
+			}
+			columns[columnIndex] = source.Column(int(position))
+		}
+		record := array.NewRecordBatch(schema, columns, source.NumRows())
+		source.Release()
+		batches[index].Batch.Record = record
+	}
+	return nil
 }
 
 func fetchedBatchSize(encoded []byte) (int, error) {

@@ -88,6 +88,10 @@ func TestFluss091Integration(t *testing.T) {
 		testLogData(t, client, logPath)
 	})
 
+	t.Run("schema evolution", func(t *testing.T) {
+		testSchemaEvolution(t, client, admin, database)
+	})
+
 	t.Run("log write formats", func(t *testing.T) {
 		testLogWriteFormats(t, client, admin, database)
 	})
@@ -519,6 +523,103 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 		t.Fatalf("scanned rows = %#v", found)
 	}
 	testBoundedLogScan(t, ctx, client, table)
+}
+
+func testSchemaEvolution(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	database string,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	path := fgo.TablePath{Database: database, Table: "schema_evolution"}
+	if err := admin.CreateTable(ctx, path, fadm.TableDefinition{
+		Schema: fgo.Schema{Columns: []fgo.Column{
+			{Name: "id", Type: fgo.IntType},
+			{Name: "message", Type: fgo.StringType, Nullable: true},
+		}},
+		BucketCount: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	waitForTableReady(t, admin, path)
+	oldTable, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldWriter, err := client.NewLogWriter(ctx, oldTable, fgo.WithLogLinger(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := oldWriter.Append(ctx, fgo.Row{int32(1), "old"}).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if err := oldWriter.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.AlterTable(ctx, path, fadm.AlterTable{Add: []fadm.AddColumn{{
+		Name: "extra",
+		Type: fgo.LogicalType{Root: "BIGINT", Nullable: true},
+	}}}, false); err != nil {
+		t.Fatal(err)
+	}
+	current := waitForSchemaChange(t, ctx, client, path, oldTable.SchemaID)
+	writer, err := client.NewLogWriter(ctx, current, fgo.WithLogLinger(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := writer.Append(ctx, fgo.Row{int32(2), "new", int64(9)}).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := client.NewLogScanner(
+		ctx,
+		current,
+		fgo.Earliest(),
+		fgo.WithScanRowLimit(2),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	rows := make(map[int32]fgo.Row)
+	for len(rows) < 2 && ctx.Err() == nil {
+		result, pollErr := scanner.Poll(ctx)
+		if pollErr != nil {
+			t.Fatal(pollErr)
+		}
+		for _, record := range result.Records {
+			rows[record.Record.Value[0].(int32)] = record.Record.Value
+		}
+		result.Release()
+	}
+	if len(rows[1]) != 3 || rows[1][2] != nil || rows[2][2] != int64(9) {
+		t.Fatalf("schema-evolved rows = %#v", rows)
+	}
+}
+
+func waitForSchemaChange(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	path fgo.TablePath,
+	previous int32,
+) fgo.Table {
+	t.Helper()
+	for ctx.Err() == nil {
+		table, err := client.OpenTable(ctx, path)
+		if err == nil && table.SchemaID != previous {
+			return table
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("schema %s did not change from %d: %v", path, previous, ctx.Err())
+	return fgo.Table{}
 }
 
 func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, database string) {

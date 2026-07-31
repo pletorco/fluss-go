@@ -539,21 +539,7 @@ func (c *Client) OpenTable(ctx context.Context, path TablePath) (Table, error) {
 	if !ok {
 		return Table{}, fmt.Errorf("fgo: get table info: unexpected response %T", infoResponse.Message())
 	}
-	schemaRequest, err := fmsg.NewRequest(fmsg.APIKeyGetTableSchema, 0)
-	if err != nil {
-		return Table{}, err
-	}
-	schemaRequest.Message().(*fmsg.GetTableSchemaRequest).TablePath = pbTablePath(path)
-	schemaRequest.Message().(*fmsg.GetTableSchemaRequest).SchemaId = proto.Int32(info.GetSchemaId())
-	schemaResponse, err := c.RequestCoordinator(ctx, schemaRequest)
-	if err != nil {
-		return Table{}, err
-	}
-	schemaMessage, ok := schemaResponse.Message().(*fmsg.GetTableSchemaResponse)
-	if !ok {
-		return Table{}, fmt.Errorf("fgo: get table schema: unexpected response %T", schemaResponse.Message())
-	}
-	schema, err := ParseSchemaJSON(schemaMessage.GetSchemaJson())
+	schema, err := c.resolveSchema(ctx, path, info.GetSchemaId())
 	if err != nil {
 		return Table{}, err
 	}
@@ -577,9 +563,49 @@ func (c *Client) OpenTable(ctx context.Context, path TablePath) (Table, error) {
 	if len(schema.PrimaryKey) != 0 {
 		kind = PrimaryKeyTable
 	}
-	return Table{
-		ID: info.GetTableId(), SchemaID: schemaMessage.GetSchemaId(), Path: path,
+	table := Table{
+		ID: info.GetTableId(), SchemaID: info.GetSchemaId(), Path: path,
 		Kind: kind, Schema: schema, BucketCount: descriptor.BucketCount,
 		Properties: descriptor.Properties,
-	}, nil
+	}
+	if c.schemas != nil {
+		c.schemas.store(path, table.SchemaID, schema)
+	}
+	return table, nil
+}
+
+func (c *Client) resolveSchema(ctx context.Context, path TablePath, schemaID int32) (Schema, error) {
+	if c.schemas == nil {
+		return c.fetchSchema(ctx, path, schemaID)
+	}
+	return c.schemas.resolveSchema(ctx, path, schemaID)
+}
+
+func (c *Client) fetchSchema(ctx context.Context, path TablePath, schemaID int32) (Schema, error) {
+	request, err := fmsg.NewRequest(fmsg.APIKeyGetTableSchema, 0)
+	if err != nil {
+		return Schema{}, err
+	}
+	message := request.Message().(*fmsg.GetTableSchemaRequest)
+	message.TablePath = pbTablePath(path)
+	message.SchemaId = proto.Int32(schemaID)
+	response, err := c.RequestCoordinator(ctx, request)
+	if err != nil {
+		return Schema{}, err
+	}
+	schemaMessage, ok := response.Message().(*fmsg.GetTableSchemaResponse)
+	if !ok {
+		return Schema{}, fmt.Errorf("fgo: get table schema: unexpected response %T", response.Message())
+	}
+	if schemaMessage.GetSchemaId() != schemaID {
+		return Schema{}, fmt.Errorf(
+			"%w: requested schema ID %d but server returned %d",
+			ErrInvalidSchema, schemaID, schemaMessage.GetSchemaId(),
+		)
+	}
+	schema, err := ParseSchemaJSON(schemaMessage.GetSchemaJson())
+	if err != nil {
+		return Schema{}, fmt.Errorf("fgo: parse schema ID %d: %w", schemaID, err)
+	}
+	return schema, nil
 }

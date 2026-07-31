@@ -105,6 +105,13 @@ type lookupBackend interface {
 
 type clientLookupBackend struct{ client *Client }
 
+func (b clientLookupBackend) schemaResolver() schemaResolver {
+	if b.client == nil || b.client.schemas == nil {
+		return nil
+	}
+	return b.client
+}
+
 type lookupRequest struct {
 	path             PhysicalTablePath
 	bucket           int32
@@ -235,6 +242,7 @@ type LookupClient struct {
 	tableID     int64
 	partitionID int64
 	buckets     []int32
+	resolver    schemaResolver
 
 	mu     sync.RWMutex
 	closed bool
@@ -275,7 +283,7 @@ func newLookupClient(ctx context.Context, backend lookupBackend, table Table, op
 	}
 	client := &LookupClient{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: -1, buckets: buckets,
+		partitionID: -1, buckets: buckets, resolver: resolverFor(backend, table),
 	}
 	if path.Partition != "" {
 		client.partitionID = physicalID
@@ -510,7 +518,7 @@ func (c *LookupClient) runPointChunk(
 			result.Err = ErrNotFound
 			continue
 		}
-		result.Row, result.Err = decodeLookupValue(c.table, value)
+		result.Row, result.Err = decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
 		result.Found = result.Err == nil
 	}
 }
@@ -555,7 +563,7 @@ func (c *LookupClient) runPrefixChunk(
 	for index, rows := range values {
 		result := &results[chunk[index].index]
 		for _, value := range rows {
-			row, err := decodeLookupValue(c.table, value)
+			row, err := decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
 			if err != nil {
 				result.Err = err
 				break
@@ -591,17 +599,33 @@ func encodedLookupInputs(inputs []lookupInput) [][]byte {
 }
 
 func decodeLookupValue(table Table, value []byte) (Row, error) {
+	return decodeLookupValueWithResolver(
+		context.Background(),
+		fixedSchemaResolver{path: table.Path, schemaID: table.SchemaID, schema: table.Schema},
+		table,
+		value,
+	)
+}
+
+func decodeLookupValueWithResolver(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	value []byte,
+) (Row, error) {
 	if len(value) < 2 {
 		return nil, fmt.Errorf("%w: lookup value omits schema ID", ErrMalformedRow)
 	}
-	schemaID := int16(binary.LittleEndian.Uint16(value))
-	if int32(schemaID) != table.SchemaID {
-		return nil, fmt.Errorf(
-			"%w: lookup value schema ID %d does not match table schema ID %d",
-			ErrInvalidSchema, schemaID, table.SchemaID,
-		)
+	schemaID := int32(int16(binary.LittleEndian.Uint16(value)))
+	schema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
+	if err != nil {
+		return nil, fmt.Errorf("fgo: resolve lookup schema %d: %w", schemaID, err)
 	}
-	return DecodeCompactedRow(table.Schema, value[2:])
+	row, err := DecodeCompactedRow(schema, value[2:])
+	if err != nil {
+		return nil, err
+	}
+	return evolveRow(schema, table.Schema, row)
 }
 
 func setPointErrors(inputs []lookupInput, results []LookupResult, err error) {
