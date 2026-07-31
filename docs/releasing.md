@@ -9,8 +9,8 @@ release notes, and affected user manuals together on that branch. The PR is
 the review boundary for the complete release documentation, not a placeholder
 that is filled after merge.
 
-The current prepared prerelease is `v0.1.0-beta.6`, with release notes in
-`.github/releases/v0.1.0-beta.6.md`.
+The current prepared prerelease is `v0.1.0-beta.7`, with release notes in
+`.github/releases/v0.1.0-beta.7.md`.
 
 ## Before publication
 
@@ -39,28 +39,28 @@ fix `main` through another reviewed PR and release the corrected commit.
 Create an annotated tag on the verified `main` commit:
 
 ```sh
-git tag -a v0.1.0-beta.6 -m "fluss-go v0.1.0-beta.6"
-git show --no-patch --decorate v0.1.0-beta.6
-git push origin v0.1.0-beta.6
+git tag -a v0.1.0-beta.7 -m "fluss-go v0.1.0-beta.7"
+git show --no-patch --decorate v0.1.0-beta.7
+git push origin v0.1.0-beta.7
 ```
 
 Then create the GitHub prerelease from the committed notes:
 
 ```sh
-gh release create v0.1.0-beta.6 \
+gh release create v0.1.0-beta.7 \
   --repo pletorco/fluss-go \
   --verify-tag \
   --prerelease \
-  --title "fluss-go v0.1.0-beta.6" \
-  --notes-file .github/releases/v0.1.0-beta.6.md
+  --title "fluss-go v0.1.0-beta.7" \
+  --notes-file .github/releases/v0.1.0-beta.7.md
 ```
 
 Verify that the release target SHA equals the peeled annotated tag and the
 reviewed `main` commit:
 
 ```sh
-test "$(git rev-parse v0.1.0-beta.6^{})" = "$(git rev-parse origin/main)"
-gh release view v0.1.0-beta.6 --repo pletorco/fluss-go
+test "$(git rev-parse v0.1.0-beta.7^{})" = "$(git rev-parse origin/main)"
+gh release view v0.1.0-beta.7 --repo pletorco/fluss-go
 ```
 
 ### Adapter module tags
@@ -92,10 +92,10 @@ direct VCS fallback:
 
 ```sh
 GOPROXY=https://proxy.golang.org GONOSUMDB= \
-  go list -m -json github.com/pletorco/fluss-go@v0.1.0-beta.6
+  go list -m -json github.com/pletorco/fluss-go@v0.1.0-beta.7
 ```
 
-Confirm that the returned `Version` is `v0.1.0-beta.6` and that its origin hash
+Confirm that the returned `Version` is `v0.1.0-beta.7` and that its origin hash
 matches the released commit. The proxy may need a short propagation interval,
 but a failed lookup must not be hidden by `GOPROXY=direct`.
 
@@ -109,11 +109,13 @@ GOPROXY=https://proxy.golang.org GONOSUMDB= \
 Open the version-pinned online references and verify their package manuals,
 exported contracts, and examples:
 
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.1.0-beta.6`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.1.0-beta.6`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.1.0-beta.6`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.6`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.6`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.1.0-beta.7`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.1.0-beta.7`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.1.0-beta.7`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.7`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.7`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.7`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.7`
 
 Check at minimum the `fgo` TLS/SASL and error examples and the `fadm` advanced
 administration examples. Record any pkg.go.dev indexing delay on the release

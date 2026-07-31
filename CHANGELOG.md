@@ -8,6 +8,8 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.7] - 2026-08-01
+
 ### Added
 
 - Added separately reviewed `fgo`, `fadm`, and generated `fmsg` API baselines
@@ -224,7 +226,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.6...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.7...HEAD
+[v0.1.0-beta.7]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.6...v0.1.0-beta.7
 [v0.1.0-beta.6]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.5...v0.1.0-beta.6
 [v0.1.0-beta.5]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.4...v0.1.0-beta.5
 [v0.1.0-beta.4]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.3...v0.1.0-beta.4
