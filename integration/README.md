@@ -13,7 +13,10 @@ from failure diagnostics.
 
 The suite verifies the Java 0.9.1 golden fixtures before running live protocol,
 request-cancellation isolation, authentication, routing, catalog, log, KV,
-lookup, prefix-lookup, and tablet leader-failover checks. Docker, Docker
+lookup, prefix-lookup, tablet leader-failover data correctness, and coordinator
+restart recovery checks. Failover writes cover every bucket and compare
+acknowledged offsets with a bounded final scan; KV values are verified before
+and after leader movement. Docker, Docker
 Compose, OpenSSL, Go, and Task are required. Ports `19123` through `19126`,
 `19223`, and `19224` must be free; each can be overridden with its corresponding
 `FLUSS_*_PORT` variable.

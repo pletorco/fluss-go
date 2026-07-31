@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -34,12 +35,13 @@ func TestFluss091Integration(t *testing.T) {
 	requireEnvironment(t)
 	plainAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_COORDINATOR_PORT", "19123"))
 	saslAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_SASL_COORDINATOR_PORT", "19223"))
+	plainSeeds := []string{"127.0.0.1:1", plainAddress}
 
 	t.Run("protocol negotiation and role", func(t *testing.T) {
 		verifyProtocolRegistry(t, protocolEndpoints(plainAddress))
 	})
 
-	client := openClient(t, []string{"127.0.0.1:1", plainAddress})
+	client := openClient(t, plainSeeds)
 	defer client.Close()
 
 	t.Run("plaintext bootstrap failover", func(t *testing.T) {
@@ -103,8 +105,12 @@ func TestFluss091Integration(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})
 
-	t.Run("multi-node routing and leader failover", func(t *testing.T) {
-		testLeaderFailover(t, client, logPath)
+	t.Run("post-failure data I/O", func(t *testing.T) {
+		testLeaderFailover(t, client, admin, logPath, kvPath)
+	})
+
+	t.Run("coordinator restart recovery", func(t *testing.T) {
+		testCoordinatorRecovery(t, client, plainSeeds, logPath)
 	})
 }
 
@@ -1034,9 +1040,32 @@ func testConcurrentInsertLookup(t *testing.T, ctx context.Context, client *fgo.C
 	}
 }
 
-func testLeaderFailover(t *testing.T, client *fgo.Client, path fgo.TablePath) {
+type expectedLogWrite struct {
+	id     int32
+	offset int64
+}
+
+func testLeaderFailover(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	logPath, kvPath fgo.TablePath,
+) {
 	t.Helper()
-	before := metadataLeaders(t, client, path)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	logTable, err := client.OpenTable(ctx, logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kvTable, err := client.OpenTable(ctx, kvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedLog := appendFailoverLogRows(t, ctx, client, logTable, 1000, false)
+	kvKeys := seedFailoverKVRows(t, ctx, client, kvTable)
+	before := metadataLeaders(t, client, logPath)
 	var stopped int32 = -1
 	for _, leader := range before {
 		stopped = leader
@@ -1047,17 +1076,387 @@ func testLeaderFailover(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	}
 	service := fmt.Sprintf("plaintext-tablet-%d", stopped)
 	compose(t, "stop", service)
-	defer compose(t, "up", "--detach", service)
-
-	deadline := time.Now().Add(90 * time.Second)
-	for time.Now().Before(deadline) {
-		leaders, err := tryMetadataLeaders(client, path)
-		if err == nil && leadersMoved(before, leaders, stopped) {
-			return
+	restarted := false
+	defer func() {
+		if !restarted {
+			compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", service)
 		}
-		time.Sleep(time.Second)
+	}()
+
+	if err := waitForCondition(ctx, 500*time.Millisecond, func() (bool, error) {
+		leaders, metadataErr := tryMetadataLeaders(client, logPath)
+		return metadataErr == nil && leadersMoved(before, leaders, stopped), nil
+	}); err != nil {
+		t.Fatalf("leaders did not move away from tablet %d; before=%#v: %v", stopped, before, err)
 	}
-	t.Fatalf("leaders did not move away from tablet %d; before=%#v", stopped, before)
+
+	mergeExpectedLogWrites(expectedLog, appendFailoverLogRows(t, ctx, client, logTable, 2000, true))
+	updateAndVerifyFailoverKVRows(t, ctx, client, kvTable, kvKeys)
+	verifyFailoverLogRows(t, ctx, client, admin, logTable, expectedLog)
+
+	canceled, stop := context.WithCancel(ctx)
+	stop()
+	if _, err := client.OpenTable(canceled, logPath); !errors.Is(err, context.Canceled) {
+		t.Fatalf("OpenTable() canceled after failover = %v", err)
+	}
+	if _, err := client.OpenTable(ctx, logPath); err != nil {
+		t.Fatalf("OpenTable() after canceled failover request = %v", err)
+	}
+	if _, err := client.NewLogWriter(
+		ctx,
+		logTable,
+		fgo.WithLogRequest(5*time.Second, 1),
+		fgo.WithLogRetryPolicy(fgo.WriterRetryPolicy{MaxAttempts: 2}),
+	); !errors.Is(err, fgo.ErrInvalidConfig) {
+		t.Fatalf("unsafe mutation retry configuration error = %v", err)
+	}
+
+	compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", service)
+	restarted = true
+}
+
+func appendFailoverLogRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	base int32,
+	retry bool,
+) map[int32][]expectedLogWrite {
+	t.Helper()
+	options := []fgo.LogWriterOption{
+		fgo.WithLogLinger(0),
+		fgo.WithLogBucketAssignment(fgo.AssignmentRoundRobin),
+		fgo.WithLogBatchLimits(1<<20, 1),
+		fgo.WithLogRequest(10*time.Second, -1),
+	}
+	if retry {
+		options = append(options, fgo.WithLogRetryPolicy(fgo.WriterRetryPolicy{
+			MaxAttempts: 5,
+			Backoff: func(int) time.Duration {
+				return 100 * time.Millisecond
+			},
+		}))
+	}
+	var writer *fgo.LogWriter
+	var err error
+	for attempt := 1; attempt <= 5; attempt++ {
+		writer, err = client.NewLogWriter(ctx, table, options...)
+		if err == nil {
+			break
+		}
+		if !retry || !isTransientConnectionFailure(err) {
+			t.Fatalf("create failover log writer: %v", err)
+		}
+		if waitErr := waitRetryInterval(ctx, 100*time.Millisecond); waitErr != nil {
+			t.Fatalf("retry failover log writer: %v (last error: %v)", waitErr, err)
+		}
+	}
+	if writer == nil {
+		t.Fatalf("create failover log writer after retries: %v", err)
+	}
+	expected := make(map[int32][]expectedLogWrite, table.BucketCount)
+	for index := range table.BucketCount {
+		id := base + int32(index)
+		result := writer.Append(ctx, fgo.Row{id, fmt.Sprintf("failover-%d", id)}).Await(ctx)
+		if result.Err != nil || !result.OffsetKnown || result.Records != 1 {
+			t.Fatalf("append failover row %d = %#v", id, result)
+		}
+		expected[result.Bucket] = append(expected[result.Bucket], expectedLogWrite{id: id, offset: result.BaseOffset})
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(expected) != table.BucketCount {
+		t.Fatalf("round-robin writes reached %d of %d buckets: %#v", len(expected), table.BucketCount, expected)
+	}
+	return expected
+}
+
+func mergeExpectedLogWrites(target, source map[int32][]expectedLogWrite) {
+	for bucket, writes := range source {
+		target[bucket] = append(target[bucket], writes...)
+	}
+}
+
+func seedFailoverKVRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) map[int32]fgo.PrimaryKey {
+	t.Helper()
+	writer, err := client.NewKVWriter(
+		ctx, table, fgo.WithKVLinger(0), fgo.WithKVBatchLimits(1<<20, 1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make(map[int32]fgo.PrimaryKey, table.BucketCount)
+	for index := 0; len(keys) < table.BucketCount && index < 100; index++ {
+		key := fgo.PrimaryKey{fmt.Sprintf("failover-%03d", index), int32(1)}
+		result := writer.Upsert(ctx, fgo.Row{key[0], key[1], "before"}).Await(ctx)
+		if result.Err != nil || !result.OffsetKnown || result.Records != 1 {
+			t.Fatalf("seed failover KV row %d = %#v", index, result)
+		}
+		if _, exists := keys[result.Bucket]; !exists {
+			keys[result.Bucket] = key
+		}
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != table.BucketCount {
+		t.Fatalf("KV seeds reached %d of %d buckets: %#v", len(keys), table.BucketCount, keys)
+	}
+	return keys
+}
+
+func updateAndVerifyFailoverKVRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	keys map[int32]fgo.PrimaryKey,
+) {
+	t.Helper()
+	options := []fgo.KVWriterOption{
+		fgo.WithKVLinger(0),
+		fgo.WithKVBatchLimits(1<<20, 1),
+		fgo.WithKVRequest(10*time.Second, -1),
+		fgo.WithKVRetryPolicy(fgo.WriterRetryPolicy{
+			MaxAttempts: 5,
+			Backoff: func(int) time.Duration {
+				return 100 * time.Millisecond
+			},
+		}),
+	}
+	var writer *fgo.KVWriter
+	var err error
+	for attempt := 1; attempt <= 5; attempt++ {
+		writer, err = client.NewKVWriter(ctx, table, options...)
+		if err == nil {
+			break
+		}
+		if !isTransientConnectionFailure(err) {
+			t.Fatalf("create failover KV writer: %v", err)
+		}
+		if waitErr := waitRetryInterval(ctx, 100*time.Millisecond); waitErr != nil {
+			t.Fatalf("retry failover KV writer: %v (last error: %v)", waitErr, err)
+		}
+	}
+	if writer == nil {
+		t.Fatalf("create failover KV writer after retries: %v", err)
+	}
+	ordered := make([]fgo.PrimaryKey, 0, len(keys))
+	for bucket := int32(0); bucket < int32(table.BucketCount); bucket++ {
+		key, ok := keys[bucket]
+		if !ok {
+			t.Fatalf("missing failover key for bucket %d", bucket)
+		}
+		result := writer.Upsert(ctx, fgo.Row{key[0], key[1], "after"}).Await(ctx)
+		if result.Err != nil || result.Bucket != bucket || result.Records != 1 {
+			t.Fatalf("post-failover KV bucket %d = %#v", bucket, result)
+		}
+		ordered = append(ordered, key)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lookup, err := client.NewLookupClient(ctx, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+	results := lookup.Lookup(ctx, ordered...)
+	if len(results) != len(ordered) {
+		t.Fatalf("post-failover lookup count = %d, want %d", len(results), len(ordered))
+	}
+	for index, result := range results {
+		if result.Err != nil || !result.Found || result.Row[2] != "after" {
+			t.Fatalf("post-failover lookup %d = %#v", index, result)
+		}
+	}
+	missing := lookup.Lookup(ctx, fgo.PrimaryKey{"failover-missing", int32(1)})
+	if len(missing) != 1 || !errors.Is(missing[0].Err, fgo.ErrNotFound) || missing[0].Found {
+		t.Fatalf("terminal missing-key result = %#v", missing)
+	}
+}
+
+func verifyFailoverLogRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	table fgo.Table,
+	expected map[int32][]expectedLogWrite,
+) {
+	t.Helper()
+	buckets := make([]int32, table.BucketCount)
+	for index := range buckets {
+		buckets[index] = int32(index)
+	}
+	ends := make(map[int32]int64, len(buckets))
+	for _, result := range admin.ListOffsets(
+		ctx, table, fgo.PhysicalTablePath{TablePath: table.Path}, -1, buckets, fgo.Latest(),
+	) {
+		if result.Err != nil {
+			t.Fatalf("latest offset for bucket %d: %v", result.Bucket, result.Err)
+		}
+		ends[result.Bucket] = result.Offset
+	}
+	scanner, err := client.NewLogScanner(
+		ctx,
+		table,
+		fgo.Earliest(),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanStoppingOffsets(ends),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	actual := make(map[int32][]expectedLogWrite, len(expected))
+	wanted := make(map[int32]expectedLogWrite)
+	for _, writes := range expected {
+		for _, write := range writes {
+			wanted[write.id] = write
+		}
+	}
+	for !scanner.Done() {
+		result, pollErr := scanner.Poll(ctx)
+		if pollErr != nil {
+			t.Fatal(pollErr)
+		}
+		if len(result.BucketErrors) != 0 {
+			result.Release()
+			t.Fatalf("post-failover bucket errors = %#v", result.BucketErrors)
+		}
+		for _, scanned := range result.Records {
+			id, ok := scanned.Record.Value[0].(int32)
+			if !ok {
+				continue
+			}
+			write, tracked := wanted[id]
+			if tracked {
+				actual[scanned.Bucket] = append(actual[scanned.Bucket], expectedLogWrite{
+					id: id, offset: scanned.Record.Offset,
+				})
+				if scanned.Record.Offset != write.offset {
+					result.Release()
+					t.Fatalf("row %d offset = %d, want %d", id, scanned.Record.Offset, write.offset)
+				}
+			}
+		}
+		result.Release()
+	}
+	for bucket, writes := range expected {
+		got := actual[bucket]
+		if len(got) != len(writes) {
+			t.Fatalf("bucket %d failover rows = %#v, want %#v", bucket, got, writes)
+		}
+		for index := range writes {
+			if got[index] != writes[index] {
+				t.Fatalf("bucket %d row %d = %#v, want %#v", bucket, index, got[index], writes[index])
+			}
+		}
+	}
+}
+
+func testCoordinatorRecovery(
+	t *testing.T,
+	client *fgo.Client,
+	seeds []string,
+	path fgo.TablePath,
+) {
+	t.Helper()
+	compose(t, "stop", "plaintext-coordinator")
+	restarted := false
+	defer func() {
+		if !restarted {
+			compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", "plaintext-coordinator")
+		}
+	}()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failureCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, failure := admin.ServerNodes(failureCtx)
+	cancel()
+	if failure == nil || !isTransientConnectionFailure(failure) {
+		t.Fatalf("stopped coordinator error = %v, want transient connection failure", failure)
+	}
+
+	compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", "plaintext-coordinator")
+	restarted = true
+	recovered := openClient(t, seeds)
+	defer recovered.Close()
+	recoveredAdmin, err := fadm.New(recovered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithTimeout(context.Background(), 45*time.Second)
+	defer stop()
+	if err := waitForCondition(ctx, 250*time.Millisecond, func() (bool, error) {
+		nodes, nodesErr := recoveredAdmin.ServerNodes(ctx)
+		if nodesErr != nil {
+			return false, nil
+		}
+		_, tableErr := recovered.OpenTable(ctx, path)
+		return len(nodes) == 4 && tableErr == nil, nil
+	}); err != nil {
+		t.Fatalf("coordinator did not recover through configured seeds: %v", err)
+	}
+	canceled, cancelRequest := context.WithCancel(ctx)
+	cancelRequest()
+	if _, err := recoveredAdmin.ServerNodes(canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled recovered admin request = %v", err)
+	}
+	if _, err := recoveredAdmin.ServerNodes(ctx); err != nil {
+		t.Fatalf("admin request after cancellation = %v", err)
+	}
+}
+
+func isTransientConnectionFailure(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) ||
+		errors.Is(err, transport.ErrClosed) {
+		return true
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError)
+}
+
+func waitForCondition(
+	ctx context.Context,
+	interval time.Duration,
+	condition func() (bool, error),
+) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		ready, err := condition()
+		if ready || err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitRetryInterval(ctx context.Context, interval time.Duration) error {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func leadersMoved(before, after map[int32]int32, stopped int32) bool {

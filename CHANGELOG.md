@@ -14,6 +14,8 @@ breaking changes.
   with a required `apidiff` compatibility gate.
 - Added a pinned, fail-closed Trivy dependency-license allowlist with a denied
   license canary across the root and optional adapter modules.
+- Added live post-failure append, scan, upsert, lookup, coordinator recovery,
+  and cancellation-isolation checks against the three-tablet Fluss cluster.
 
 ### Changed
 
