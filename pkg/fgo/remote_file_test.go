@@ -23,7 +23,9 @@ func TestLocalRemoteFileReader(t *testing.T) {
 	}
 	reader := LocalRemoteFileReader{}
 	for _, remotePath := range []string{path, "file://" + path} {
-		data, err := reader.ReadRemoteFile(context.Background(), RemoteFileRequest{Path: remotePath})
+		data, err := reader.ReadRemoteFile(context.Background(), RemoteFileRequest{
+			Path: remotePath, ExpectedSize: 7, MaxBytes: 7,
+		})
 		if err != nil || string(data) != "segment" {
 			t.Fatalf("ReadRemoteFile(%q) = %q, %v", remotePath, data, err)
 		}
@@ -42,6 +44,25 @@ func TestLocalRemoteFileReader(t *testing.T) {
 		context.Background(), RemoteFileRequest{Path: "file://remotehost/path"},
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("remote file host error = %v", err)
+	}
+	for _, request := range []RemoteFileRequest{
+		{Path: "relative.log"},
+		{Path: "file:relative.log"},
+		{Path: "file://" + path + "?query=1"},
+		{Path: path, ExpectedSize: 8, MaxBytes: 8},
+		{Path: path, ExpectedSize: 7, MaxBytes: 6},
+		{Path: path, ExpectedSize: -1},
+	} {
+		if _, err := reader.ReadRemoteFile(
+			context.Background(), request,
+		); !errors.Is(err, ErrInvalidConfig) && !errors.Is(err, ErrValidation) {
+			t.Fatalf("ReadRemoteFile(%#v) error = %v", request, err)
+		}
+	}
+	if _, err := reader.ReadRemoteFile(
+		context.Background(), RemoteFileRequest{Path: path, MaxBytes: 6},
+	); !errors.Is(err, ErrValidation) {
+		t.Fatalf("oversized read error = %v", err)
 	}
 }
 
@@ -482,7 +503,10 @@ func TestRemoteReadRetriesOnlyTemporaryFailures(t *testing.T) {
 	})
 	t.Run("temporary", func(t *testing.T) {
 		var calls atomic.Int32
-		reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+		reader := RemoteFileReaderFunc(func(_ context.Context, request RemoteFileRequest) ([]byte, error) {
+			if request.MaxBytes != settings.MaxFileBytes {
+				t.Fatalf("request MaxBytes = %d", request.MaxBytes)
+			}
 			if calls.Add(1) < 3 {
 				return nil, temporaryRemoteError{temporary: true}
 			}

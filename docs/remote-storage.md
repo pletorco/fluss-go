@@ -7,9 +7,10 @@ receives a clone. Requests may have a nil token when refresh is disabled or no
 valid token is available. Implementations must not include token bytes in
 errors or logs.
 
-`fgo.LocalRemoteFileReader` supports local paths and `file://` URIs. HDFS, S3,
-OSS, and other filesystems implement the same `RemoteFileReader` interface in
-an application or a separate adapter module.
+`fgo.LocalRemoteFileReader` supports absolute local paths and local `file://`
+URIs. Relative paths are rejected. HDFS, S3, OSS, and other filesystems
+implement the same `RemoteFileReader` interface in an application or a separate
+adapter module.
 
 ## Client-managed tokens
 
@@ -89,6 +90,11 @@ bytes, and file count. Defaults allow at most 256 MiB per object, 512 MiB per
 operation, and 4096 objects. The provider validates all advertised metadata
 with overflow-safe arithmetic before downloading any object, then verifies
 exact downloaded sizes before passing data to the decoder.
+
+Every request includes `MaxBytes`. Filesystem adapters must enforce that bound
+while reading, before allocating or returning a complete object. The built-in
+local reader uses a limited read and rejects both oversized objects and objects
+whose actual size differs from `ExpectedSize`.
 
 The current adapter contract returns complete objects because Fluss 0.9.1
 snapshot decoders consume complete file descriptors. Aggregate limits are

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -21,6 +22,10 @@ type RemoteFileRequest struct {
 	Path string
 	// ExpectedSize is the server-advertised size, or zero when unavailable.
 	ExpectedSize int64
+	// MaxBytes is the largest complete object the caller accepts. Zero defaults
+	// to 256 MiB. Implementations must enforce this limit while reading, before
+	// allocating or returning the complete object.
+	MaxBytes int64
 	// Token is an optional caller-owned credential clone.
 	Token *FileSystemSecurityToken
 }
@@ -62,22 +67,49 @@ func (LocalRemoteFileReader) ReadRemoteFile(
 	path := request.Path
 	switch parsed.Scheme {
 	case "":
+		if !filepath.IsAbs(path) {
+			return nil, fmt.Errorf("%w: remote file path must be absolute", ErrInvalidConfig)
+		}
 	case "file":
 		if parsed.Host != "" && parsed.Host != "localhost" {
 			return nil, fmt.Errorf("%w: file URI host is not local", ErrInvalidConfig)
 		}
+		if parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("%w: file URI query and fragment are unsupported", ErrInvalidConfig)
+		}
 		path = filepath.FromSlash(parsed.Path)
+		if !filepath.IsAbs(path) {
+			return nil, fmt.Errorf("%w: file URI path must be absolute", ErrInvalidConfig)
+		}
 	default:
 		return nil, fmt.Errorf("%w: unsupported remote file scheme %q", ErrUnsupportedAPI, parsed.Scheme)
+	}
+	maxBytes := request.MaxBytes
+	if maxBytes == 0 {
+		maxBytes = defaultRemoteMaxFileBytes
+	}
+	if maxBytes < 1 || request.ExpectedSize < 0 ||
+		(request.ExpectedSize > 0 && request.ExpectedSize > maxBytes) {
+		return nil, fmt.Errorf("%w: invalid remote file size limit", ErrInvalidConfig)
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("fgo: open remote file: %w", err)
 	}
 	defer file.Close()
-	data, err := io.ReadAll(&contextReader{ctx: ctx, reader: file})
+	readLimit := maxBytes
+	if readLimit < math.MaxInt64 {
+		readLimit++
+	}
+	data, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: file}, readLimit))
 	if err != nil {
 		return nil, fmt.Errorf("fgo: read remote file: %w", err)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%w: remote file exceeds byte limit", ErrValidation)
+	}
+	if request.ExpectedSize > 0 && int64(len(data)) != request.ExpectedSize {
+		return nil, fmt.Errorf("%w: remote file size mismatch: %w", ErrValidation, io.ErrUnexpectedEOF)
 	}
 	return data, nil
 }
@@ -94,7 +126,10 @@ func (r *contextReader) Read(buffer []byte) (int, error) {
 	return r.reader.Read(buffer)
 }
 
-// RemoteFileReadConfig bounds retries, backoff, and object size.
+const defaultRemoteMaxFileBytes int64 = 256 << 20
+
+// RemoteFileReadConfig bounds retries, backoff, object size, aggregate bytes,
+// and file count.
 // Zero fields use documented defaults.
 type RemoteFileReadConfig struct {
 	// MaxAttempts includes the initial read; zero defaults to 3.
@@ -118,7 +153,7 @@ func (c RemoteFileReadConfig) normalized() (RemoteFileReadConfig, error) {
 		c.RetryBackoff = 50 * time.Millisecond
 	}
 	if c.MaxFileBytes == 0 {
-		c.MaxFileBytes = 256 << 20
+		c.MaxFileBytes = defaultRemoteMaxFileBytes
 	}
 	if c.MaxTotalBytes == 0 {
 		c.MaxTotalBytes = 512 << 20
@@ -448,6 +483,7 @@ func readRemoteFileWithRetry(
 ) ([]byte, error) {
 	var lastErr error
 	for attempt := 1; attempt <= settings.config.MaxAttempts; attempt++ {
+		request.MaxBytes = settings.config.MaxFileBytes
 		started := time.Now()
 		data, err := settings.reader.ReadRemoteFile(ctx, request)
 		if err == nil && int64(len(data)) != request.ExpectedSize {
@@ -459,7 +495,7 @@ func readRemoteFileWithRetry(
 			Failed: err != nil, ErrorClass: metricErrorClass(err),
 		})
 		if err == nil {
-			return append([]byte(nil), data...), nil
+			return data, nil
 		}
 		lastErr = err
 		if ctx.Err() != nil {
