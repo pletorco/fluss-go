@@ -2109,7 +2109,7 @@ func testCoordinatorRecovery(
 	restarted := false
 	defer func() {
 		if !restarted {
-			compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", "plaintext-coordinator")
+			startPlaintextCoordinator(t)
 		}
 	}()
 
@@ -2124,7 +2124,7 @@ func testCoordinatorRecovery(
 		t.Fatalf("stopped coordinator error = %v, want transient connection failure", failure)
 	}
 
-	compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", "plaintext-coordinator")
+	startPlaintextCoordinator(t)
 	restarted = true
 	recovered := openClient(t, seeds)
 	defer recovered.Close()
@@ -2258,6 +2258,23 @@ func compose(t *testing.T, arguments ...string) {
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("docker compose %s: %v: %s", strings.Join(arguments, " "), err, output)
+	}
+}
+
+func startPlaintextCoordinator(t *testing.T) {
+	t.Helper()
+	compose(t, "start", "plaintext-coordinator")
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	address := net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_COORDINATOR_PORT", "19123"))
+	if err := waitForCondition(ctx, 250*time.Millisecond, func() (bool, error) {
+		connection, dialErr := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", address)
+		if dialErr != nil {
+			return false, nil
+		}
+		return true, connection.Close()
+	}); err != nil {
+		t.Fatalf("plaintext coordinator did not restart: %v", err)
 	}
 }
 
