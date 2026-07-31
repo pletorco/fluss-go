@@ -56,6 +56,7 @@ func (writeConn) SetWriteDeadline(time.Time) error  { return nil }
 type partialBlockingWriteConn struct {
 	partial      chan struct{}
 	interrupted  chan struct{}
+	writePartial bool
 	partialOnce  sync.Once
 	interruptOne sync.Once
 }
@@ -64,7 +65,9 @@ func (c *partialBlockingWriteConn) Read([]byte) (int, error) { return 0, io.EOF 
 func (c *partialBlockingWriteConn) Write(value []byte) (int, error) {
 	written := 0
 	c.partialOnce.Do(func() {
-		written = len(value) / 2
+		if c.writePartial {
+			written = len(value) / 2
+		}
 		close(c.partial)
 	})
 	if written != 0 {
@@ -161,6 +164,34 @@ func TestRequestStopsWhileWaitingForCapacity(t *testing.T) {
 	}
 }
 
+func TestCanceledRequestBeforeWriteKeepsConnectionUsable(t *testing.T) {
+	client, server := net.Pipe()
+	defer server.Close()
+	connection, err := New(client, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() {
+		id := readRequestID(t, server)
+		body, marshalErr := proto.Marshal(&fmsg.ApiVersionsResponse{})
+		if marshalErr != nil {
+			t.Error(marshalErr)
+			return
+		}
+		writeResponse(t, server, 0, id, body)
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := connection.Request(ctx, apiVersionsRequest(t)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Request() error = %v", err)
+	}
+	if _, err := connection.Request(context.Background(), apiVersionsRequest(t)); err != nil {
+		t.Fatalf("Request() after cancellation error = %v", err)
+	}
+}
+
 func TestRequestReportsWriteAndResponseFailures(t *testing.T) {
 	t.Run("short write", func(t *testing.T) {
 		connection := &Connection{
@@ -228,6 +259,7 @@ func TestRequestCancellationInterruptsBlockedWrite(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			conn := &partialBlockingWriteConn{
 				partial: make(chan struct{}), interrupted: make(chan struct{}),
+				writePartial: true,
 			}
 			connection := &Connection{
 				conn: conn, maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
@@ -249,16 +281,48 @@ func TestRequestCancellationInterruptsBlockedWrite(t *testing.T) {
 				if !errors.Is(err, test.want) {
 					t.Fatalf("Request() error = %v, want %v", err, test.want)
 				}
+				if !errors.Is(err, ErrClosed) {
+					t.Fatalf("Request() error = %v, want terminal ErrClosed", err)
+				}
 			case <-time.After(time.Second):
 				t.Fatal("Request did not stop after context completion")
 			}
 			if _, err := connection.Request(
 				context.Background(), apiVersionsRequest(t),
-			); !errors.Is(err, test.want) {
-				t.Fatalf("request after interrupted frame error = %v, want %v", err, test.want)
+			); !errors.Is(err, ErrClosed) || errors.Is(err, test.want) {
+				t.Fatalf("request after interrupted frame error = %v, want only ErrClosed", err)
 			}
 		})
 	}
+}
+
+func TestZeroByteInterruptedWriteKeepsConnectionOpen(t *testing.T) {
+	conn := &partialBlockingWriteConn{
+		partial: make(chan struct{}), interrupted: make(chan struct{}),
+	}
+	connection := &Connection{
+		conn: conn, maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
+		pending: make(map[int32]chan result), done: make(chan struct{}),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	completed := make(chan error, 1)
+	go func() {
+		_, err := connection.Request(ctx, apiVersionsRequest(t))
+		completed <- err
+	}()
+	<-conn.partial
+	cancel()
+	err := <-completed
+	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrClosed) {
+		t.Fatalf("zero-byte interrupted Request() error = %v", err)
+	}
+	connection.mu.Lock()
+	closed := connection.closed
+	connection.mu.Unlock()
+	if closed {
+		t.Fatal("zero-byte interrupted write closed the connection")
+	}
+	_ = connection.Close()
 }
 
 func TestRequestClearsSuccessfulWriteDeadline(t *testing.T) {

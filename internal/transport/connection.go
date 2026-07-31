@@ -86,6 +86,9 @@ func (c *Connection) Request(ctx context.Context, request fmsg.Request) (fmsg.Re
 	if request == nil {
 		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	body, err := request.Marshal()
 	if err != nil {
 		return nil, err
@@ -101,14 +104,22 @@ func (c *Connection) Request(ctx context.Context, request fmsg.Request) (fmsg.Re
 		return nil, c.err()
 	}
 	defer func() { <-c.sem }()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	id, resultCh, err := c.register()
 	if err != nil {
 		return nil, err
 	}
 	defer c.unregister(id)
-	if err := c.writeRequest(ctx, id, request, body); err != nil {
-		c.fail(err)
+	discard, err := c.writeRequest(ctx, id, request, body)
+	if err != nil {
+		if discard {
+			terminal := fmt.Errorf("%w: write failed: %v", ErrClosed, err)
+			c.fail(terminal)
+			return nil, fmt.Errorf("transport: connection discarded: %w: %w", err, terminal)
+		}
 		return nil, err
 	}
 	select {
@@ -178,7 +189,7 @@ func (c *Connection) writeRequest(
 	id int32,
 	request fmsg.Request,
 	body []byte,
-) (err error) {
+) (bool, error) {
 	frame := make([]byte, 4+requestHeaderSize+len(body))
 	binary.BigEndian.PutUint32(frame, uint32(requestHeaderSize+len(body)))
 	binary.BigEndian.PutUint16(frame[4:], uint16(request.APIKey()))
@@ -188,17 +199,27 @@ func (c *Connection) writeRequest(
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
 	finish, err := c.prepareWrite(ctx)
 	if err != nil {
-		return err
+		return true, err
 	}
-	defer finish(&err)
-	return c.writeFrame(ctx, frame)
+	written, writeErr := c.writeFrame(ctx, frame)
+	finishErr := finish()
+	if finishErr != nil {
+		return true, errors.Join(writeErr, finishErr)
+	}
+	if writeErr == nil {
+		return false, nil
+	}
+	discard := written != 0 ||
+		(!errors.Is(writeErr, context.Canceled) &&
+			!errors.Is(writeErr, context.DeadlineExceeded))
+	return discard, writeErr
 }
 
-func (c *Connection) prepareWrite(ctx context.Context) (func(*error), error) {
+func (c *Connection) prepareWrite(ctx context.Context) (func() error, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := c.conn.SetWriteDeadline(deadline); err != nil {
 			return nil, fmt.Errorf("transport: set write deadline: %w", err)
@@ -209,28 +230,34 @@ func (c *Connection) prepareWrite(ctx context.Context) (func(*error), error) {
 		_ = c.conn.SetWriteDeadline(time.Now())
 		close(interruptDone)
 	})
-	return func(writeErr *error) {
+	return func() error {
 		if !stopInterrupt() {
 			<-interruptDone
 		}
-		if clearErr := c.conn.SetWriteDeadline(time.Time{}); *writeErr == nil && clearErr != nil {
-			*writeErr = fmt.Errorf("transport: clear write deadline: %w", clearErr)
+		if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
+			return fmt.Errorf("transport: clear write deadline: %w", err)
 		}
+		return nil
 	}, nil
 }
 
-func (c *Connection) writeFrame(ctx context.Context, frame []byte) error {
+func (c *Connection) writeFrame(ctx context.Context, frame []byte) (int, error) {
+	total := 0
 	for len(frame) > 0 {
 		written, err := c.conn.Write(frame)
+		if written < 0 || written > len(frame) {
+			return total, io.ErrShortWrite
+		}
+		total += written
+		frame = frame[written:]
 		if err != nil {
-			return interruptedWriteError(ctx, err)
+			return total, interruptedWriteError(ctx, err)
 		}
 		if written == 0 {
-			return io.ErrShortWrite
+			return total, io.ErrShortWrite
 		}
-		frame = frame[written:]
 	}
-	return nil
+	return total, nil
 }
 
 func interruptedWriteError(ctx context.Context, writeErr error) error {

@@ -65,6 +65,9 @@ func TestFluss091Integration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("canceled request isolation", func(t *testing.T) {
+		testCanceledRequestIsolation(t, admin)
+	})
 	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDefinition{
 		Comment: "fluss-go live integration",
 	}, false); err != nil {
@@ -103,6 +106,26 @@ func TestFluss091Integration(t *testing.T) {
 	t.Run("multi-node routing and leader failover", func(t *testing.T) {
 		testLeaderFailover(t, client, logPath)
 	})
+}
+
+func testCanceledRequestIsolation(t *testing.T, admin *fadm.Client) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := admin.ServerNodes(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ServerNodes() canceled error = %v", err)
+	}
+	database := fmt.Sprintf("cancel_repro_%d", time.Now().UnixNano())
+	if err := admin.CreateDatabase(
+		context.Background(), database, fadm.DatabaseDefinition{}, false,
+	); err != nil {
+		t.Fatalf("CreateDatabase() after canceled request = %v", err)
+	}
+	if err := admin.DropDatabase(
+		context.Background(), database, true, true,
+	); err != nil {
+		t.Fatalf("DropDatabase() cancellation reproduction cleanup = %v", err)
+	}
 }
 
 func protocolEndpoints(plainAddress string) map[string]fgo.ServerRole {
