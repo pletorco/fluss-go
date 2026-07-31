@@ -234,8 +234,8 @@ func TestLogWriterFlushWaitsAndCancellationCompletes(t *testing.T) {
 	}
 	first := writer.Append(context.Background(), Row{int32(1), "blocked"})
 	canceled, cancel := context.WithCancel(context.Background())
-	second := writer.Append(canceled, Row{int32(2), "canceled"})
 	cancel()
+	second := writer.Append(canceled, Row{int32(2), "canceled"})
 	flushed := make(chan error, 1)
 	go func() { flushed <- writer.Flush(context.Background()) }()
 	select {
