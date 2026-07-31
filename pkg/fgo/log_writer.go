@@ -49,6 +49,8 @@ type LogWriterConfig struct {
 	MaxBatchRecords int
 	// MaxBuffered bounds accepted records awaiting completion.
 	MaxBuffered int
+	// MaxConcurrentRequests bounds active produce calls across distinct buckets.
+	MaxConcurrentRequests int
 	// Linger is the maximum delay used to fill a non-full batch.
 	Linger time.Duration
 	// Timeout bounds both the server-side produce operation and the client call.
@@ -88,6 +90,18 @@ func WithLogBuffer(records int) LogWriterOption {
 			return fmt.Errorf("%w: log buffer must be positive", ErrInvalidConfig)
 		}
 		config.MaxBuffered = records
+		return nil
+	}
+}
+
+// WithLogConcurrency bounds active produce calls across distinct buckets.
+// Calls for one bucket remain strictly ordered.
+func WithLogConcurrency(requests int) LogWriterOption {
+	return func(config *LogWriterConfig) error {
+		if requests < 1 || requests > 64 {
+			return fmt.Errorf("%w: log concurrency must be in [1, 64]", ErrInvalidConfig)
+		}
+		config.MaxConcurrentRequests = requests
 		return nil
 	}
 }
@@ -194,9 +208,10 @@ type WriteResult struct {
 // WriteFuture represents one queued mutation.
 // Await may be called concurrently and does not consume the result.
 type WriteFuture struct {
-	done chan struct{}
-	once sync.Once
-	data WriteResult
+	done    chan struct{}
+	once    sync.Once
+	data    WriteResult
+	release func()
 }
 
 func newWriteFuture() *WriteFuture { return &WriteFuture{done: make(chan struct{})} }
@@ -204,6 +219,9 @@ func newWriteFuture() *WriteFuture { return &WriteFuture{done: make(chan struct{
 func (f *WriteFuture) complete(result WriteResult) {
 	f.once.Do(func() {
 		f.data = result
+		if f.release != nil {
+			f.release()
+		}
 		close(f.done)
 	})
 }
@@ -324,6 +342,7 @@ type LogWriter struct {
 	writerID    int64
 	buckets     []int32
 	commands    chan writerCommand
+	slots       chan struct{}
 	done        chan struct{}
 	appendMu    sync.Mutex
 	closed      bool
@@ -357,12 +376,26 @@ type bucketBatch struct {
 }
 
 type logWriterLoop struct {
-	writer    *LogWriter
-	batches   map[int32]*bucketBatch
-	sequences map[int32]int32
-	poisoned  map[int32]error
-	timer     *time.Timer
-	timerC    <-chan time.Time
+	writer      *LogWriter
+	batches     map[int32]*bucketBatch
+	pending     map[int32][]*bucketBatch
+	active      map[int32]bool
+	sequences   map[int32]int32
+	poisoned    map[int32]error
+	completions chan logBatchCompletion
+	inFlight    int
+	timer       *time.Timer
+	timerC      <-chan time.Time
+}
+
+type logBatchCompletion struct {
+	bucket     int32
+	batch      *bucketBatch
+	baseOffset int64
+	records    int
+	bytes      int
+	started    time.Time
+	err        error
 }
 
 // NewLogWriter creates an append writer for a log table.
@@ -410,7 +443,7 @@ func newLogWriter(ctx context.Context, backend logWriterBackend, table Table, op
 	writer := &LogWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID, partitionID: -1,
 		writerID: writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
-		done: make(chan struct{}), stickyIndex: -1,
+		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), stickyIndex: -1,
 	}
 	if path.Partition != "" {
 		writer.partitionID = physicalID
@@ -466,7 +499,8 @@ func validateLogWriterTable(table Table) error {
 func logWriterConfig(options []LogWriterOption) (LogWriterConfig, error) {
 	config := LogWriterConfig{
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
-		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
+		MaxConcurrentRequests: 4,
+		Linger:                5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
 		Assignment: AssignmentAuto, Format: LogWriteFormatAuto,
 	}
 	for _, option := range options {
@@ -558,6 +592,16 @@ func (w *LogWriter) AppendArrow(ctx context.Context, bucket int32, batch arrow.R
 }
 
 func (w *LogWriter) enqueue(ctx context.Context, item *pendingWrite) {
+	select {
+	case w.slots <- struct{}{}:
+		item.future.release = func() { <-w.slots }
+	case <-ctx.Done():
+		item.future.complete(WriteResult{Err: ctx.Err()})
+		return
+	case <-w.done:
+		item.future.complete(WriteResult{Err: ErrClosed})
+		return
+	}
 	w.appendMu.Lock()
 	defer w.appendMu.Unlock()
 	if w.closed {
@@ -643,8 +687,11 @@ func (w *LogWriter) run() {
 		<-timer.C
 	}
 	loop := &logWriterLoop{
-		writer: w, batches: make(map[int32]*bucketBatch), sequences: make(map[int32]int32),
-		poisoned: make(map[int32]error), timer: timer,
+		writer: w, batches: make(map[int32]*bucketBatch), pending: make(map[int32][]*bucketBatch),
+		active: make(map[int32]bool), sequences: make(map[int32]int32),
+		poisoned:    make(map[int32]error),
+		completions: make(chan logBatchCompletion, w.config.MaxConcurrentRequests),
+		timer:       timer,
 	}
 	loop.run()
 }
@@ -669,7 +716,9 @@ func (l *logWriterLoop) run() {
 			}
 		case <-l.timerC:
 			l.timerC = nil
-			_ = l.flushAll()
+			_ = l.queueAll()
+		case completion := <-l.completions:
+			_ = l.handleCompletion(completion)
 		}
 	}
 }
@@ -750,10 +799,41 @@ func (l *logWriterLoop) flushBucket(bucket int32) error {
 	}
 	delete(l.batches, bucket)
 	if err := l.poisoned[bucket]; err != nil {
-		l.writer.completeBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
-		return err
+		poisoned := fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err)
+		l.writer.completeBatch(batch, bucket, 0, poisoned)
+		return poisoned
 	}
-	encoded, records, err := l.writer.encodeBatch(batch, l.sequences[bucket])
+	l.pending[bucket] = append(l.pending[bucket], batch)
+	l.dispatch()
+	return nil
+}
+
+func (l *logWriterLoop) dispatch() {
+	for l.inFlight < l.writer.config.MaxConcurrentRequests {
+		dispatched := false
+		for _, bucket := range l.writer.buckets {
+			if l.active[bucket] || len(l.pending[bucket]) == 0 {
+				continue
+			}
+			batch := l.pending[bucket][0]
+			l.pending[bucket] = l.pending[bucket][1:]
+			l.active[bucket] = true
+			l.inFlight++
+			sequence := l.sequences[bucket]
+			go l.executeBatch(bucket, batch, sequence)
+			dispatched = true
+			if l.inFlight == l.writer.config.MaxConcurrentRequests {
+				break
+			}
+		}
+		if !dispatched {
+			return
+		}
+	}
+}
+
+func (l *logWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequence int32) {
+	encoded, records, err := l.writer.encodeBatch(batch, sequence)
 	var baseOffset int64
 	started := metricStart(l.writer.observer)
 	if err == nil {
@@ -767,27 +847,55 @@ func (l *logWriterLoop) flushBucket(bucket int32) error {
 		}
 		cancel()
 	}
+	l.completions <- logBatchCompletion{
+		bucket: bucket, batch: batch, baseOffset: baseOffset,
+		records: records, bytes: len(encoded), started: started, err: err,
+	}
+}
+
+func (l *logWriterLoop) handleCompletion(completion logBatchCompletion) error {
+	delete(l.active, completion.bucket)
+	l.inFlight--
 	queueTime := time.Duration(0)
-	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {
-		queueTime = time.Since(batch.items[0].queuedAt)
+	if len(completion.batch.items) != 0 && !completion.batch.items[0].queuedAt.IsZero() {
+		queueTime = time.Since(completion.batch.items[0].queuedAt)
 	}
 	observeMetric(l.writer.observer, MetricEvent{
 		Kind: MetricWriteBatch, Operation: MetricOperationLogWrite,
-		Duration: metricDuration(started), QueueTime: queueTime,
-		QueueSize: len(l.writer.commands), Records: int64(records), Bytes: int64(len(encoded)),
-		Failed: err != nil, ErrorClass: metricErrorClass(err),
+		Duration: metricDuration(completion.started), QueueTime: queueTime,
+		QueueSize: len(l.writer.commands), Records: int64(completion.records), Bytes: int64(completion.bytes),
+		Failed: completion.err != nil, ErrorClass: metricErrorClass(completion.err),
 	})
-	if err != nil {
-		l.poisoned[bucket] = err
-		l.writer.completeBatch(batch, bucket, 0, err)
-		return err
+	if completion.err != nil {
+		l.poisoned[completion.bucket] = completion.err
+		l.writer.completeBatch(completion.batch, completion.bucket, 0, completion.err)
+		for _, batch := range l.pending[completion.bucket] {
+			poisoned := fmt.Errorf(
+				"%w: bucket %d: %v", ErrWriterState, completion.bucket, completion.err,
+			)
+			l.writer.completeBatch(batch, completion.bucket, 0, poisoned)
+		}
+		delete(l.pending, completion.bucket)
+	} else {
+		l.sequences[completion.bucket]++
+		l.writer.completeBatch(
+			completion.batch, completion.bucket, completion.baseOffset, nil,
+		)
 	}
-	l.sequences[bucket]++
-	l.writer.completeBatch(batch, bucket, baseOffset, nil)
-	return nil
+	l.dispatch()
+	return completion.err
 }
 
 func (l *logWriterLoop) flushAll() error {
+	l.stopTimer()
+	err := l.queueAll()
+	for l.inFlight > 0 {
+		err = errors.Join(err, l.handleCompletion(<-l.completions))
+	}
+	return err
+}
+
+func (l *logWriterLoop) queueAll() error {
 	l.stopTimer()
 	var joined error
 	for _, bucket := range l.writer.buckets {

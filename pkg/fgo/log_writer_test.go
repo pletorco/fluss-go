@@ -407,6 +407,7 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"nil option", table, logBackend(0), []LogWriterOption{nil}, ErrInvalidConfig},
 		{"bad limits", table, logBackend(0), []LogWriterOption{WithLogBatchLimits(1, 0)}, ErrInvalidConfig},
 		{"bad buffer", table, logBackend(0), []LogWriterOption{WithLogBuffer(0)}, ErrInvalidConfig},
+		{"bad concurrency", table, logBackend(0), []LogWriterOption{WithLogConcurrency(0)}, ErrInvalidConfig},
 		{"bad linger", table, logBackend(0), []LogWriterOption{WithLogLinger(-1)}, ErrInvalidConfig},
 		{"bad request", table, logBackend(0), []LogWriterOption{WithLogRequest(0, 2)}, ErrInvalidConfig},
 		{

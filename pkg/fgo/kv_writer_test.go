@@ -474,6 +474,7 @@ func TestKVWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"nil option", table, kvBackend(0), []KVWriterOption{nil}, ErrInvalidConfig},
 		{"batch limits", table, kvBackend(0), []KVWriterOption{WithKVBatchLimits(1, 0)}, ErrInvalidConfig},
 		{"buffer", table, kvBackend(0), []KVWriterOption{WithKVBuffer(0)}, ErrInvalidConfig},
+		{"concurrency", table, kvBackend(0), []KVWriterOption{WithKVConcurrency(65)}, ErrInvalidConfig},
 		{"linger", table, kvBackend(0), []KVWriterOption{WithKVLinger(-1)}, ErrInvalidConfig},
 		{"request", table, kvBackend(0), []KVWriterOption{WithKVRequest(0, 2)}, ErrInvalidConfig},
 		{"metadata", table, &fakeKVWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
