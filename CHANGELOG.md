@@ -8,10 +8,44 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.4] - 2026-07-31
+
+### Added
+
+- Added compatible historical-schema decoding for point and prefix lookups,
+  current-state batches, and row and Arrow log batches. Stable field IDs now
+  preserve renamed columns, ignore dropped columns, and fill newly nullable
+  columns with `nil`.
+- Added configurable per-writer request concurrency across distinct buckets
+  through `WithLogConcurrency` and `WithKVConcurrency`, while preserving
+  strict request order within each bucket.
+- Added aggregate byte and file-count limits to remote log and snapshot reads
+  through `RemoteFileReadConfig.MaxTotalBytes` and `MaxFiles`.
+
 ### Changed
 
 - Made bounded fuzz smoke tests deterministic across supported Go versions by
   using fixed iteration budgets instead of wall-clock deadlines.
+- Made socket writes context-aware and completed canceled, failed, or closed
+  transport requests exactly once.
+- Made log and KV request timeouts bound both the server operation and the
+  client-side network call. Writer buffer limits now include queued, batched,
+  and in-flight records.
+- Coalesced connection, metadata, dynamic-partition, and schema requests with
+  independent waiter cancellation and last-waiter operation cancellation.
+- Restricted remote-read retries to explicitly temporary, timeout, or
+  truncated-read failures and validated aggregate limits before downloading.
+- Allowed filesystem-token receivers to close the client without deadlocking
+  shutdown.
+- Grouped Go Task output in GitHub Actions so successful coverage results are
+  no longer rendered as error log lines.
+
+### Fixed
+
+- Preserved a snapshot reader's final non-empty batch when it returns rows and
+  `io.EOF` together.
+- Preserved the terminal flush error across concurrent and repeated log and KV
+  writer `Close` calls, including callers that previously stopped waiting.
 
 ## [v0.1.0-beta.3] - 2026-07-31
 
@@ -105,7 +139,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.3...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.4...HEAD
+[v0.1.0-beta.4]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.3...v0.1.0-beta.4
 [v0.1.0-beta.3]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.2...v0.1.0-beta.3
 [v0.1.0-beta.2]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.1...v0.1.0-beta.2
 [v0.1.0-beta.1]: https://github.com/pletorco/fluss-go/compare/v0.1.0-alpha.1...v0.1.0-beta.1

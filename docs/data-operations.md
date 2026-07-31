@@ -37,6 +37,31 @@ writer, err := client.NewKVWriter(
 creation applies only to log and KV writers configured with a partition; reads
 never create server state.
 
+## Writer concurrency and shutdown
+
+Log and KV writers default to four active requests across distinct buckets.
+Use `WithLogConcurrency` or `WithKVConcurrency` to choose a value from 1
+through 64. Requests for one bucket remain strictly ordered, so concurrency
+does not change per-bucket sequence or mutation order. A slow bucket does not
+prevent another bucket in the same writer from making progress while a request
+slot is available.
+
+`WithLogBuffer` and `WithKVBuffer` bound every accepted record that has not
+reached a terminal result, including queued, batched, and in-flight records.
+`WithLogRequest` and `WithKVRequest` set one timeout for both the server
+operation and its client-side network call. The timeout is therefore also the
+upper bound for an accepted request when the backend stays responsive at the
+socket level.
+
+`Close` stops admission, flushes accepted work, and retains the terminal flush
+result. Concurrent and repeated callers observe the same final error. A
+caller's context only bounds how long that caller waits; it does not shorten
+the configured timeout of work the writer already accepted. A caller whose
+context expires may call `Close` again to observe the final result. Ambiguous
+write failures are not retried and poison only the affected bucket. See
+[error handling](error-handling.md) and
+[write scheduling](write-scheduling.md) for recovery and ownership details.
+
 ## Log formats and bounded scans
 
 Select an explicit format only when it agrees with the table's advertised
@@ -76,6 +101,25 @@ defer scanner.Close()
 poll returns `fgo.ErrWakeup`; the scanner remains usable. Row and Arrow results
 preserve per-bucket failures rather than replacing a partial result with a
 global success.
+
+## Schema evolution on reads
+
+Readers resolve the writer schema ID carried by historical values and batches,
+then map rows to the `fgo.Table` schema supplied when the reader was created.
+Point and prefix lookups, current-state batches, and row and Arrow log batches
+share the same bounded client schema cache.
+
+Stable field IDs preserve renamed columns. Dropped writer columns are ignored,
+and a column added as nullable is returned as `nil` for older rows. Required
+column additions, incompatible type changes, and null values mapped to a
+required column return `fgo.ErrInvalidSchema`; the client does not invent
+defaults or coerce values.
+
+After altering a table, call `OpenTable` until it returns the new schema ID and
+construct new writers and readers from that refreshed `Table`. Existing
+readers intentionally retain the result shape they were created with. See the
+[schema-evolution guide](schema-evolution.md) for the complete compatibility,
+projection, cache, and error contract.
 
 ## KV merge and insert-if-missing
 
@@ -143,7 +187,10 @@ defer result.Release()
 
 Current-state scans use LIMIT_SCAN once. Snapshot scans use
 `NewSnapshotBatchScanner` and require a `SnapshotBatchProvider` configured when
-the client is opened. `BatchResult.Release` releases owned Arrow batches.
+the client is opened. A snapshot provider may return its final rows and
+`io.EOF` together; `Poll` then returns those rows with `Done` set. Process the
+result before checking whether another poll is needed. A later poll returns an
+empty completed result. `BatchResult.Release` releases owned Arrow batches.
 
 ## Metrics
 
