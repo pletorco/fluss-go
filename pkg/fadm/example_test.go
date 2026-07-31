@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fadm"
 	"github.com/pletorco/fluss-go/pkg/fgo"
@@ -229,6 +230,218 @@ func ExampleClient_ListOffsets() {
 			continue
 		}
 		log.Printf("bucket %d offset %d", result.Bucket, result.Offset)
+	}
+}
+
+func ExampleClient_AlterClusterConfigs() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	value := "3"
+	err = admin.AlterClusterConfigs(ctx, fadm.ConfigChange{
+		Key:   "table.default-bucket-number",
+		Value: &value,
+		Op:    fadm.ConfigSet,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	configs, err := admin.DescribeClusterConfigs(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, config := range configs {
+		if config.Key == "table.default-bucket-number" {
+			log.Printf("%s=%s (%s)", config.Key, config.Value, config.Source)
+		}
+	}
+}
+
+func ExampleClient_WaitRebalance() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	goalIDs := []int32{1} // Goal IDs are defined by the target Fluss 0.9.1 cluster.
+	rebalanceID, err := admin.StartRebalance(ctx, goalIDs...)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	waitCtx, stopWaiting := context.WithTimeout(ctx, 10*time.Minute)
+	progress, err := admin.WaitRebalance(waitCtx, rebalanceID, 2*time.Second)
+	stopWaiting()
+	if err != nil {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
+		cancelErr := admin.CancelRebalance(cleanupCtx, rebalanceID)
+		cancelCleanup()
+		if cancelErr != nil {
+			log.Printf("cancel rebalance %s: %v", rebalanceID, cancelErr)
+		}
+		log.Fatal(err)
+	}
+	log.Printf("rebalance %s reached terminal status %d", progress.ID, progress.Status)
+}
+
+func ExampleClient_RegisterProducerOffsets() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	const producerID = "analytics-materializer"
+	registered, err := admin.RegisterProducerOffsets(ctx, producerID, []fadm.ProducerTableOffsets{{
+		TableID: 42,
+		Offsets: []fadm.ProducerBucketOffset{
+			{PartitionID: -1, Bucket: 0, Offset: 120},
+			{PartitionID: -1, Bucket: 1, Offset: 98},
+		},
+	}}, 15*time.Minute)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !registered {
+		log.Fatal("producer offset registration was rejected")
+	}
+
+	offsets, err := admin.GetProducerOffsets(ctx, producerID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("producer %s expires at %s", offsets.ProducerID, offsets.ExpiresAt)
+}
+
+func ExampleClient_AcquireKVSnapshotLease() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	latest, err := admin.LatestKVSnapshots(
+		ctx,
+		fgo.TablePath{Database: "production", Table: "customers"},
+		"",
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	requested := make([]fadm.SnapshotLease, 0, len(latest.Snapshots))
+	for _, snapshot := range latest.Snapshots {
+		if snapshot.Available {
+			requested = append(requested, fadm.SnapshotLease{
+				TableID:     latest.TableID,
+				PartitionID: latest.PartitionID,
+				Bucket:      snapshot.Bucket,
+				SnapshotID:  snapshot.SnapshotID,
+			})
+		}
+	}
+	if len(requested) == 0 {
+		log.Print("no snapshots are currently available")
+		return
+	}
+
+	const leaseID = "snapshot-reader-20260731-01"
+	unavailable, err := admin.AcquireKVSnapshotLease(ctx, leaseID, 10*time.Minute, requested)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelCleanup()
+		if err := admin.DropKVSnapshotLease(cleanupCtx, leaseID); err != nil {
+			log.Printf("drop snapshot lease %s: %v", leaseID, err)
+		}
+	}()
+
+	isUnavailable := func(candidate fadm.SnapshotLease) bool {
+		for _, failed := range unavailable {
+			if failed == candidate {
+				return true
+			}
+		}
+		return false
+	}
+	for _, leased := range requested {
+		if isUnavailable(leased) {
+			log.Printf("snapshot for bucket %d was not leased", leased.Bucket)
+			continue
+		}
+		metadata, err := admin.KVSnapshotMetadata(
+			ctx,
+			leased.TableID,
+			leased.PartitionID,
+			leased.Bucket,
+			leased.SnapshotID,
+		)
+		if err != nil {
+			log.Printf("bucket %d metadata: %v", leased.Bucket, err)
+			continue
+		}
+		log.Printf("bucket %d has %d snapshot files", leased.Bucket, len(metadata.Files))
+	}
+}
+
+func ExampleClient_TableStats() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	table, err := client.OpenTable(
+		ctx,
+		fgo.TablePath{Database: "production", Table: "customers"},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	results := admin.TableStats(
+		ctx,
+		table,
+		fgo.PhysicalTablePath{TablePath: table.Path},
+		-1,
+		[]int32{0, 1, 2},
+	)
+	for _, result := range results {
+		if result.Err != nil {
+			log.Printf("bucket %d stats: %v", result.Bucket, result.Err)
+			continue
+		}
+		log.Printf("bucket %d rows: %d", result.Bucket, result.RowCount)
 	}
 }
 

@@ -14,6 +14,9 @@ breaking changes.
   guidance with compile-checked examples.
 - Added error classification, safe-retry, ambiguous-writer recovery, and
   partial-result guidance with deterministic examples.
+- Added advanced administration guidance for cluster settings, server tags,
+  rebalances, producer offsets, snapshot leases, filesystem credentials, lake
+  snapshots, and per-bucket statistics with compile-checked lifecycle examples.
 - Expanded pkg.go.dev contracts for typed APIs, extension interfaces,
   configuration, result ownership, partial failures, and pre-v1 stability.
 - Added a CI documentation audit for public packages, declarations, methods,

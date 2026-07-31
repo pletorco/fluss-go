@@ -106,6 +106,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Public architecture and ownership](docs/architecture/v0.1.md)
 - [TLS and SASL secure connections](docs/authentication.md)
 - [Error handling and recovery](docs/error-handling.md)
+- [Advanced administration](docs/admin-operations.md)
 - [Data operations and advanced options](docs/data-operations.md)
 - [Typed data API](docs/typed-api.md)
 - [Remote storage and filesystem tokens](docs/remote-storage.md)

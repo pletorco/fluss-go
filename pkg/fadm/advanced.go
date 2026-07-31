@@ -631,7 +631,9 @@ type ProducerOffsets struct {
 	Tables []ProducerTableOffsets
 }
 
-// RegisterProducerOffsets creates or replaces offsets for producerID.
+// RegisterProducerOffsets creates or replaces offsets for producerID. The
+// boolean result is true only when the Fluss 0.9.1 protocol result code is
+// zero; callers must handle a false result even when err is nil.
 func (c *Client) RegisterProducerOffsets(
 	ctx context.Context,
 	producerID string,
@@ -864,9 +866,10 @@ type SnapshotLease struct {
 	SnapshotID int64
 }
 
-// AcquireKVSnapshotLease acquires a server-managed lease for duration. Fluss
-// expires the lease after that duration; callers should release individual
-// buckets early or drop the complete lease when they no longer need it.
+// AcquireKVSnapshotLease acquires a server-managed lease for duration and
+// returns snapshots that were unavailable and therefore not leased. Fluss
+// expires acquired snapshots after that duration; callers should release
+// individual buckets early or drop the complete lease when no longer needed.
 func (c *Client) AcquireKVSnapshotLease(
 	ctx context.Context,
 	leaseID string,
@@ -1031,7 +1034,9 @@ type LakeSnapshot struct {
 	Buckets []LakeBucketSnapshot
 }
 
-// LakeSnapshot returns a requested or latest readable lake snapshot.
+// LakeSnapshot returns an exact snapshot when snapshotID is non-nil, or lets
+// the server select a snapshot when it is nil. The readable flag requests a
+// snapshot suitable for reading.
 func (c *Client) LakeSnapshot(
 	ctx context.Context,
 	path fgo.TablePath,
@@ -1087,7 +1092,8 @@ type TableStats struct {
 	Err error
 }
 
-// TableStats returns one independent result per requested bucket.
+// TableStats returns one independent result per requested bucket in input
+// order. Callers must inspect every result's Err and preserve partial success.
 func (c *Client) TableStats(
 	ctx context.Context,
 	table fgo.Table,
