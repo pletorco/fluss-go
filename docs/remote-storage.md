@@ -49,6 +49,13 @@ tokens; refresh failures retain only a still-valid current token and are retried
 with bounded backoff. Closing the client stops the refresh loop; the last cached
 token remains readable only until it expires.
 
+Receivers run sequentially in registration order. They may call
+`Client.Close`; shutdown cancels the refresh loop without waiting for the
+currently executing receiver, which avoids reentrant shutdown deadlocks.
+Because the receiver interface has no context, callback code itself cannot be
+forcibly stopped and must return promptly. A blocked receiver delays
+publication and later receivers, but does not prevent client shutdown.
+
 ## Snapshot composition
 
 Snapshot scans compose the transport with metadata and format adapters:

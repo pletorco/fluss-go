@@ -78,6 +78,9 @@ func (f FileSystemSecurityTokenProviderFunc) AcquireFileSystemSecurityToken(
 type FileSystemSecurityTokenReceiver interface {
 	// ReceiveFileSystemSecurityToken receives a deep clone after acquisition.
 	// Returning an error rejects publication and schedules a bounded retry.
+	// Receivers run sequentially and should return promptly. A receiver may
+	// close the client; shutdown stops waiting for the callback but cannot
+	// forcibly stop callback code that remains blocked.
 	ReceiveFileSystemSecurityToken(FileSystemSecurityToken) error
 }
 
@@ -282,7 +285,10 @@ func (m *securityTokenManager) run(ctx context.Context) {
 			delay = m.failedDelay()
 			continue
 		}
-		if err := m.publish(token); err != nil {
+		if err := m.publish(ctx, token); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			delay = m.failedDelay()
 			continue
 		}
@@ -300,10 +306,16 @@ func (m *securityTokenManager) run(ctx context.Context) {
 	}
 }
 
-func (m *securityTokenManager) publish(token FileSystemSecurityToken) error {
+func (m *securityTokenManager) publish(
+	ctx context.Context,
+	token FileSystemSecurityToken,
+) error {
 	published := token.Clone()
 	for _, receiver := range m.receivers {
-		if err := callSecurityTokenReceiver(receiver, published.Clone()); err != nil {
+		if err := callSecurityTokenReceiver(ctx, receiver, published.Clone()); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return ErrFileSystemSecurityToken
 		}
 	}
@@ -379,15 +391,30 @@ func tokenExpired(token FileSystemSecurityToken, now time.Time, skew time.Durati
 }
 
 func callSecurityTokenReceiver(
+	ctx context.Context,
 	receiver FileSystemSecurityTokenReceiver,
 	token FileSystemSecurityToken,
-) (err error) {
-	defer func() {
-		if recover() != nil {
-			err = ErrFileSystemSecurityToken
-		}
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result := make(chan error, 1)
+	go func() {
+		var err error
+		defer func() {
+			if recover() != nil {
+				err = ErrFileSystemSecurityToken
+			}
+			result <- err
+		}()
+		err = receiver.ReceiveFileSystemSecurityToken(token)
 	}()
-	return receiver.ReceiveFileSystemSecurityToken(token)
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 type securityTokenClock interface {
