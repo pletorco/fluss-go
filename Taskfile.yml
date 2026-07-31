@@ -14,6 +14,7 @@ vars:
   FUZZ_PARALLELISM: 1
   GO_PACKAGES:
     sh: go list ./... 2>/dev/null || true
+  APIDIFF_VERSION: v0.0.0-20260112195511-716be5621a96
   GOVULNCHECK_VERSION: v1.6.0
   PROTOC_VERSION: 3.21.12
   PROTOC_GEN_GO_VERSION: v1.36.10
@@ -62,6 +63,48 @@ tasks:
       - go doc ./adapters/oss >/dev/null
       - go doc ./adapters/hdfs >/dev/null
       - go doc ./adapters/otel >/dev/null
+
+  api:check:
+    desc: Reject unreviewed exported API changes
+    deps:
+      - api:check:client
+      - api:check:protocol
+
+  api:check:client:
+    desc: Compare fgo and fadm with the reviewed API baseline
+    cmds:
+      - task: api:compare
+        vars: { PACKAGE: ./pkg/fgo, BASELINE: api/baselines/fgo.api }
+      - task: api:compare
+        vars: { PACKAGE: ./pkg/fadm, BASELINE: api/baselines/fadm.api }
+
+  api:check:protocol:
+    desc: Compare fmsg with its separately reviewed generated protocol baseline
+    cmds:
+      - task: api:compare
+        vars: { PACKAGE: ./pkg/fmsg, BASELINE: api/baselines/fmsg.api }
+
+  api:compare:
+    internal: true
+    requires:
+      vars: [PACKAGE, BASELINE]
+    cmds:
+      - >-
+        output="$(go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}}
+        {{.BASELINE}} {{.PACKAGE}})";
+        if test -n "$output"; then
+          printf '%s\n' "$output";
+          printf 'exported API differs from %s; review the change and run task api:update\n' {{.BASELINE}} >&2;
+          exit 1;
+        fi
+
+  api:update:
+    desc: Update all exported API baselines after an approved API review
+    cmds:
+      - mkdir -p api/baselines
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/fgo.api ./pkg/fgo
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/fadm.api ./pkg/fadm
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/fmsg.api ./pkg/fmsg
 
   docs:markdown:
     desc: Verify local Markdown links, anchors, and synchronized Go fences
@@ -230,6 +273,7 @@ tasks:
   verify:
     desc: Run all local pre-PR validation and security gates
     deps:
+      - api:check
       - docs:check
       - fmt:check
       - verify:generate

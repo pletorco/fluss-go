@@ -8,6 +8,11 @@ breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Added separately reviewed `fgo`, `fadm`, and generated `fmsg` API baselines
+  with a required `apidiff` compatibility gate.
+
 ## [v0.1.0-beta.6] - 2026-07-31
 
 ### Added
