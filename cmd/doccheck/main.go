@@ -21,6 +21,12 @@ type finding struct {
 	reason string
 }
 
+type auditor struct {
+	fset     *token.FileSet
+	packages map[string]bool
+	findings []finding
+}
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -45,63 +51,87 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func audit(paths []string) ([]finding, error) {
-	fset := token.NewFileSet()
-	packages := make(map[string]bool)
-	var findings []finding
+	auditor := &auditor{
+		fset:     token.NewFileSet(),
+		packages: make(map[string]bool),
+	}
 	for _, root := range paths {
-		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() {
-				if path != root && strings.HasPrefix(entry.Name(), ".") {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-				return nil
-			}
-			file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-			if err != nil {
-				return err
-			}
-			if ast.IsGenerated(file) {
-				return nil
-			}
-			packageKey := filepath.Dir(path) + "\x00" + file.Name.Name
-			if _, ok := packages[packageKey]; !ok {
-				packages[packageKey] = false
-			}
-			if file.Doc != nil {
-				packages[packageKey] = true
-			}
-			findings = append(findings, declarationFindings(fset, path, file)...)
-			return nil
-		})
-		if err != nil {
+		if err := auditor.scan(root); err != nil {
 			return nil, fmt.Errorf("scan %s: %w", root, err)
 		}
 	}
-	for key, documented := range packages {
+	auditor.addPackageFindings()
+	sort.Slice(auditor.findings, func(i, j int) bool {
+		return findingLess(auditor.findings[i], auditor.findings[j])
+	})
+	return auditor.findings, nil
+}
+
+func (a *auditor) scan(root string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return directoryAction(root, path, entry.Name())
+		}
+		if !isSourceFile(path) {
+			return nil
+		}
+		return a.auditFile(path)
+	})
+}
+
+func directoryAction(root, path, name string) error {
+	if path != root && strings.HasPrefix(name, ".") {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+func isSourceFile(path string) bool {
+	return strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")
+}
+
+func (a *auditor) auditFile(path string) error {
+	file, err := parser.ParseFile(a.fset, path, nil, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+	if ast.IsGenerated(file) {
+		return nil
+	}
+	key := filepath.Dir(path) + "\x00" + file.Name.Name
+	if _, ok := a.packages[key]; !ok {
+		a.packages[key] = false
+	}
+	if file.Doc != nil {
+		a.packages[key] = true
+	}
+	a.findings = append(a.findings, declarationFindings(a.fset, path, file)...)
+	return nil
+}
+
+func (a *auditor) addPackageFindings() {
+	for key, documented := range a.packages {
 		if documented {
 			continue
 		}
 		directory, packageName, _ := strings.Cut(key, "\x00")
-		findings = append(findings, finding{
+		a.findings = append(a.findings, finding{
 			path: directory, symbol: "package " + packageName, reason: "missing package comment",
 		})
 	}
-	sort.Slice(findings, func(i, j int) bool {
-		if findings[i].path != findings[j].path {
-			return findings[i].path < findings[j].path
-		}
-		if findings[i].line != findings[j].line {
-			return findings[i].line < findings[j].line
-		}
-		return findings[i].symbol < findings[j].symbol
-	})
-	return findings, nil
+}
+
+func findingLess(left, right finding) bool {
+	if left.path != right.path {
+		return left.path < right.path
+	}
+	if left.line != right.line {
+		return left.line < right.line
+	}
+	return left.symbol < right.symbol
 }
 
 func declarationFindings(fset *token.FileSet, path string, file *ast.File) []finding {
@@ -131,30 +161,63 @@ func generalDeclarationFindings(
 ) []finding {
 	var findings []finding
 	for _, spec := range declaration.Specs {
-		switch spec := spec.(type) {
-		case *ast.TypeSpec:
-			if spec.Name.IsExported() && declaration.Doc == nil && spec.Doc == nil {
-				findings = append(findings, missingComment(
-					fset, path, spec.Pos(), spec.Name.Name,
-				))
-			}
-			if interfaceType, ok := spec.Type.(*ast.InterfaceType); ok &&
-				spec.Name.IsExported() {
-				findings = append(findings, interfaceFindings(
-					fset, path, spec.Name.Name, interfaceType,
-				)...)
-			}
-		case *ast.ValueSpec:
-			if declaration.Doc != nil || spec.Doc != nil {
-				continue
-			}
-			for _, name := range spec.Names {
-				if name.IsExported() {
-					findings = append(findings, missingComment(
-						fset, path, name.Pos(), name.Name,
-					))
-				}
-			}
+		findings = append(findings, generalSpecFindings(
+			fset, path, declaration.Doc, spec,
+		)...)
+	}
+	return findings
+}
+
+func generalSpecFindings(
+	fset *token.FileSet,
+	path string,
+	groupDoc *ast.CommentGroup,
+	spec ast.Spec,
+) []finding {
+	switch spec := spec.(type) {
+	case *ast.TypeSpec:
+		return typeSpecFindings(fset, path, groupDoc, spec)
+	case *ast.ValueSpec:
+		return valueSpecFindings(fset, path, groupDoc, spec)
+	default:
+		return nil
+	}
+}
+
+func typeSpecFindings(
+	fset *token.FileSet,
+	path string,
+	groupDoc *ast.CommentGroup,
+	spec *ast.TypeSpec,
+) []finding {
+	if !spec.Name.IsExported() {
+		return nil
+	}
+	var findings []finding
+	if groupDoc == nil && spec.Doc == nil {
+		findings = append(findings, missingComment(fset, path, spec.Pos(), spec.Name.Name))
+	}
+	if interfaceType, ok := spec.Type.(*ast.InterfaceType); ok {
+		findings = append(findings, interfaceFindings(
+			fset, path, spec.Name.Name, interfaceType,
+		)...)
+	}
+	return findings
+}
+
+func valueSpecFindings(
+	fset *token.FileSet,
+	path string,
+	groupDoc *ast.CommentGroup,
+	spec *ast.ValueSpec,
+) []finding {
+	if groupDoc != nil || spec.Doc != nil {
+		return nil
+	}
+	var findings []finding
+	for _, name := range spec.Names {
+		if name.IsExported() {
+			findings = append(findings, missingComment(fset, path, name.Pos(), name.Name))
 		}
 	}
 	return findings
