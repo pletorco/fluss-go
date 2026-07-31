@@ -32,6 +32,9 @@ breaking changes.
 
 - Split S3, OSS, HDFS, and OpenTelemetry adapters into separately versioned Go
   modules so core-only consumers no longer inherit their optional SDK graphs.
+- Recorded the Fluss 0.9.1 native lake-format contract and an explicit
+  no-implementation decision for Iceberg, Lance, and Paimon until a maintained
+  Go engine passes dependency, license, and lake-enabled integration gates.
 
 ## [v0.1.0-beta.6] - 2026-07-31
 

@@ -50,7 +50,7 @@ golden coverage remains required even when live evidence exists.
 | Latest KV snapshots and metadata | Covered | The suite enables one-second snapshots and verifies availability, IDs, log offsets, and immutable file metadata for buckets containing data. Empty buckets may correctly report no snapshot. |
 | Snapshot lease acquire/renew/release/drop | Covered | A unique lease protects every available snapshot, releases one bucket, and drops the remainder with bounded fallback cleanup. |
 | Filesystem security token | Covered | Direct and managed-refresh paths verify expiry, redaction, replacement, and cleanup without logging token bytes. |
-| Lake snapshot | Expected environment error | The stock image has no configured lake catalog. The request is sent and must return a classified storage or validation error; success would fail the suite. |
+| Lake snapshot | Wire contract covered; stock environment error expected | The response model and omitted-partition sentinel match Java 0.9.1. The stock image has no configured lake catalog, so live requests must return a classified storage or validation error. Native Iceberg, Lance, and Paimon providers are deliberately not bundled; see [native lake formats](lake-formats.md). |
 | Per-bucket table statistics | Covered | Input order, bucket identity, non-negative row counts, and every partial error slot are checked. |
 
 ## Review rule
