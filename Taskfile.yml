@@ -14,10 +14,13 @@ vars:
   FUZZ_PARALLELISM: 1
   GO_PACKAGES:
     sh: go list ./... 2>/dev/null || true
+  MODULES: . adapters/hdfs adapters/oss adapters/otel adapters/s3
+  APIDIFF_VERSION: v0.0.0-20260112195511-716be5621a96
   GOVULNCHECK_VERSION: v1.6.0
   PROTOC_VERSION: 3.21.12
   PROTOC_GEN_GO_VERSION: v1.36.10
   TRIVY_VERSION: 0.72.0
+  LICENSE_ALLOWLIST: Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,Copyright
   TOOLS_DIR: .tools/bin
 
 tasks:
@@ -39,12 +42,14 @@ tasks:
   deps:verify:
     desc: Verify Go module dependencies
     cmds:
-      - go mod verify
+      - for: { var: MODULES }
+        cmd: go -C {{.ITEM}} mod verify
 
   vet:
     desc: Run go vet
     cmds:
-      - test -z "{{.GO_PACKAGES}}" || go vet ./...
+      - for: { var: MODULES }
+        cmd: go -C {{.ITEM}} vet ./...
 
   docs:check:
     desc: Verify GoDoc, Markdown links, and compile-checked examples
@@ -62,6 +67,65 @@ tasks:
       - go doc ./adapters/oss >/dev/null
       - go doc ./adapters/hdfs >/dev/null
       - go doc ./adapters/otel >/dev/null
+
+  api:check:
+    desc: Reject unreviewed exported API changes
+    deps:
+      - api:check:client
+      - api:check:protocol
+      - api:check:adapters
+
+  api:check:client:
+    desc: Compare fgo and fadm with the reviewed API baseline
+    cmds:
+      - task: api:compare
+        vars: { PACKAGE: ./pkg/fgo, BASELINE: api/baselines/fgo.api }
+      - task: api:compare
+        vars: { PACKAGE: ./pkg/fadm, BASELINE: api/baselines/fadm.api }
+
+  api:check:protocol:
+    desc: Compare fmsg with its separately reviewed generated protocol baseline
+    cmds:
+      - task: api:compare
+        vars: { PACKAGE: ./pkg/fmsg, BASELINE: api/baselines/fmsg.api }
+
+  api:check:adapters:
+    desc: Compare separately versioned adapter modules with reviewed baselines
+    cmds:
+      - task: api:compare
+        vars: { PACKAGE: ./adapters/hdfs, BASELINE: api/baselines/adapter-hdfs.api }
+      - task: api:compare
+        vars: { PACKAGE: ./adapters/oss, BASELINE: api/baselines/adapter-oss.api }
+      - task: api:compare
+        vars: { PACKAGE: ./adapters/otel, BASELINE: api/baselines/adapter-otel.api }
+      - task: api:compare
+        vars: { PACKAGE: ./adapters/s3, BASELINE: api/baselines/adapter-s3.api }
+
+  api:compare:
+    internal: true
+    requires:
+      vars: [PACKAGE, BASELINE]
+    cmds:
+      - >-
+        output="$(go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}}
+        {{.BASELINE}} {{.PACKAGE}})";
+        if test -n "$output"; then
+          printf '%s\n' "$output";
+          printf 'exported API differs from %s; review the change and run task api:update\n' {{.BASELINE}} >&2;
+          exit 1;
+        fi
+
+  api:update:
+    desc: Update all exported API baselines after an approved API review
+    cmds:
+      - mkdir -p api/baselines
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/fgo.api ./pkg/fgo
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/fadm.api ./pkg/fadm
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/fmsg.api ./pkg/fmsg
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/adapter-hdfs.api ./adapters/hdfs
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/adapter-oss.api ./adapters/oss
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/adapter-otel.api ./adapters/otel
+      - go run golang.org/x/exp/cmd/apidiff@{{.APIDIFF_VERSION}} -w api/baselines/adapter-s3.api ./adapters/s3
 
   docs:markdown:
     desc: Verify local Markdown links, anchors, and synchronized Go fences
@@ -100,7 +164,8 @@ tasks:
   test:unit:
     desc: Run unit tests
     cmds:
-      - test -z "{{.GO_PACKAGES}}" || go test ./...
+      - for: { var: MODULES }
+        cmd: go -C {{.ITEM}} test ./...
 
   test:golden:
     desc: Verify byte-level Fluss 0.9.1 compatibility fixtures
@@ -113,7 +178,8 @@ tasks:
   test:race:
     desc: Run unit tests with the race detector
     cmds:
-      - test -z "{{.GO_PACKAGES}}" || go test -race ./...
+      - for: { var: MODULES }
+        cmd: go -C {{.ITEM}} test -race ./...
 
   test:fuzz:
     desc: Run bounded parser and codec fuzz smoke tests
@@ -130,13 +196,29 @@ tasks:
 
   coverage:
     desc: Verify 80 percent coverage for every hand-written Go source file
+    deps:
+      - coverage:generate
     cmds:
-      - go test -coverprofile=coverage.out ./...
       - cmd: >-
           awk 'NR > 1 && $1 !~ /FlussApi\.pb\.go|api_keys_gen\.go/ { split($1, path, ":"); total[path[1]] += $2; if ($3 > 0) covered[path[1]] += $2 } END { failed = 0; for (file in total) { percent = 100 * covered[file] / total[file]; printf "%s: %.1f%% (%d/%d statements)\n", file, percent, covered[file], total[file]; if (percent < 80) failed = 1 } exit failed }' coverage.out
 
+  coverage:generate:
+    desc: Generate one coverage profile across the root and adapter modules
+    cmds:
+      - mkdir -p .task/coverage
+      - go test -coverprofile=.task/coverage/root.out ./...
+      - go -C adapters/hdfs test -coverprofile=../../.task/coverage/hdfs.out ./...
+      - go -C adapters/oss test -coverprofile=../../.task/coverage/oss.out ./...
+      - go -C adapters/otel test -coverprofile=../../.task/coverage/otel.out ./...
+      - go -C adapters/s3 test -coverprofile=../../.task/coverage/s3.out ./...
+      - >-
+        awk 'FNR == 1 && NR != 1 { next } { print }'
+        .task/coverage/root.out .task/coverage/hdfs.out
+        .task/coverage/oss.out .task/coverage/otel.out
+        .task/coverage/s3.out > coverage.out
+
   test:integration:
-    desc: Run live tests against pinned plaintext and SASL Fluss 0.9.1 clusters
+    desc: Run live tests against pinned plaintext, SASL, and TLS-terminated Fluss 0.9.1 clusters
     preconditions:
       - sh: command -v docker >/dev/null 2>&1
         msg: Docker is required for the Fluss integration environment.
@@ -144,6 +226,20 @@ tasks:
         msg: Docker Compose is required for the Fluss integration environment.
       - sh: command -v openssl >/dev/null 2>&1
         msg: OpenSSL is required to generate ephemeral SASL credentials.
+    cmds:
+      - ./integration/run.sh
+
+  test:reliability:
+    desc: Run one configurable reliability profile against pinned Fluss 0.9.1
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1
+        msg: Docker is required for the Fluss reliability environment.
+      - sh: docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required for the Fluss reliability environment.
+      - sh: command -v openssl >/dev/null 2>&1
+        msg: OpenSSL is required by the shared live runner.
+    env:
+      FLUSS_RELIABILITY_ONLY: '1'
     cmds:
       - ./integration/run.sh
 
@@ -172,7 +268,7 @@ tasks:
       - sh: command -v sonar-scanner >/dev/null 2>&1
         msg: Install SonarScanner CLI and make sonar-scanner available on PATH.
     cmds:
-      - go test -coverprofile=coverage.out ./...
+      - task: coverage:generate
       - cmd: set -a; . ./.env; set +a; test -n "$SONAR_HOST_URL"; test -n "$SONAR_TOKEN"; sonar-scanner -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN"
 
   generate:
@@ -207,29 +303,58 @@ tasks:
   security:go:
     desc: Scan Go dependencies with govulncheck
     cmds:
-      - test -z "{{.GO_PACKAGES}}" || mkdir -p "{{.TOOLS_DIR}}"
-      - test -z "{{.GO_PACKAGES}}" || GOBIN="$(pwd)/{{.TOOLS_DIR}}" go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}
-      - test -z "{{.GO_PACKAGES}}" || "{{.TOOLS_DIR}}/govulncheck" ./...
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - GOBIN="$(pwd)/{{.TOOLS_DIR}}" go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}
+      - for: { var: MODULES }
+        cmd: '"{{.ROOT_DIR}}/{{.TOOLS_DIR}}/govulncheck" ./...'
+        dir: '{{.ITEM}}'
 
   security:repo:
-    desc: Scan repository vulnerabilities, configuration, secrets, and licenses
+    desc: Scan repository vulnerabilities, configuration, and secrets
     deps:
       - tools:check
     cmds:
       - trivy fs --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 1 --no-progress .
       - trivy fs --scanners secret --exit-code 1 --no-progress .
-      - trivy fs --scanners license --no-progress .
+
+  security:licenses:
+    desc: Reject dependencies outside the reviewed license allowlist
+    deps:
+      - tools:check
+    cmds:
+      - >-
+        trivy fs --scanners license
+        --ignored-licenses {{.LICENSE_ALLOWLIST}}
+        --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+        --skip-dirs testdata/license-policy-denied
+        --exit-code 1 --no-progress .
+      - task: security:licenses:test-policy
+
+  security:licenses:test-policy:
+    internal: true
+    cmds:
+      - >-
+        if trivy fs --scanners license
+        --ignored-licenses {{.LICENSE_ALLOWLIST}}
+        --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+        --exit-code 1 --no-progress
+        testdata/license-policy-denied >/dev/null 2>&1; then
+          printf 'license policy canary unexpectedly passed\n' >&2;
+          exit 1;
+        fi
 
   security:
     desc: Run all local security gates
     deps:
       - deps:verify
       - security:go
+      - security:licenses
       - security:repo
 
   verify:
     desc: Run all local pre-PR validation and security gates
     deps:
+      - api:check
       - docs:check
       - fmt:check
       - verify:generate

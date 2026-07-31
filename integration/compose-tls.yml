@@ -1,0 +1,192 @@
+name: fluss-go-tls-integration
+
+x-fluss-image: &fluss-image apache/fluss@sha256:65f5513b33dde10ace4f8adb3956f17226a2a1e2663f92b3096e4769b0ee1d1c
+x-zookeeper-image: &zookeeper-image zookeeper@sha256:43d39109cbd4de394742efbfc162a8a0a93731e806374b71f3865f4ef4460a56
+x-fluss-health: &fluss-health
+  interval: 2s
+  timeout: 2s
+  retries: 60
+  start_period: 5s
+  test: ["CMD-SHELL", "bash -c '</dev/tcp/$(hostname -i)/9123'"]
+
+services:
+  tls-zookeeper:
+    image: *zookeeper-image
+    restart: "no"
+
+  tls-coordinator:
+    image: *fluss-image
+    command: coordinatorServer
+    depends_on:
+      tls-zookeeper:
+        condition: service_started
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: tls-zookeeper:2181
+        bind.listeners: INTERNAL://tls-coordinator:0, CLIENT://tls-coordinator:9123
+        advertised.listeners: CLIENT://127.0.0.1:19323
+        internal.listener.name: INTERNAL
+        default.replication.factor: 3
+        remote.data.dir: /tmp/fluss/remote-data
+    ports:
+      - "19523:9123"
+    healthcheck: *fluss-health
+    volumes:
+      - tls-data:/tmp/fluss
+
+  tls-tablet-0:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      tls-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: tls-zookeeper:2181
+        bind.listeners: INTERNAL://tls-tablet-0:0, CLIENT://tls-tablet-0:9123
+        advertised.listeners: CLIENT://127.0.0.1:19324
+        internal.listener.name: INTERNAL
+        tablet-server.id: 0
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data/tablet-0
+        remote.data.dir: /tmp/fluss/remote-data
+    healthcheck: *fluss-health
+    volumes:
+      - tls-data:/tmp/fluss
+
+  tls-tablet-1:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      tls-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: tls-zookeeper:2181
+        bind.listeners: INTERNAL://tls-tablet-1:0, CLIENT://tls-tablet-1:9123
+        advertised.listeners: CLIENT://127.0.0.1:19325
+        internal.listener.name: INTERNAL
+        tablet-server.id: 1
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data/tablet-1
+        remote.data.dir: /tmp/fluss/remote-data
+    healthcheck: *fluss-health
+    volumes:
+      - tls-data:/tmp/fluss
+
+  tls-tablet-2:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      tls-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: tls-zookeeper:2181
+        bind.listeners: INTERNAL://tls-tablet-2:0, CLIENT://tls-tablet-2:9123
+        advertised.listeners: CLIENT://127.0.0.1:19326
+        internal.listener.name: INTERNAL
+        tablet-server.id: 2
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data/tablet-2
+        remote.data.dir: /tmp/fluss/remote-data
+    healthcheck: *fluss-health
+    volumes:
+      - tls-data:/tmp/fluss
+
+  tls-sasl-zookeeper:
+    image: *zookeeper-image
+    restart: "no"
+
+  tls-sasl-coordinator:
+    image: *fluss-image
+    command: coordinatorServer
+    depends_on:
+      tls-sasl-zookeeper:
+        condition: service_started
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: tls-sasl-zookeeper:2181
+        bind.listeners: INTERNAL://tls-sasl-coordinator:0, CLIENT://tls-sasl-coordinator:9123
+        advertised.listeners: CLIENT://127.0.0.1:19423
+        internal.listener.name: INTERNAL
+        remote.data.dir: /tmp/fluss/remote-data
+        security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
+        security.sasl.enabled.mechanisms: PLAIN
+        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}";
+    healthcheck: *fluss-health
+    volumes:
+      - tls-sasl-data:/tmp/fluss
+
+  tls-sasl-tablet:
+    image: *fluss-image
+    command: tabletServer
+    depends_on:
+      tls-sasl-coordinator:
+        condition: service_healthy
+    environment:
+      - |
+        FLUSS_PROPERTIES=
+        zookeeper.address: tls-sasl-zookeeper:2181
+        bind.listeners: INTERNAL://tls-sasl-tablet:0, CLIENT://tls-sasl-tablet:9123
+        advertised.listeners: CLIENT://127.0.0.1:19424
+        internal.listener.name: INTERNAL
+        tablet-server.id: 0
+        kv.snapshot.interval: 0s
+        data.dir: /tmp/fluss/data
+        remote.data.dir: /tmp/fluss/remote-data
+        security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
+        security.sasl.enabled.mechanisms: PLAIN
+        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}";
+    healthcheck: *fluss-health
+    volumes:
+      - tls-sasl-data:/tmp/fluss
+
+  tls-proxy:
+    image: haproxy@sha256:66e25cc9a8332635f4e897f7f4b1e5622c25f09f0ee23cddc6ce9bdb3a24772a
+    depends_on:
+      tls-coordinator:
+        condition: service_healthy
+      tls-tablet-0:
+        condition: service_healthy
+      tls-tablet-1:
+        condition: service_healthy
+      tls-tablet-2:
+        condition: service_healthy
+      tls-sasl-coordinator:
+        condition: service_healthy
+      tls-sasl-tablet:
+        condition: service_healthy
+    ports:
+      - "19323:19323"
+      - "19324:19324"
+      - "19325:19325"
+      - "19326:19326"
+      - "19327:19327"
+      - "19423:19423"
+      - "19424:19424"
+    healthcheck:
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ${FLUSS_TLS_DIR:?FLUSS_TLS_DIR is required}:/tls:ro
+
+volumes:
+  tls-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  tls-sasl-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs

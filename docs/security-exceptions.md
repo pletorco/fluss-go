@@ -16,3 +16,10 @@ Each exception must be filed as a GitHub issue and record:
 The issue must be closed when the dependency is updated, the finding is removed,
 or the mitigation is no longer needed. Expired exceptions are not renewable by
 silence: they require a new assessment and approval before the expiration date.
+
+License findings additionally follow the
+[dependency license policy](dependency-license-policy.md). Adding an SPDX
+license to the allowlist is a policy change, not a routine scanner exception,
+and requires compatibility and attribution review. A classifier false positive
+must identify the exact scanner version, input, and reproduced token; it must
+not suppress other unknown license names.

@@ -7,6 +7,13 @@ WebHDFS, Kerberos, or delegation-token decoding. Applications supply an
 vendor-supported HDFS client, then configure the reader with
 `fgo.WithRemoteFileReader`.
 
+This adapter is a separately versioned Go module. Install the adapter version
+that matches the root client release:
+
+```sh
+go get github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.7
+```
+
 The opener receives a validated authority, absolute path, context, and a
 private clone of the optional Fluss filesystem token. The clone remains valid
 until the stream closes and is then cleared. An opener that retains credentials

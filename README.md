@@ -23,6 +23,15 @@ go get github.com/pletorco/fluss-go@latest
 The API is experimental before v1. Pin a release in production rather than
 tracking a branch or an unversioned revision.
 
+Remote-storage and observability adapters are separately versioned Go modules.
+Importing only `pkg/fgo`, `pkg/fadm`, or `pkg/fmsg` does not add cloud or
+OpenTelemetry SDKs to the root module graph. Install an adapter at the same
+release version when it is needed, for example:
+
+```sh
+go get github.com/pletorco/fluss-go/adapters/s3@latest
+```
+
 ## Quick Start
 
 Open one shared client and close it after all writers, scanners, lookup clients,
@@ -69,7 +78,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | --- | --- | --- |
 | `fmsg` public API registry and protobuf messages | Implemented | Generated from the pinned Fluss 0.9.1 protocol; includes API/version and server-error registries. |
 | Protocol framing and request correlation | Implemented | [`internal/transport`](internal/transport) has bounded framing, context-aware writes, exactly-once completion, cancellation, and protocol tests. |
-| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, bounds retries to safe reads, and supports bounded-cardinality `MetricsObserver` events with an optional OpenTelemetry API adapter. |
+| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, supports native Fluss plaintext/SASL listeners and infrastructure-terminated TLS, bounds retries to safe reads, and emits bounded-cardinality `MetricsObserver` events. Fluss 0.9.1 has no native TLS listener. |
 | Coordinator/tablet metadata and partition routing | Implemented | Metadata refreshes are coalesced, stale leaders are rerouted once, `ResolveTableBuckets` returns stable bucket snapshots, and opt-in dynamic partition creation supports partitioned writers. |
 | Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables, load authoritative schemas through `OpenTable`, and resolve historical record schemas through a bounded client cache. |
 | Arrow schema and record batches | Supported | Full Fluss logical schema conversion plus v0/v1 Arrow log batches with NONE, LZ4, and ZSTD IPC compression; decoded records use explicit `Release` ownership. |
@@ -84,7 +93,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
 | Core `fadm` catalog client | Supported | `pkg/fadm` shares the `fgo` connection pool and implements database, table, schema, alter, partition, and per-bucket offset operations. |
 | Advanced `fadm` operations | Supported | ACL, cluster config, server discovery and tags, rebalance, producer-offset, KV snapshot acquire/renew/release, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
-| Live Fluss 0.9.1 compatibility | Verified | `task test:integration` runs Java-compatible golden fixtures and live plaintext, SASL PLAIN, multi-tablet, catalog, log, KV, lookup, prefix-lookup, schema-evolution, and leader-failover checks against the digest-pinned official 0.9.1 image. |
+| Live Fluss 0.9.1 compatibility | Verified | `task test:integration` runs Java-compatible golden fixtures and live plaintext, SASL PLAIN, TLS-terminated, multi-tablet, catalog, log, KV, lookup, prefix-lookup, schema-evolution, and leader-failover checks against digest-pinned images. |
 
 ## Documentation
 
@@ -95,6 +104,10 @@ updated here. Protocol-message coverage is not end-user feature parity.
   [fgo](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo), and
   [fadm](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm)
 - [Public architecture and ownership](docs/architecture/v0.1.md)
+- [Public API stability and compatibility checks](docs/public-api-stability.md)
+- [Fluss 0.9.1 live API evidence](docs/live-evidence.md)
+- [Repeatable load, soak, and fault-injection testing](docs/reliability-testing.md)
+- [Go module and optional dependency layout](docs/module-layout.md)
 - [Request coalescing and cancellation](docs/architecture/request-coalescing.md)
 - [Build-vs-buy decisions](docs/build-vs-buy.md)
 - [TLS and SASL secure connections](docs/authentication.md)
@@ -113,6 +126,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Lookup scheduling decision](docs/lookup-scheduling.md)
 - [Initial 0.9.1 delivery record](docs/roadmap-v0.1.md)
 - [Security exception policy](docs/security-exceptions.md)
+- [Dependency license policy](docs/dependency-license-policy.md)
 
 ## Development
 
@@ -121,13 +135,18 @@ see available checks; task verify runs formatting, generation verification,
 static analysis, unit and golden tests, bounded fuzz smoke tests, race tests,
 per-file coverage checks, and security gates.
 
+The checked-in `go.work` joins the root module and the four adapter modules for
+repository development. Published applications should select only the modules
+they import; the workspace file is not part of module resolution for users.
+
 Documentation changes use `task docs:check`. Edit compile-checked snippet
 sources under `internal/docexamples` and run `task docs:snippets:sync` to update
 their Markdown fences.
 
 Protocol generation requires protoc v3.21.12. Local security scans require
-Trivy v0.72.0. Integration tests require Docker, Docker Compose, and OpenSSL;
-the task creates and removes isolated clusters. The module recommends Go
+Trivy v0.72.0. Integration and reliability tests require Docker, Docker
+Compose, and OpenSSL; the tasks create and remove isolated clusters. The
+module recommends Go
 1.26.5 so the Go command can automatically avoid known standard-library
 vulnerabilities; set `GOTOOLCHAIN=local` only when intentionally testing
 another supported, patched Go release.

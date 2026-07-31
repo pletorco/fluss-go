@@ -8,6 +8,28 @@ breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Added separately reviewed `fgo`, `fadm`, and generated `fmsg` API baselines
+  with a required `apidiff` compatibility gate.
+- Added a pinned, fail-closed Trivy dependency-license allowlist with a denied
+  license canary across the root and optional adapter modules.
+- Added live post-failure append, scan, upsert, lookup, coordinator recovery,
+  and cancellation-isolation checks against the three-tablet Fluss cluster.
+- Added live evidence for typed data wrappers, partial upserts, merge modes,
+  snapshots and leases, producer offsets, server tags, and table statistics.
+- Added required live coverage for TLS-terminated Fluss 0.9.1 coordinator and
+  tablet routes, TLS with SASL PLAIN, certificate failures, protocol
+  mismatches, and canceled handshakes using ephemeral PKI material.
+- Added repeatable log, KV, lookup, scan, mixed, soak, and fault-injection
+  profiles with deterministic bounds, final data and resource leak gates,
+  scheduled runs, and credential-free retained reports.
+
+### Changed
+
+- Split S3, OSS, HDFS, and OpenTelemetry adapters into separately versioned Go
+  modules so core-only consumers no longer inherit their optional SDK graphs.
+
 ## [v0.1.0-beta.6] - 2026-07-31
 
 ### Added

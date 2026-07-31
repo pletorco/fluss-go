@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -34,12 +35,13 @@ func TestFluss091Integration(t *testing.T) {
 	requireEnvironment(t)
 	plainAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_COORDINATOR_PORT", "19123"))
 	saslAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_SASL_COORDINATOR_PORT", "19223"))
+	plainSeeds := []string{"127.0.0.1:1", plainAddress}
 
 	t.Run("protocol negotiation and role", func(t *testing.T) {
 		verifyProtocolRegistry(t, protocolEndpoints(plainAddress))
 	})
 
-	client := openClient(t, []string{"127.0.0.1:1", plainAddress})
+	client := openClient(t, plainSeeds)
 	defer client.Close()
 
 	t.Run("plaintext bootstrap failover", func(t *testing.T) {
@@ -103,8 +105,24 @@ func TestFluss091Integration(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})
 
-	t.Run("multi-node routing and leader failover", func(t *testing.T) {
-		testLeaderFailover(t, client, logPath)
+	t.Run("typed data API", func(t *testing.T) {
+		testTypedData(t, client, logPath, kvPath)
+	})
+
+	t.Run("partial upsert and merge modes", func(t *testing.T) {
+		testPartialUpsert(t, client, admin, database)
+	})
+
+	t.Run("snapshot and advanced admin APIs", func(t *testing.T) {
+		testAdvancedAdmin(t, client, admin, logPath, kvPath)
+	})
+
+	t.Run("post-failure data I/O", func(t *testing.T) {
+		testLeaderFailover(t, client, admin, logPath, kvPath)
+	})
+
+	t.Run("coordinator restart recovery", func(t *testing.T) {
+		testCoordinatorRecovery(t, client, plainSeeds, logPath)
 	})
 }
 
@@ -1034,9 +1052,660 @@ func testConcurrentInsertLookup(t *testing.T, ctx context.Context, client *fgo.C
 	}
 }
 
-func testLeaderFailover(t *testing.T, client *fgo.Client, path fgo.TablePath) {
+type typedLogEvent struct {
+	ID      int32
+	Message string
+}
+
+type typedUser struct {
+	Tenant string
+	ID     int32
+	Name   *string
+}
+
+type typedUserKey struct {
+	Tenant string
+	ID     *int32
+}
+
+func logEventCodec() fgo.Codec[typedLogEvent] {
+	return fgo.CodecFuncs[typedLogEvent]{
+		EncodeFunc: func(value typedLogEvent) (fgo.Row, error) {
+			return fgo.Row{value.ID, value.Message}, nil
+		},
+		DecodeFunc: func(row fgo.Row) (typedLogEvent, error) {
+			if len(row) != 2 {
+				return typedLogEvent{}, fmt.Errorf("typed log row has %d fields", len(row))
+			}
+			id, idOK := row[0].(int32)
+			message, messageOK := row[1].(string)
+			if !idOK || !messageOK {
+				return typedLogEvent{}, fmt.Errorf("typed log row has unexpected values %#v", row)
+			}
+			return typedLogEvent{ID: id, Message: message}, nil
+		},
+	}
+}
+
+func userCodec() fgo.Codec[typedUser] {
+	return fgo.CodecFuncs[typedUser]{
+		EncodeFunc: func(value typedUser) (fgo.Row, error) {
+			var name any
+			if value.Name != nil {
+				name = *value.Name
+			}
+			return fgo.Row{value.Tenant, value.ID, name}, nil
+		},
+		DecodeFunc: func(row fgo.Row) (typedUser, error) {
+			if len(row) != 3 {
+				return typedUser{}, fmt.Errorf("typed user row has %d fields", len(row))
+			}
+			tenant, tenantOK := row[0].(string)
+			id, idOK := row[1].(int32)
+			if !tenantOK || !idOK {
+				return typedUser{}, fmt.Errorf("typed user row has unexpected key %#v", row)
+			}
+			result := typedUser{Tenant: tenant, ID: id}
+			if row[2] != nil {
+				name, ok := row[2].(string)
+				if !ok {
+					return typedUser{}, fmt.Errorf("typed user row has unexpected name %#v", row[2])
+				}
+				result.Name = &name
+			}
+			return result, nil
+		},
+	}
+}
+
+func userKeyCodec() fgo.KeyCodec[typedUserKey] {
+	return fgo.KeyCodecFunc[typedUserKey](func(key typedUserKey) (fgo.PrimaryKey, error) {
+		if key.ID == nil {
+			return fgo.PrimaryKey{key.Tenant}, nil
+		}
+		return fgo.PrimaryKey{key.Tenant, *key.ID}, nil
+	})
+}
+
+func testTypedData(t *testing.T, client *fgo.Client, logPath, kvPath fgo.TablePath) {
 	t.Helper()
-	before := metadataLeaders(t, client, path)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	testTypedLogData(t, ctx, client, logPath)
+	kvTable, users := testTypedKVData(t, ctx, client, kvPath)
+	testTypedBatchData(t, ctx, client, kvTable, kvPath, users)
+}
+
+func testTypedLogData(t *testing.T, ctx context.Context, client *fgo.Client, path fgo.TablePath) {
+	t.Helper()
+	logTable, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := fgo.NewTypedLogScanner(
+		ctx,
+		client,
+		logTable,
+		fgo.Latest(),
+		logEventCodec(),
+		fgo.WithScanRowLimit(2),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	written := writeTypedLogEvents(t, ctx, client, logTable)
+	found := scanTypedLogEvents(t, ctx, scanner)
+	for _, event := range written {
+		if found[event.ID] != event {
+			t.Fatalf("typed scanned event %d = %#v, want %#v", event.ID, found[event.ID], event)
+		}
+	}
+}
+
+func writeTypedLogEvents(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) []typedLogEvent {
+	t.Helper()
+	writer, err := fgo.NewTypedLogWriter(
+		ctx, client, table, logEventCodec(), fgo.WithLogLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written := []typedLogEvent{{ID: 3001, Message: "typed-one"}, {ID: 3002, Message: "typed-two"}}
+	for _, event := range written {
+		if result := writer.Append(ctx, event).Await(ctx); result.Err != nil {
+			t.Fatalf("typed append %#v: %v", event, result.Err)
+		}
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return written
+}
+
+func scanTypedLogEvents(
+	t *testing.T,
+	ctx context.Context,
+	scanner *fgo.TypedLogScanner[typedLogEvent],
+) map[int32]typedLogEvent {
+	t.Helper()
+	found := make(map[int32]typedLogEvent)
+	for !scanner.Done() {
+		result, pollErr := scanner.Poll(ctx)
+		if pollErr != nil {
+			t.Fatal(pollErr)
+		}
+		if len(result.BucketErrors) != 0 {
+			t.Fatalf("typed scan bucket errors = %#v", result.BucketErrors)
+		}
+		for _, record := range result.Records {
+			found[record.Value.ID] = record.Value
+		}
+	}
+	return found
+}
+
+func testTypedKVData(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	path fgo.TablePath,
+) (fgo.Table, []typedUser) {
+	t.Helper()
+	kvTable, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstName, secondName := "typed-alice", "typed-bob"
+	users := []typedUser{
+		{Tenant: "typed-team", ID: 1, Name: &firstName},
+		{Tenant: "typed-team", ID: 2, Name: &secondName},
+	}
+	kvWriter, err := fgo.NewTypedKVWriter(
+		ctx, client, kvTable, userCodec(), userKeyCodec(), fgo.WithKVLinger(0),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range users {
+		if result := kvWriter.Upsert(ctx, user).Await(ctx); result.Err != nil {
+			t.Fatalf("typed upsert %#v: %v", user, result.Err)
+		}
+	}
+	if err := kvWriter.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lookup, err := fgo.NewTypedLookupClient(ctx, client, kvTable, userCodec(), userKeyCodec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+	id := int32(1)
+	points := lookup.Lookup(ctx, typedUserKey{Tenant: "typed-team", ID: &id})
+	if len(points) != 1 || points[0].Err != nil || !points[0].Found ||
+		points[0].Value.Name == nil || *points[0].Value.Name != firstName {
+		t.Fatalf("typed point lookup = %#v", points)
+	}
+	prefix := lookup.PrefixLookup(ctx, typedUserKey{Tenant: "typed-team"})
+	if len(prefix) != 1 || prefix[0].Err != nil || len(prefix[0].Values) != 2 {
+		t.Fatalf("typed prefix lookup = %#v", prefix)
+	}
+	return kvTable, users
+}
+
+func testTypedBatchData(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	path fgo.TablePath,
+	users []typedUser,
+) {
+	t.Helper()
+	buckets, err := client.ResolveTableBuckets(ctx, fgo.PhysicalTablePath{TablePath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchFound := make(map[int32]bool)
+	for _, bucket := range buckets {
+		for _, user := range scanTypedBatchBucket(t, ctx, client, table, bucket) {
+			if user.Tenant == "typed-team" {
+				batchFound[user.ID] = true
+			}
+		}
+	}
+	for _, user := range users {
+		if !batchFound[user.ID] {
+			t.Fatalf("typed batch rows = %#v", batchFound)
+		}
+	}
+}
+
+func scanTypedBatchBucket(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	bucket fgo.TableBucket,
+) []typedUser {
+	t.Helper()
+	batch, err := fgo.NewTypedBatchScanner(
+		ctx, client, table, bucket, userCodec(), fgo.WithBatchLimit(1000),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, pollErr := batch.Poll(ctx)
+	closeErr := batch.Close()
+	if pollErr != nil {
+		t.Fatal(pollErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if !result.Done {
+		t.Fatalf("typed batch bucket %d did not finish", bucket.BucketID)
+	}
+	return result.Values
+}
+
+func testPartialUpsert(t *testing.T, client *fgo.Client, admin *fadm.Client, database string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	testPartialUpdatePreservesFields(t, ctx, client, admin, database)
+	testKVMergeModes(t, ctx, client, admin, database)
+}
+
+func testPartialUpdatePreservesFields(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	database string,
+) {
+	t.Helper()
+	path := fgo.TablePath{Database: database, Table: "partial_users"}
+	if err := admin.CreateTable(ctx, path, fadm.TableDefinition{
+		Schema: fgo.Schema{
+			Columns: []fgo.Column{
+				{Name: "tenant", Type: fgo.StringType},
+				{Name: "id", Type: fgo.IntType},
+				{Name: "name", Type: fgo.StringType, Nullable: true},
+				{Name: "note", Type: fgo.StringType, Nullable: true},
+			},
+			PrimaryKey: []string{"tenant", "id"},
+			BucketKey:  []string{"tenant"},
+		},
+		BucketCount: 3,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	waitForTableReady(t, admin, path)
+	table, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeKVOperation(t, ctx, client, table, []fgo.KVWriterOption{fgo.WithKVLinger(0)}, func(writer *fgo.KVWriter) *fgo.WriteFuture {
+		return writer.Upsert(ctx, fgo.Row{"partial", int32(1), "before", "preserved"})
+	})
+	writeKVOperation(t, ctx, client, table, []fgo.KVWriterOption{fgo.WithKVLinger(0)}, func(writer *fgo.KVWriter) *fgo.WriteFuture {
+		return writer.PartialUpsert(
+			ctx, []string{"tenant", "id", "name"}, fgo.Row{"partial", int32(1), "after"},
+		)
+	})
+	lookup, err := client.NewLookupClient(ctx, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+	row := lookup.Lookup(ctx, fgo.PrimaryKey{"partial", int32(1)})
+	if len(row) != 1 || row[0].Err != nil || !row[0].Found ||
+		row[0].Row[2] != "after" || row[0].Row[3] != "preserved" {
+		t.Fatalf("partial upsert row = %#v", row)
+	}
+}
+
+func testKVMergeModes(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	database string,
+) {
+	t.Helper()
+	overwritePath := fgo.TablePath{Database: database, Table: "overwrite_users"}
+	if err := admin.CreateTable(ctx, overwritePath, fadm.TableDefinition{
+		Schema: fgo.Schema{
+			Columns: []fgo.Column{
+				{Name: "tenant", Type: fgo.StringType},
+				{Name: "id", Type: fgo.IntType},
+				{Name: "name", Type: fgo.StringType, Nullable: true},
+			},
+			PrimaryKey: []string{"tenant", "id"},
+			BucketKey:  []string{"tenant"},
+		},
+		BucketCount: 1,
+		Properties:  map[string]string{"table.merge-engine": "FIRST_ROW"},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	waitForTableReady(t, admin, overwritePath)
+	overwriteTable, err := client.OpenTable(ctx, overwritePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeOverwrite := func(mode fgo.MergeMode, name string) {
+		writeKVOperation(t, ctx, client, overwriteTable, []fgo.KVWriterOption{
+			fgo.WithKVLinger(0), fgo.WithKVMergeMode(mode),
+		}, func(writer *fgo.KVWriter) *fgo.WriteFuture {
+			return writer.Upsert(ctx, fgo.Row{"merge", int32(1), name})
+		})
+	}
+	writeOverwrite(fgo.MergeModeDefault, "first")
+	writeOverwrite(fgo.MergeModeDefault, "ignored")
+	overwriteLookup, err := client.NewLookupClient(ctx, overwriteTable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer overwriteLookup.Close()
+	merged := overwriteLookup.Lookup(ctx, fgo.PrimaryKey{"merge", int32(1)})
+	if len(merged) != 1 || merged[0].Err != nil || merged[0].Row[2] != "first" {
+		t.Fatalf("first-row merge result = %#v", merged)
+	}
+	writeOverwrite(fgo.MergeModeOverwrite, "overwrite")
+	merged = overwriteLookup.Lookup(ctx, fgo.PrimaryKey{"merge", int32(1)})
+	if len(merged) != 1 || merged[0].Err != nil || merged[0].Row[2] != "overwrite" {
+		t.Fatalf("overwrite-mode row = %#v", merged)
+	}
+}
+
+func writeKVOperation(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	options []fgo.KVWriterOption,
+	operation func(*fgo.KVWriter) *fgo.WriteFuture,
+) {
+	t.Helper()
+	writer, err := client.NewKVWriter(ctx, table, options...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := operation(writer).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testAdvancedAdmin(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	logPath, kvPath fgo.TablePath,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	testClusterConfigAndNodes(t, ctx, admin)
+	testProducerOffsets(t, ctx, client, admin, logPath)
+	testTableStatistics(t, ctx, client, admin, kvPath)
+	testSnapshotLease(t, ctx, client, admin, kvPath)
+	testLakeSnapshotError(t, ctx, admin, kvPath)
+}
+
+func testClusterConfigAndNodes(t *testing.T, ctx context.Context, admin *fadm.Client) {
+	t.Helper()
+	configs, err := admin.DescribeClusterConfigs(ctx)
+	if err != nil || len(configs) == 0 {
+		t.Fatalf("DescribeClusterConfigs() = %#v, %v", configs, err)
+	}
+	nodes, err := admin.ServerNodes(ctx)
+	if err != nil || len(nodes) != 4 {
+		t.Fatalf("ServerNodes() = %#v, %v", nodes, err)
+	}
+}
+
+func testProducerOffsets(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	path fgo.TablePath,
+) {
+	t.Helper()
+	logTable, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucketIDs := make([]int32, logTable.BucketCount)
+	for index := range bucketIDs {
+		bucketIDs[index] = int32(index)
+	}
+	offsets := admin.ListOffsets(
+		ctx, logTable, fgo.PhysicalTablePath{TablePath: path}, -1, bucketIDs, fgo.Latest(),
+	)
+	producerTable := fadm.ProducerTableOffsets{TableID: logTable.ID}
+	for _, offset := range offsets {
+		if offset.Err != nil {
+			t.Fatalf("producer offset bucket %d: %v", offset.Bucket, offset.Err)
+		}
+		producerTable.Offsets = append(producerTable.Offsets, fadm.ProducerBucketOffset{
+			PartitionID: -1, Bucket: offset.Bucket, Offset: offset.Offset,
+		})
+	}
+	producerID := fmt.Sprintf("fluss-go-integration-%d", time.Now().UnixNano())
+	deleted := false
+	defer func() {
+		if !deleted {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cleanupCancel()
+			if err := admin.DeleteProducerOffsets(cleanupCtx, producerID); err != nil {
+				t.Errorf("delete producer offsets cleanup: %v", err)
+			}
+		}
+	}()
+	registered, err := admin.RegisterProducerOffsets(ctx, producerID, []fadm.ProducerTableOffsets{producerTable}, time.Minute)
+	if err != nil || !registered {
+		t.Fatalf("RegisterProducerOffsets() = %v, %v", registered, err)
+	}
+	stored, err := admin.GetProducerOffsets(ctx, producerID)
+	if err != nil || stored.ProducerID != producerID || len(stored.Tables) != 1 ||
+		len(stored.Tables[0].Offsets) != len(producerTable.Offsets) || !stored.ExpiresAt.After(time.Now()) {
+		t.Fatalf("GetProducerOffsets() = %#v, %v", stored, err)
+	}
+	if err := admin.DeleteProducerOffsets(ctx, producerID); err != nil {
+		t.Fatal(err)
+	}
+	deleted = true
+}
+
+func testTableStatistics(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	path fgo.TablePath,
+) {
+	t.Helper()
+	kvTable, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucketIDs := make([]int32, kvTable.BucketCount)
+	for index := range bucketIDs {
+		bucketIDs[index] = int32(index)
+	}
+	stats := admin.TableStats(
+		ctx, kvTable, fgo.PhysicalTablePath{TablePath: path}, -1, bucketIDs,
+	)
+	if len(stats) != len(bucketIDs) {
+		t.Fatalf("TableStats() count = %d, want %d", len(stats), len(bucketIDs))
+	}
+	for index, stat := range stats {
+		if stat.Err != nil || stat.Bucket != bucketIDs[index] || stat.RowCount < 0 {
+			t.Fatalf("TableStats()[%d] = %#v", index, stat)
+		}
+	}
+}
+
+func testSnapshotLease(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	path fgo.TablePath,
+) {
+	t.Helper()
+	kvTable, err := client.OpenTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := waitForKVSnapshots(t, ctx, admin, path, kvTable.BucketCount)
+	leases := availableSnapshotLeases(latest)
+	if len(leases) == 0 {
+		t.Fatalf("available snapshot leases = %#v", leases)
+	}
+	metadata, err := admin.KVSnapshotMetadata(
+		ctx, leases[0].TableID, leases[0].PartitionID, leases[0].Bucket, leases[0].SnapshotID,
+	)
+	if err != nil || metadata.LogOffset < 0 || len(metadata.Files) == 0 {
+		t.Fatalf("KVSnapshotMetadata() = %#v, %v", metadata, err)
+	}
+	testSnapshotLeaseLifecycle(t, ctx, admin, leases)
+}
+
+func availableSnapshotLeases(latest fadm.LatestKVSnapshot) []fadm.SnapshotLease {
+	var leases []fadm.SnapshotLease
+	for _, snapshot := range latest.Snapshots {
+		if !snapshot.Available {
+			continue
+		}
+		leases = append(leases, fadm.SnapshotLease{
+			TableID: latest.TableID, PartitionID: latest.PartitionID,
+			Bucket: snapshot.Bucket, SnapshotID: snapshot.SnapshotID,
+		})
+	}
+	return leases
+}
+
+func testSnapshotLeaseLifecycle(
+	t *testing.T,
+	ctx context.Context,
+	admin *fadm.Client,
+	leases []fadm.SnapshotLease,
+) {
+	t.Helper()
+	leaseID := fmt.Sprintf("fluss-go-integration-lease-%d", time.Now().UnixNano())
+	dropped := false
+	defer func() {
+		if !dropped {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cleanupCancel()
+			if err := admin.DropKVSnapshotLease(cleanupCtx, leaseID); err != nil {
+				t.Errorf("drop snapshot lease cleanup: %v", err)
+			}
+		}
+	}()
+	unavailable, err := admin.AcquireKVSnapshotLease(ctx, leaseID, time.Minute, leases)
+	if err != nil || len(unavailable) != 0 {
+		t.Fatalf("AcquireKVSnapshotLease() unavailable = %#v, %v", unavailable, err)
+	}
+	if err := admin.RenewKVSnapshotLease(ctx, leaseID, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	bucket := fgo.TableBucket{
+		TableID: leases[0].TableID, PartitionID: leases[0].PartitionID, BucketID: leases[0].Bucket,
+		Leader: fgo.Node{Address: "lease-only", Role: fgo.TabletServer},
+	}
+	if err := admin.ReleaseKVSnapshotLease(ctx, leaseID, []fgo.TableBucket{bucket}); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.DropKVSnapshotLease(ctx, leaseID); err != nil {
+		t.Fatal(err)
+	}
+	dropped = true
+}
+
+func testLakeSnapshotError(
+	t *testing.T,
+	ctx context.Context,
+	admin *fadm.Client,
+	path fgo.TablePath,
+) {
+	t.Helper()
+	if _, err := admin.LakeSnapshot(ctx, path, nil, true); err == nil {
+		t.Fatal("LakeSnapshot() without lake storage error = nil")
+	} else if !errors.Is(err, fgo.ErrStorage) && !errors.Is(err, fgo.ErrValidation) {
+		t.Fatalf("LakeSnapshot() unsupported environment error = %v", err)
+	}
+}
+
+func waitForKVSnapshots(
+	t *testing.T,
+	ctx context.Context,
+	admin *fadm.Client,
+	path fgo.TablePath,
+	bucketCount int,
+) fadm.LatestKVSnapshot {
+	t.Helper()
+	var latest fadm.LatestKVSnapshot
+	err := waitForCondition(ctx, 500*time.Millisecond, func() (bool, error) {
+		candidate, snapshotErr := admin.LatestKVSnapshots(ctx, path, "")
+		if snapshotErr != nil {
+			return false, nil
+		}
+		latest = candidate
+		if len(candidate.Snapshots) != bucketCount {
+			return false, nil
+		}
+		available := false
+		for _, snapshot := range candidate.Snapshots {
+			available = available || snapshot.Available
+		}
+		return available, nil
+	})
+	if err != nil {
+		t.Fatalf("KV snapshots did not become available: %#v: %v", latest, err)
+	}
+	return latest
+}
+
+type expectedLogWrite struct {
+	id     int32
+	offset int64
+}
+
+func testLeaderFailover(
+	t *testing.T,
+	client *fgo.Client,
+	admin *fadm.Client,
+	logPath, kvPath fgo.TablePath,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	logTable, err := client.OpenTable(ctx, logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kvTable, err := client.OpenTable(ctx, kvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedLog := appendFailoverLogRows(t, ctx, client, logTable, 1000, false)
+	kvKeys := seedFailoverKVRows(t, ctx, client, kvTable)
+	before := metadataLeaders(t, client, logPath)
 	var stopped int32 = -1
 	for _, leader := range before {
 		stopped = leader
@@ -1047,17 +1716,482 @@ func testLeaderFailover(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	}
 	service := fmt.Sprintf("plaintext-tablet-%d", stopped)
 	compose(t, "stop", service)
-	defer compose(t, "up", "--detach", service)
-
-	deadline := time.Now().Add(90 * time.Second)
-	for time.Now().Before(deadline) {
-		leaders, err := tryMetadataLeaders(client, path)
-		if err == nil && leadersMoved(before, leaders, stopped) {
-			return
+	restarted := false
+	defer func() {
+		if !restarted {
+			compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", service)
 		}
-		time.Sleep(time.Second)
+	}()
+
+	if err := waitForCondition(ctx, 500*time.Millisecond, func() (bool, error) {
+		leaders, metadataErr := tryMetadataLeaders(client, logPath)
+		return metadataErr == nil && leadersMoved(before, leaders, stopped), nil
+	}); err != nil {
+		t.Fatalf("leaders did not move away from tablet %d; before=%#v: %v", stopped, before, err)
 	}
-	t.Fatalf("leaders did not move away from tablet %d; before=%#v", stopped, before)
+
+	mergeExpectedLogWrites(expectedLog, appendFailoverLogRows(t, ctx, client, logTable, 2000, true))
+	updateAndVerifyFailoverKVRows(t, ctx, client, kvTable, kvKeys)
+	verifyFailoverLogRows(t, ctx, client, admin, logTable, expectedLog)
+
+	canceled, stop := context.WithCancel(ctx)
+	stop()
+	if _, err := client.OpenTable(canceled, logPath); !errors.Is(err, context.Canceled) {
+		t.Fatalf("OpenTable() canceled after failover = %v", err)
+	}
+	if _, err := client.OpenTable(ctx, logPath); err != nil {
+		t.Fatalf("OpenTable() after canceled failover request = %v", err)
+	}
+	if _, err := client.NewLogWriter(
+		ctx,
+		logTable,
+		fgo.WithLogRequest(5*time.Second, 1),
+		fgo.WithLogRetryPolicy(fgo.WriterRetryPolicy{MaxAttempts: 2}),
+	); !errors.Is(err, fgo.ErrInvalidConfig) {
+		t.Fatalf("unsafe mutation retry configuration error = %v", err)
+	}
+
+	compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", service)
+	restarted = true
+}
+
+func appendFailoverLogRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	base int32,
+	retry bool,
+) map[int32][]expectedLogWrite {
+	t.Helper()
+	writer := openFailoverLogWriter(t, ctx, client, table, retry)
+	expected := make(map[int32][]expectedLogWrite, table.BucketCount)
+	for index := range table.BucketCount {
+		id := base + int32(index)
+		result := writer.Append(ctx, fgo.Row{id, fmt.Sprintf("failover-%d", id)}).Await(ctx)
+		if result.Err != nil || !result.OffsetKnown || result.Records != 1 {
+			t.Fatalf("append failover row %d = %#v", id, result)
+		}
+		expected[result.Bucket] = append(expected[result.Bucket], expectedLogWrite{id: id, offset: result.BaseOffset})
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(expected) != table.BucketCount {
+		t.Fatalf("round-robin writes reached %d of %d buckets: %#v", len(expected), table.BucketCount, expected)
+	}
+	return expected
+}
+
+func openFailoverLogWriter(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	retry bool,
+) *fgo.LogWriter {
+	t.Helper()
+	options := []fgo.LogWriterOption{
+		fgo.WithLogLinger(0),
+		fgo.WithLogBucketAssignment(fgo.AssignmentRoundRobin),
+		fgo.WithLogBatchLimits(1<<20, 1),
+		fgo.WithLogRequest(10*time.Second, -1),
+	}
+	if retry {
+		options = append(options, fgo.WithLogRetryPolicy(fgo.WriterRetryPolicy{
+			MaxAttempts: 5,
+			Backoff: func(int) time.Duration {
+				return 100 * time.Millisecond
+			},
+		}))
+	}
+	var writer *fgo.LogWriter
+	var err error
+	for attempt := 1; attempt <= 5; attempt++ {
+		writer, err = client.NewLogWriter(ctx, table, options...)
+		if err == nil {
+			break
+		}
+		if !retry || !isTransientConnectionFailure(err) {
+			t.Fatalf("create failover log writer: %v", err)
+		}
+		if waitErr := waitRetryInterval(ctx, 100*time.Millisecond); waitErr != nil {
+			t.Fatalf("retry failover log writer: %v (last error: %v)", waitErr, err)
+		}
+	}
+	if writer == nil {
+		t.Fatalf("create failover log writer after retries: %v", err)
+	}
+	return writer
+}
+
+func mergeExpectedLogWrites(target, source map[int32][]expectedLogWrite) {
+	for bucket, writes := range source {
+		target[bucket] = append(target[bucket], writes...)
+	}
+}
+
+func seedFailoverKVRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) map[int32]fgo.PrimaryKey {
+	t.Helper()
+	writer, err := client.NewKVWriter(
+		ctx, table, fgo.WithKVLinger(0), fgo.WithKVBatchLimits(1<<20, 1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make(map[int32]fgo.PrimaryKey, table.BucketCount)
+	for index := 0; len(keys) < table.BucketCount && index < 100; index++ {
+		key := fgo.PrimaryKey{fmt.Sprintf("failover-%03d", index), int32(1)}
+		result := writer.Upsert(ctx, fgo.Row{key[0], key[1], "before"}).Await(ctx)
+		if result.Err != nil || !result.OffsetKnown || result.Records != 1 {
+			t.Fatalf("seed failover KV row %d = %#v", index, result)
+		}
+		if _, exists := keys[result.Bucket]; !exists {
+			keys[result.Bucket] = key
+		}
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != table.BucketCount {
+		t.Fatalf("KV seeds reached %d of %d buckets: %#v", len(keys), table.BucketCount, keys)
+	}
+	return keys
+}
+
+func updateAndVerifyFailoverKVRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	keys map[int32]fgo.PrimaryKey,
+) {
+	t.Helper()
+	writer := openFailoverKVWriter(t, ctx, client, table)
+	ordered := updateFailoverKVRows(t, ctx, writer, table, keys)
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	verifyFailoverKVLookups(t, ctx, client, table, ordered)
+}
+
+func openFailoverKVWriter(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) *fgo.KVWriter {
+	t.Helper()
+	options := []fgo.KVWriterOption{
+		fgo.WithKVLinger(0),
+		fgo.WithKVBatchLimits(1<<20, 1),
+		fgo.WithKVRequest(10*time.Second, -1),
+		fgo.WithKVRetryPolicy(fgo.WriterRetryPolicy{
+			MaxAttempts: 5,
+			Backoff: func(int) time.Duration {
+				return 100 * time.Millisecond
+			},
+		}),
+	}
+	var writer *fgo.KVWriter
+	var err error
+	for attempt := 1; attempt <= 5; attempt++ {
+		writer, err = client.NewKVWriter(ctx, table, options...)
+		if err == nil {
+			break
+		}
+		if !isTransientConnectionFailure(err) {
+			t.Fatalf("create failover KV writer: %v", err)
+		}
+		if waitErr := waitRetryInterval(ctx, 100*time.Millisecond); waitErr != nil {
+			t.Fatalf("retry failover KV writer: %v (last error: %v)", waitErr, err)
+		}
+	}
+	if writer == nil {
+		t.Fatalf("create failover KV writer after retries: %v", err)
+	}
+	return writer
+}
+
+func updateFailoverKVRows(
+	t *testing.T,
+	ctx context.Context,
+	writer *fgo.KVWriter,
+	table fgo.Table,
+	keys map[int32]fgo.PrimaryKey,
+) []fgo.PrimaryKey {
+	t.Helper()
+	ordered := make([]fgo.PrimaryKey, 0, len(keys))
+	for bucket := int32(0); bucket < int32(table.BucketCount); bucket++ {
+		key, ok := keys[bucket]
+		if !ok {
+			t.Fatalf("missing failover key for bucket %d", bucket)
+		}
+		result := writer.Upsert(ctx, fgo.Row{key[0], key[1], "after"}).Await(ctx)
+		if result.Err != nil || result.Bucket != bucket || result.Records != 1 {
+			t.Fatalf("post-failover KV bucket %d = %#v", bucket, result)
+		}
+		ordered = append(ordered, key)
+	}
+	return ordered
+}
+
+func verifyFailoverKVLookups(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	ordered []fgo.PrimaryKey,
+) {
+	t.Helper()
+	lookup, err := client.NewLookupClient(ctx, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+	results := lookup.Lookup(ctx, ordered...)
+	if len(results) != len(ordered) {
+		t.Fatalf("post-failover lookup count = %d, want %d", len(results), len(ordered))
+	}
+	for index, result := range results {
+		if result.Err != nil || !result.Found || result.Row[2] != "after" {
+			t.Fatalf("post-failover lookup %d = %#v", index, result)
+		}
+	}
+	missing := lookup.Lookup(ctx, fgo.PrimaryKey{"failover-missing", int32(1)})
+	if len(missing) != 1 || !errors.Is(missing[0].Err, fgo.ErrNotFound) || missing[0].Found {
+		t.Fatalf("terminal missing-key result = %#v", missing)
+	}
+}
+
+func verifyFailoverLogRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	table fgo.Table,
+	expected map[int32][]expectedLogWrite,
+) {
+	t.Helper()
+	ends := failoverLogEnds(t, ctx, admin, table)
+	wanted := expectedFailoverLogRows(expected)
+	actual := scanFailoverLogRows(t, ctx, client, table, ends, wanted)
+	assertFailoverLogRows(t, expected, actual)
+}
+
+func failoverLogEnds(
+	t *testing.T,
+	ctx context.Context,
+	admin *fadm.Client,
+	table fgo.Table,
+) map[int32]int64 {
+	t.Helper()
+	buckets := make([]int32, table.BucketCount)
+	for index := range buckets {
+		buckets[index] = int32(index)
+	}
+	ends := make(map[int32]int64, len(buckets))
+	for _, result := range admin.ListOffsets(
+		ctx, table, fgo.PhysicalTablePath{TablePath: table.Path}, -1, buckets, fgo.Latest(),
+	) {
+		if result.Err != nil {
+			t.Fatalf("latest offset for bucket %d: %v", result.Bucket, result.Err)
+		}
+		ends[result.Bucket] = result.Offset
+	}
+	return ends
+}
+
+func expectedFailoverLogRows(expected map[int32][]expectedLogWrite) map[int32]expectedLogWrite {
+	wanted := make(map[int32]expectedLogWrite)
+	for _, writes := range expected {
+		for _, write := range writes {
+			wanted[write.id] = write
+		}
+	}
+	return wanted
+}
+
+func scanFailoverLogRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	ends map[int32]int64,
+	wanted map[int32]expectedLogWrite,
+) map[int32][]expectedLogWrite {
+	t.Helper()
+	scanner, err := client.NewLogScanner(
+		ctx,
+		table,
+		fgo.Earliest(),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanStoppingOffsets(ends),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	actual := make(map[int32][]expectedLogWrite)
+	for !scanner.Done() {
+		result, pollErr := scanner.Poll(ctx)
+		if pollErr != nil {
+			t.Fatal(pollErr)
+		}
+		if len(result.BucketErrors) != 0 {
+			result.Release()
+			t.Fatalf("post-failover bucket errors = %#v", result.BucketErrors)
+		}
+		if err := collectFailoverLogRows(result.Records, wanted, actual); err != nil {
+			result.Release()
+			t.Fatal(err)
+		}
+		result.Release()
+	}
+	return actual
+}
+
+func collectFailoverLogRows(
+	records []fgo.ScanRecord,
+	wanted map[int32]expectedLogWrite,
+	actual map[int32][]expectedLogWrite,
+) error {
+	for _, scanned := range records {
+		id, ok := scanned.Record.Value[0].(int32)
+		if !ok {
+			continue
+		}
+		write, tracked := wanted[id]
+		if !tracked {
+			continue
+		}
+		actual[scanned.Bucket] = append(actual[scanned.Bucket], expectedLogWrite{
+			id: id, offset: scanned.Record.Offset,
+		})
+		if scanned.Record.Offset != write.offset {
+			return fmt.Errorf("row %d offset = %d, want %d", id, scanned.Record.Offset, write.offset)
+		}
+	}
+	return nil
+}
+
+func assertFailoverLogRows(
+	t *testing.T,
+	expected, actual map[int32][]expectedLogWrite,
+) {
+	t.Helper()
+	for bucket, writes := range expected {
+		got := actual[bucket]
+		if len(got) != len(writes) {
+			t.Fatalf("bucket %d failover rows = %#v, want %#v", bucket, got, writes)
+		}
+		for index := range writes {
+			if got[index] != writes[index] {
+				t.Fatalf("bucket %d row %d = %#v, want %#v", bucket, index, got[index], writes[index])
+			}
+		}
+	}
+}
+
+func testCoordinatorRecovery(
+	t *testing.T,
+	client *fgo.Client,
+	seeds []string,
+	path fgo.TablePath,
+) {
+	t.Helper()
+	compose(t, "stop", "plaintext-coordinator")
+	restarted := false
+	defer func() {
+		if !restarted {
+			compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", "plaintext-coordinator")
+		}
+	}()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failureCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, failure := admin.ServerNodes(failureCtx)
+	cancel()
+	if failure == nil || !isTransientConnectionFailure(failure) {
+		t.Fatalf("stopped coordinator error = %v, want transient connection failure", failure)
+	}
+
+	compose(t, "up", "--detach", "--wait", "--wait-timeout", "120", "plaintext-coordinator")
+	restarted = true
+	recovered := openClient(t, seeds)
+	defer recovered.Close()
+	recoveredAdmin, err := fadm.New(recovered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithTimeout(context.Background(), 45*time.Second)
+	defer stop()
+	if err := waitForCondition(ctx, 250*time.Millisecond, func() (bool, error) {
+		nodes, nodesErr := recoveredAdmin.ServerNodes(ctx)
+		if nodesErr != nil {
+			return false, nil
+		}
+		_, tableErr := recovered.OpenTable(ctx, path)
+		return len(nodes) == 4 && tableErr == nil, nil
+	}); err != nil {
+		t.Fatalf("coordinator did not recover through configured seeds: %v", err)
+	}
+	canceled, cancelRequest := context.WithCancel(ctx)
+	cancelRequest()
+	if _, err := recoveredAdmin.ServerNodes(canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled recovered admin request = %v", err)
+	}
+	if _, err := recoveredAdmin.ServerNodes(ctx); err != nil {
+		t.Fatalf("admin request after cancellation = %v", err)
+	}
+}
+
+func isTransientConnectionFailure(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) ||
+		errors.Is(err, transport.ErrClosed) {
+		return true
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError)
+}
+
+func waitForCondition(
+	ctx context.Context,
+	interval time.Duration,
+	condition func() (bool, error),
+) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		ready, err := condition()
+		if ready || err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitRetryInterval(ctx context.Context, interval time.Duration) error {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func leadersMoved(before, after map[int32]int32, stopped int32) bool {

@@ -55,11 +55,11 @@ func advancedConfigResponse(t *testing.T, message any, response fmsg.Response) {
 			t.Fatalf("AlterClusterConfigs request = %#v", message)
 		}
 	case *fmsg.AddServerTagRequest:
-		if len(message.GetServerIds()) != 2 || message.GetServerTag() != 7 {
+		if len(message.GetServerIds()) != 2 || message.GetServerTag() != ServerTagTemporaryOffline {
 			t.Fatalf("AddServerTag request = %#v", message)
 		}
 	case *fmsg.RemoveServerTagRequest:
-		if len(message.GetServerIds()) != 1 || message.GetServerTag() != 7 {
+		if len(message.GetServerIds()) != 1 || message.GetServerTag() != ServerTagTemporaryOffline {
 			t.Fatalf("RemoveServerTag request = %#v", message)
 		}
 	}
@@ -369,10 +369,10 @@ func exerciseACLAndConfig(t *testing.T, ctx context.Context, client *Client, acl
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.AddServerTag(ctx, []int32{1, 2}, 7); err != nil {
+	if err := client.AddServerTag(ctx, []int32{1, 2}, ServerTagTemporaryOffline); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.RemoveServerTag(ctx, []int32{1}, 7); err != nil {
+	if err := client.RemoveServerTag(ctx, []int32{1}, ServerTagTemporaryOffline); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -523,6 +523,7 @@ func TestAdvancedAdminValidation(t *testing.T) {
 		},
 		"add tag empty":    func() error { return client.AddServerTag(ctx, nil, 1) },
 		"add tag negative": func() error { return client.AddServerTag(ctx, []int32{-1}, 1) },
+		"add tag unknown":  func() error { return client.AddServerTag(ctx, []int32{1}, 2) },
 		"remove tag":       func() error { return client.RemoveServerTag(ctx, []int32{1}, -1) },
 		"rebalance empty": func() error {
 			_, err := client.StartRebalance(ctx)

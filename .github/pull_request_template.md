@@ -7,6 +7,7 @@
 - [ ] task verify
 - [ ] New or changed behavior has focused tests.
 - [ ] Public API and compatibility impact is documented.
+- [ ] Exported API changes are intentional, pass `task api:check`, and include baseline, changelog, and migration updates when applicable.
 
 ## Build vs buy
 

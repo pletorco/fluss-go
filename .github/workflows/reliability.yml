@@ -1,0 +1,126 @@
+name: Fluss 0.9.1 Reliability
+
+on:
+  schedule:
+    - cron: '43 1 * * 0'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Reliability profile
+        required: true
+        default: mixed
+        type: choice
+        options:
+          - mixed
+          - soak
+          - fault
+          - log
+          - kv
+          - lookup
+          - scan
+      duration:
+        description: Bounded Go duration such as 5m
+        required: true
+        default: 5m
+        type: string
+      seed:
+        description: Deterministic signed 64-bit seed
+        required: true
+        default: '104091'
+        type: string
+      max_operations:
+        description: Aggregate operation cap
+        required: true
+        default: '30000'
+        type: string
+      workers:
+        description: Worker count from 1 through 32
+        required: true
+        default: '8'
+        type: string
+
+concurrency:
+  group: fluss-0.9.1-reliability-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scheduled:
+    if: github.event_name == 'schedule'
+    name: Scheduled ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: mixed
+            duration: 10m
+            max_operations: '50000'
+            workers: '8'
+          - profile: soak
+            duration: 15m
+            max_operations: '5000'
+            workers: '2'
+          - profile: fault
+            duration: 10m
+            max_operations: '30000'
+            workers: '8'
+    env:
+      FLUSS_RELIABILITY_PROFILE: ${{ matrix.profile }}
+      FLUSS_RELIABILITY_DURATION: ${{ matrix.duration }}
+      FLUSS_RELIABILITY_SEED: '104091'
+      FLUSS_RELIABILITY_MAX_OPS: ${{ matrix.max_operations }}
+      FLUSS_RELIABILITY_WORKERS: ${{ matrix.workers }}
+      FLUSS_RELIABILITY_REPORT: .task/reliability/${{ matrix.profile }}.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825d5d2fc7ad053ef454303e # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.x
+          check-latest: true
+      - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+        with:
+          version: 3.51.1
+      - run: task test:reliability
+      - name: Retain reliability report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reliability-${{ matrix.profile }}-${{ github.run_id }}
+          path: .task/reliability/${{ matrix.profile }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  manual:
+    if: github.event_name == 'workflow_dispatch'
+    name: Manual ${{ inputs.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      FLUSS_RELIABILITY_PROFILE: ${{ inputs.profile }}
+      FLUSS_RELIABILITY_DURATION: ${{ inputs.duration }}
+      FLUSS_RELIABILITY_SEED: ${{ inputs.seed }}
+      FLUSS_RELIABILITY_MAX_OPS: ${{ inputs.max_operations }}
+      FLUSS_RELIABILITY_WORKERS: ${{ inputs.workers }}
+      FLUSS_RELIABILITY_REPORT: .task/reliability/${{ inputs.profile }}.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825d5d2fc7ad053ef454303e # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.x
+          check-latest: true
+      - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+        with:
+          version: 3.51.1
+      - run: task test:reliability
+      - name: Retain reliability report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reliability-${{ inputs.profile }}-${{ github.run_id }}
+          path: .task/reliability/${{ inputs.profile }}.json
+          if-no-files-found: error
+          retention-days: 30

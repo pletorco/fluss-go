@@ -438,14 +438,21 @@ func (c *Client) AddServerTag(ctx context.Context, serverIDs []int32, tag int32)
 	return c.changeServerTag(ctx, fmsg.APIKeyAddServerTag, serverIDs, tag)
 }
 
+// Server tags supported by Apache Fluss 0.9.1.
+const (
+	ServerTagPermanentOffline int32 = 0
+	ServerTagTemporaryOffline int32 = 1
+)
+
 // RemoveServerTag removes tag from each server ID.
 func (c *Client) RemoveServerTag(ctx context.Context, serverIDs []int32, tag int32) error {
 	return c.changeServerTag(ctx, fmsg.APIKeyRemoveServerTag, serverIDs, tag)
 }
 
 func (c *Client) changeServerTag(ctx context.Context, key fmsg.APIKey, serverIDs []int32, tag int32) error {
-	if len(serverIDs) == 0 || tag < 0 {
-		return fmt.Errorf("%w: server IDs and non-negative tag are required", fgo.ErrInvalidConfig)
+	if len(serverIDs) == 0 ||
+		(tag != ServerTagPermanentOffline && tag != ServerTagTemporaryOffline) {
+		return fmt.Errorf("%w: server IDs and a supported tag are required", fgo.ErrInvalidConfig)
 	}
 	for _, serverID := range serverIDs {
 		if serverID < 0 {

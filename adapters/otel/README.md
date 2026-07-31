@@ -5,6 +5,13 @@ Core `pkg/fgo` remains backend-neutral, and this adapter imports no
 OpenTelemetry SDK, reader, OTLP client, Prometheus exporter, or collector
 transport.
 
+This adapter is a separately versioned Go module. Install the adapter version
+that matches the root client release:
+
+```sh
+go get github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.7
+```
+
 Create `Observer` with an application-owned `metric.MeterProvider`, then pass it
 to `fgo.WithMetricsObserver`. The application is responsible for configuring
 the SDK, views, resources, readers, export interval, and exporter, and for

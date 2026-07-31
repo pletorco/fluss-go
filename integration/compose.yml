@@ -49,7 +49,7 @@ services:
         advertised.listeners: CLIENT://127.0.0.1:${FLUSS_PLAIN_TABLET_0_PORT:-19124}
         internal.listener.name: INTERNAL
         tablet-server.id: 0
-        kv.snapshot.interval: 0s
+        kv.snapshot.interval: 1s
         data.dir: /tmp/fluss/data/tablet-0
         remote.data.dir: /tmp/fluss/remote-data
     ports:
@@ -72,7 +72,7 @@ services:
         advertised.listeners: CLIENT://127.0.0.1:${FLUSS_PLAIN_TABLET_1_PORT:-19125}
         internal.listener.name: INTERNAL
         tablet-server.id: 1
-        kv.snapshot.interval: 0s
+        kv.snapshot.interval: 1s
         data.dir: /tmp/fluss/data/tablet-1
         remote.data.dir: /tmp/fluss/remote-data
     ports:
@@ -95,7 +95,7 @@ services:
         advertised.listeners: CLIENT://127.0.0.1:${FLUSS_PLAIN_TABLET_2_PORT:-19126}
         internal.listener.name: INTERNAL
         tablet-server.id: 2
-        kv.snapshot.interval: 0s
+        kv.snapshot.interval: 1s
         data.dir: /tmp/fluss/data/tablet-2
         remote.data.dir: /tmp/fluss/remote-data
     ports:

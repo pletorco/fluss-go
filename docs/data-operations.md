@@ -127,6 +127,12 @@ projection, cache, and error contract.
 `MergeModeOverwrite` bypasses it and writes the supplied values as replacements.
 One writer uses one mode for every mutation it accepts.
 
+`PartialUpsert` sends the complete compacted row shape required by Fluss 0.9.1
+and marks only the selected target columns for application. Omitted nullable
+fields are encoded as null placeholders in that payload; the server preserves
+their existing stored values. The selection must include every primary-key
+column, and every omitted non-key column must be nullable.
+
 <!-- go-source: internal/docexamples/snippets_test.go kvMerge -->
 ```go
 writer, err := client.NewKVWriter(

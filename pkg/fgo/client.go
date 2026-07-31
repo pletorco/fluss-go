@@ -325,6 +325,12 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 	}
 	response, err := c.RequestTo(ctx, node, request)
 	if !errors.Is(err, ErrMetadata) {
+		if shouldReplaceConnection(err) {
+			// A failed tablet connection may be the old leader after failover.
+			// Invalidate the route for the caller's next attempt, but do not replay
+			// a potentially applied mutation here.
+			c.router.InvalidatePhysical(path)
+		}
 		return response, err
 	}
 	c.router.InvalidatePhysical(path)

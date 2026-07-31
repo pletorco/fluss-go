@@ -440,7 +440,15 @@ func (w *KVWriter) PartialUpsert(ctx context.Context, columns []string, values R
 		future.complete(WriteResult{Err: err})
 		return future
 	}
-	value, err := EncodeCompactedProjectedRow(w.table.Schema, columns, values)
+	full := make(Row, len(w.table.Schema.Columns))
+	positions := make(map[string]int, len(w.table.Schema.Columns))
+	for index, column := range w.table.Schema.Columns {
+		positions[column.Name] = index
+	}
+	for index, column := range columns {
+		full[positions[column]] = values[index]
+	}
+	value, err := EncodeCompactedRow(w.table.Schema, full)
 	if err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
