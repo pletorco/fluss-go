@@ -281,12 +281,14 @@ func TestAdvancedAdminOperations(t *testing.T) {
 	path := fgo.TablePath{Database: "db", Table: "users"}
 	physical := fgo.PhysicalTablePath{TablePath: path, Partition: "region=kr"}
 	acl := ACL{
-		ResourceName: "db", ResourceType: 1, PrincipalName: "alice",
-		PrincipalType: "USER", Host: "*", Operation: 2, Permission: 3,
+		ResourceName: "db", ResourceType: ACLResourceDatabase, PrincipalName: "alice",
+		PrincipalType: ACLPrincipalUser, Host: ACLWildcardHost,
+		Operation: ACLOperationDrop, Permission: ACLPermissionAllow,
 	}
 	filterName := "db"
 	filter := ACLFilter{
-		ResourceName: &filterName, ResourceType: 1, Operation: 2, Permission: 3,
+		ResourceName: &filterName, ResourceType: ACLResourceDatabase,
+		Operation: ACLOperationDrop, Permission: ACLPermissionAllow,
 	}
 	var progressCalls atomic.Int32
 	seen := make(map[fmsg.APIKey]int)
@@ -458,8 +460,9 @@ func TestAdvancedAdminValidation(t *testing.T) {
 	ctx := context.Background()
 	path := fgo.TablePath{Database: "db", Table: "t"}
 	validACL := ACL{
-		ResourceName: "db", ResourceType: 1, PrincipalName: "alice",
-		PrincipalType: "USER", Host: "*", Operation: 1, Permission: 1,
+		ResourceName: "db", ResourceType: ACLResourceDatabase, PrincipalName: "alice",
+		PrincipalType: ACLPrincipalUser, Host: ACLWildcardHost,
+		Operation: ACLOperationRead, Permission: ACLPermissionAllow,
 	}
 	validLease := SnapshotLease{TableID: 1, PartitionID: -1, Bucket: 0, SnapshotID: 1}
 	checks := map[string]func() error{
@@ -564,13 +567,19 @@ func TestAdvancedAdminErrorsAndCancellation(t *testing.T) {
 		}}
 		client := newClient(fake)
 		acl := ACL{
-			ResourceName: "r", ResourceType: 1, PrincipalName: "p",
-			PrincipalType: "USER", Host: "*", Operation: 1, Permission: 1,
+			ResourceName: "r", ResourceType: ACLResourceDatabase, PrincipalName: "p",
+			PrincipalType: ACLPrincipalUser, Host: ACLWildcardHost,
+			Operation: ACLOperationRead, Permission: ACLPermissionAllow,
 		}
 		if _, err := client.CreateACLs(ctx, acl); !errors.Is(err, fgo.ErrValidation) {
 			t.Fatalf("CreateACLs error = %v", err)
 		}
-		if _, err := client.DropACLs(ctx, ACLFilter{}); !errors.Is(err, fgo.ErrValidation) {
+		filter := ACLFilter{
+			ResourceType: ACLResourceAny,
+			Operation:    ACLOperationAny,
+			Permission:   ACLPermissionAny,
+		}
+		if _, err := client.DropACLs(ctx, filter); !errors.Is(err, fgo.ErrValidation) {
 			t.Fatalf("DropACLs error = %v", err)
 		}
 	})

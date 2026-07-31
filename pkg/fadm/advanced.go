@@ -3,6 +3,7 @@ package fadm
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fgo"
@@ -10,59 +11,203 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ACLResourceType identifies a resource category in the Fluss ACL protocol.
+type ACLResourceType int32
+
+// ACL resource types supported by Apache Fluss 0.9.1.
+const (
+	ACLResourceAny      ACLResourceType = 1
+	ACLResourceCluster  ACLResourceType = 2
+	ACLResourceDatabase ACLResourceType = 3
+	ACLResourceTable    ACLResourceType = 4
+)
+
+// ACLOperation identifies an operation protected by an ACL.
+type ACLOperation int32
+
+// ACL operations supported by Apache Fluss 0.9.1.
+const (
+	ACLOperationAny      ACLOperation = 1
+	ACLOperationAll      ACLOperation = 2
+	ACLOperationRead     ACLOperation = 3
+	ACLOperationWrite    ACLOperation = 4
+	ACLOperationCreate   ACLOperation = 5
+	ACLOperationDrop     ACLOperation = 6
+	ACLOperationAlter    ACLOperation = 7
+	ACLOperationDescribe ACLOperation = 8
+)
+
+// ACLPermission identifies whether an operation is allowed.
+// Apache Fluss 0.9.1 does not support deny ACLs.
+type ACLPermission int32
+
+// ACL permissions supported by Apache Fluss 0.9.1.
+const (
+	ACLPermissionAny   ACLPermission = 1
+	ACLPermissionAllow ACLPermission = 2
+)
+
+// ACLPrincipalType identifies the namespace of an ACL principal.
+// Custom authorizers may define additional non-empty, case-sensitive values.
+type ACLPrincipalType string
+
+// Conventional principal types and wildcards used by Apache Fluss 0.9.1.
+const (
+	ACLPrincipalUser     ACLPrincipalType = "User"
+	ACLPrincipalGroup    ACLPrincipalType = "Group"
+	ACLPrincipalRole     ACLPrincipalType = "Role"
+	ACLPrincipalWildcard ACLPrincipalType = "*"
+
+	ACLWildcardResourceName  = "*"
+	ACLWildcardHost          = "*"
+	ACLWildcardPrincipalName = "*"
+	ACLClusterResourceName   = "fluss-cluster"
+)
+
 // ACL describes one Fluss access-control entry.
 type ACL struct {
 	ResourceName  string
-	ResourceType  int32
+	ResourceType  ACLResourceType
 	PrincipalName string
-	PrincipalType string
+	PrincipalType ACLPrincipalType
 	Host          string
-	Operation     int32
-	Permission    int32
+	Operation     ACLOperation
+	Permission    ACLPermission
 }
 
 func (a ACL) validate() error {
-	if a.ResourceName == "" || a.PrincipalName == "" || a.PrincipalType == "" || a.Host == "" ||
-		a.ResourceType < 0 || a.Operation < 0 || a.Permission < 0 {
-		return fmt.Errorf("%w: invalid ACL", fgo.ErrInvalidConfig)
+	if a.ResourceName == "" {
+		return fmt.Errorf("%w: ACL resource name is required", fgo.ErrInvalidConfig)
+	}
+	if !a.ResourceType.valid(false) {
+		return fmt.Errorf("%w: ACL resource type %d is not concrete", fgo.ErrInvalidConfig, a.ResourceType)
+	}
+	if err := validateACLPrincipal(a.PrincipalName, a.PrincipalType); err != nil {
+		return err
+	}
+	if a.Host == "" {
+		return fmt.Errorf("%w: ACL host is required", fgo.ErrInvalidConfig)
+	}
+	if !a.Operation.valid(false) {
+		return fmt.Errorf("%w: ACL operation %d is not concrete", fgo.ErrInvalidConfig, a.Operation)
+	}
+	if a.Permission != ACLPermissionAllow {
+		return fmt.Errorf("%w: ACL permission %d is not concrete", fgo.ErrInvalidConfig, a.Permission)
 	}
 	return nil
 }
 
 func (a ACL) message() *fmsg.PbAclInfo {
 	return &fmsg.PbAclInfo{
-		ResourceName: proto.String(a.ResourceName), ResourceType: proto.Int32(a.ResourceType),
-		PrincipalName: proto.String(a.PrincipalName), PrincipalType: proto.String(a.PrincipalType),
-		Host: proto.String(a.Host), OperationType: proto.Int32(a.Operation),
-		PermissionType: proto.Int32(a.Permission),
+		ResourceName: proto.String(a.ResourceName), ResourceType: proto.Int32(int32(a.ResourceType)),
+		PrincipalName: proto.String(a.PrincipalName), PrincipalType: proto.String(string(a.PrincipalType)),
+		Host: proto.String(a.Host), OperationType: proto.Int32(int32(a.Operation)),
+		PermissionType: proto.Int32(int32(a.Permission)),
 	}
 }
 
 // ACLFilter selects access-control entries.
-// Nil pointer fields act as wildcards.
+// Nil optional string fields and explicit Any enum values act as wildcards.
+// PrincipalName and PrincipalType must either both be nil or both be set.
 type ACLFilter struct {
 	ResourceName  *string
-	ResourceType  int32
+	ResourceType  ACLResourceType
 	PrincipalName *string
-	PrincipalType *string
+	PrincipalType *ACLPrincipalType
 	Host          *string
-	Operation     int32
-	Permission    int32
+	Operation     ACLOperation
+	Permission    ACLPermission
 }
 
 func (f ACLFilter) validate() error {
-	if f.ResourceType < 0 || f.Operation < 0 || f.Permission < 0 {
-		return fmt.Errorf("%w: invalid ACL filter", fgo.ErrInvalidConfig)
+	if !f.ResourceType.valid(true) {
+		return fmt.Errorf("%w: invalid ACL filter resource type %d", fgo.ErrInvalidConfig, f.ResourceType)
+	}
+	if f.ResourceName != nil && *f.ResourceName == "" {
+		return fmt.Errorf("%w: ACL filter resource name is empty", fgo.ErrInvalidConfig)
+	}
+	if (f.PrincipalName == nil) != (f.PrincipalType == nil) {
+		return fmt.Errorf("%w: ACL filter principal name and type must be set together", fgo.ErrInvalidConfig)
+	}
+	if f.PrincipalName != nil {
+		if err := validateACLPrincipal(*f.PrincipalName, *f.PrincipalType); err != nil {
+			return err
+		}
+	}
+	if f.Host != nil && *f.Host == "" {
+		return fmt.Errorf("%w: ACL filter host is empty", fgo.ErrInvalidConfig)
+	}
+	if !f.Operation.valid(true) {
+		return fmt.Errorf("%w: invalid ACL filter operation %d", fgo.ErrInvalidConfig, f.Operation)
+	}
+	if !f.Permission.valid(true) {
+		return fmt.Errorf("%w: invalid ACL filter permission %d", fgo.ErrInvalidConfig, f.Permission)
 	}
 	return nil
 }
 
 func (f ACLFilter) message() *fmsg.PbAclFilter {
 	return &fmsg.PbAclFilter{
-		ResourceName: f.ResourceName, ResourceType: proto.Int32(f.ResourceType),
-		PrincipalName: f.PrincipalName, PrincipalType: f.PrincipalType, Host: f.Host,
-		OperationType: proto.Int32(f.Operation), PermissionType: proto.Int32(f.Permission),
+		ResourceName: f.ResourceName, ResourceType: proto.Int32(int32(f.ResourceType)),
+		PrincipalName: f.PrincipalName, PrincipalType: aclPrincipalTypeString(f.PrincipalType), Host: f.Host,
+		OperationType: proto.Int32(int32(f.Operation)), PermissionType: proto.Int32(int32(f.Permission)),
 	}
+}
+
+func (t ACLResourceType) valid(allowAny bool) bool {
+	return (allowAny && t == ACLResourceAny) ||
+		t == ACLResourceCluster ||
+		t == ACLResourceDatabase ||
+		t == ACLResourceTable
+}
+
+func (o ACLOperation) valid(allowAny bool) bool {
+	return (allowAny && o == ACLOperationAny) ||
+		(o >= ACLOperationAll && o <= ACLOperationDescribe)
+}
+
+func (p ACLPermission) valid(allowAny bool) bool {
+	return (allowAny && p == ACLPermissionAny) || p == ACLPermissionAllow
+}
+
+func validateACLPrincipal(name string, principalType ACLPrincipalType) error {
+	if name == "" {
+		return fmt.Errorf("%w: ACL principal name is required", fgo.ErrInvalidConfig)
+	}
+	value := string(principalType)
+	if value == "" || strings.TrimSpace(value) != value {
+		return fmt.Errorf("%w: invalid ACL principal type %q", fgo.ErrInvalidConfig, value)
+	}
+	for _, canonical := range []ACLPrincipalType{
+		ACLPrincipalUser,
+		ACLPrincipalGroup,
+		ACLPrincipalRole,
+		ACLPrincipalWildcard,
+	} {
+		if strings.EqualFold(value, string(canonical)) && principalType != canonical {
+			return fmt.Errorf(
+				"%w: ACL principal type %q must use canonical form %q",
+				fgo.ErrInvalidConfig,
+				value,
+				canonical,
+			)
+		}
+	}
+	if (name == ACLWildcardPrincipalName) != (principalType == ACLPrincipalWildcard) {
+		return fmt.Errorf(
+			"%w: wildcard ACL principal name and type must be used together",
+			fgo.ErrInvalidConfig,
+		)
+	}
+	return nil
+}
+
+func aclPrincipalTypeString(principalType *ACLPrincipalType) *string {
+	if principalType == nil {
+		return nil
+	}
+	value := string(*principalType)
+	return &value
 }
 
 // ACLResult associates one ACL with its server-side result.
@@ -100,8 +245,12 @@ func (c *Client) CreateACLs(ctx context.Context, acls ...ACL) ([]ACLResult, erro
 	}
 	results := make([]ACLResult, len(acls))
 	for index, item := range created.GetAclRes() {
+		acl, err := aclFromMessage(item.GetAcl())
+		if err != nil {
+			return nil, err
+		}
 		results[index] = ACLResult{
-			ACL: aclFromMessage(item.GetAcl()),
+			ACL: acl,
 			Err: fgo.ResponseError(item.GetErrorCode(), item.GetErrorMessage(), fmsg.APIKeyCreateAcls),
 		}
 	}
@@ -127,8 +276,12 @@ func (c *Client) ListACLs(ctx context.Context, filter ACLFilter) ([]ACL, error) 
 		return nil, unexpected("list ACLs", response)
 	}
 	acls := make([]ACL, len(list.GetAcl()))
-	for index, acl := range list.GetAcl() {
-		acls[index] = aclFromMessage(acl)
+	for index, item := range list.GetAcl() {
+		acl, err := aclFromMessage(item)
+		if err != nil {
+			return nil, err
+		}
+		acls[index] = acl
 	}
 	return acls, nil
 }
@@ -172,8 +325,12 @@ func (c *Client) DropACLs(ctx context.Context, filters ...ACLFilter) ([]DropACLR
 		results[index].Filter = filters[index]
 		results[index].Err = fgo.ResponseError(item.GetErrorCode(), item.GetErrorMessage(), fmsg.APIKeyDropAcls)
 		for _, match := range item.GetMatchingAcls() {
+			acl, err := aclFromMessage(match.GetAcl())
+			if err != nil {
+				return nil, err
+			}
 			results[index].Matches = append(results[index].Matches, ACLResult{
-				ACL: aclFromMessage(match.GetAcl()),
+				ACL: acl,
 				Err: fgo.ResponseError(match.GetErrorCode(), match.GetErrorMessage(), fmsg.APIKeyDropAcls),
 			})
 		}
@@ -181,12 +338,23 @@ func (c *Client) DropACLs(ctx context.Context, filters ...ACLFilter) ([]DropACLR
 	return results, nil
 }
 
-func aclFromMessage(acl *fmsg.PbAclInfo) ACL {
-	return ACL{
-		ResourceName: acl.GetResourceName(), ResourceType: acl.GetResourceType(),
-		PrincipalName: acl.GetPrincipalName(), PrincipalType: acl.GetPrincipalType(),
-		Host: acl.GetHost(), Operation: acl.GetOperationType(), Permission: acl.GetPermissionType(),
+func aclFromMessage(message *fmsg.PbAclInfo) (ACL, error) {
+	if message == nil {
+		return ACL{}, fmt.Errorf("%w: missing ACL in server response", fgo.ErrValidation)
 	}
+	acl := ACL{
+		ResourceName:  message.GetResourceName(),
+		ResourceType:  ACLResourceType(message.GetResourceType()),
+		PrincipalName: message.GetPrincipalName(),
+		PrincipalType: ACLPrincipalType(message.GetPrincipalType()),
+		Host:          message.GetHost(),
+		Operation:     ACLOperation(message.GetOperationType()),
+		Permission:    ACLPermission(message.GetPermissionType()),
+	}
+	if err := acl.validate(); err != nil {
+		return ACL{}, fmt.Errorf("%w: malformed ACL server response: %v", fgo.ErrValidation, err)
+	}
+	return acl, nil
 }
 
 // ClusterConfig is one effective cluster configuration value and its source.
