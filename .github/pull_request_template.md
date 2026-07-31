@@ -16,6 +16,7 @@
 - License, security, transitive dependency, compatibility, and size impact:
 - Compatibility, golden, integration, or benchmark evidence:
 
+- [ ] Exactly one build-vs-buy classification above applies to this change.
 - [ ] The decision follows `CODING_GUIDELINES.md`, or this section explains the approved exception.
 - [ ] Library behavior is reused through a thin adapter instead of copied.
 - [ ] A new dependency or reusable custom implementation updates `docs/build-vs-buy.md` when required.

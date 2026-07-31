@@ -20,6 +20,7 @@ import (
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/text"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -28,6 +29,9 @@ var (
 	)
 	htmlAnchor = regexp.MustCompile(
 		`(?i)<[a-z][^>]*\s(?:id|name)=["']([^"']+)["'][^>]*>`,
+	)
+	taskReference = regexp.MustCompile(
+		`(?:^|[\s;&|()])task[ \t]+([A-Za-z0-9][A-Za-z0-9:_-]*)`,
 	)
 )
 
@@ -38,12 +42,13 @@ type finding struct {
 }
 
 type report struct {
-	files         int
-	localLinks    int
-	externalLinks int
-	snippets      int
-	skipped       int
-	findings      []finding
+	files          int
+	localLinks     int
+	externalLinks  int
+	snippets       int
+	taskReferences int
+	skipped        int
+	findings       []finding
 }
 
 type document struct {
@@ -66,6 +71,7 @@ type checker struct {
 	documents    map[string]*document
 	snippetCache map[string]map[string][]byte
 	replacements map[string][]replacement
+	taskNames    map[string]struct{}
 	report       report
 }
 
@@ -100,11 +106,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(
 		stdout,
 		"mdcheck: %d files, %d local links, %d external URLs skipped, "+
-			"%d Go snippets synchronized, %d generated or vendored files skipped\n",
+			"%d Go snippets synchronized, %d Task references checked, "+
+			"%d generated or vendored files skipped\n",
 		result.files,
 		result.localLinks,
 		result.externalLinks,
 		result.snippets,
+		result.taskReferences,
 		result.skipped,
 	)
 	if len(result.findings) != 0 {
@@ -122,6 +130,10 @@ func audit(repository string, paths []string, write bool) (report, error) {
 	if err != nil {
 		return report{}, err
 	}
+	taskNames, err := loadTaskNames(repository)
+	if err != nil {
+		return report{}, err
+	}
 	checker := &checker{
 		repository:   repository,
 		write:        write,
@@ -129,6 +141,7 @@ func audit(repository string, paths []string, write bool) (report, error) {
 		documents:    make(map[string]*document),
 		snippetCache: make(map[string]map[string][]byte),
 		replacements: make(map[string][]replacement),
+		taskNames:    taskNames,
 		report:       report{skipped: skipped},
 	}
 	for _, path := range files {
@@ -157,6 +170,31 @@ func audit(repository string, paths []string, write bool) (report, error) {
 		return left.reason < right.reason
 	})
 	return checker.report, nil
+}
+
+func loadTaskNames(repository string) (map[string]struct{}, error) {
+	path := filepath.Join(repository, "Taskfile.yml")
+	source, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read Taskfile.yml: %w", err)
+	}
+	var config struct {
+		Tasks map[string]yaml.Node `yaml:"tasks"`
+	}
+	if err := yaml.Unmarshal(source, &config); err != nil {
+		return nil, fmt.Errorf("parse Taskfile.yml: %w", err)
+	}
+	if len(config.Tasks) == 0 {
+		return nil, errors.New("parse Taskfile.yml: no tasks found")
+	}
+	names := make(map[string]struct{}, len(config.Tasks))
+	for name := range config.Tasks {
+		names[name] = struct{}{}
+	}
+	return names, nil
 }
 
 func markdownFiles(repository string, paths []string) ([]string, int, error) {
@@ -303,16 +341,44 @@ func (c *checker) checkDocument(doc *document) error {
 			c.checkLink(doc, node, string(value.Destination))
 		case *ast.Image:
 			c.checkLink(doc, node, string(value.Destination))
+		case *ast.CodeSpan:
+			c.checkTaskReferences(doc, nodeLine(doc.source, node), value.Text(doc.source))
 		case *ast.FencedCodeBlock:
-			if strings.EqualFold(string(value.Language(doc.source)), "go") ||
-				strings.EqualFold(string(value.Language(doc.source)), "golang") {
+			language := strings.ToLower(string(value.Language(doc.source)))
+			if language == "go" || language == "golang" {
 				if err := c.checkGoSnippet(doc, value); err != nil {
 					return ast.WalkStop, err
 				}
 			}
+			if language == "sh" || language == "bash" ||
+				language == "shell" || language == "console" {
+				c.checkTaskReferences(doc, nodeLine(doc.source, node), value.Text(doc.source))
+			}
 		}
 		return ast.WalkContinue, nil
 	})
+}
+
+func (c *checker) checkTaskReferences(doc *document, line int, source []byte) {
+	if len(c.taskNames) == 0 {
+		return
+	}
+	for offset, content := range bytes.Split(source, []byte{'\n'}) {
+		if strings.HasPrefix(strings.TrimSpace(string(content)), "#") {
+			continue
+		}
+		for _, match := range taskReference.FindAllSubmatch(content, -1) {
+			name := string(match[1])
+			c.report.taskReferences++
+			if _, ok := c.taskNames[name]; !ok {
+				c.addFinding(
+					doc.path,
+					line+offset,
+					fmt.Sprintf("Taskfile.yml does not define task %q", name),
+				)
+			}
+		}
+	}
 }
 
 func (c *checker) checkLink(doc *document, node ast.Node, destination string) {

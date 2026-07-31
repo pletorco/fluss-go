@@ -10,6 +10,7 @@ import (
 
 func TestAuditAcceptsLocalLinksAnchorsAndSynchronizedSnippets(t *testing.T) {
 	root := t.TempDir()
+	writeTestFile(t, root, "Taskfile.yml", "tasks:\n  docs:check:\n    cmds: [true]\n")
 	writeTestFile(t, root, "internal/docexamples/snippets_test.go", `package docexamples_test
 
 func example() {
@@ -19,14 +20,14 @@ func example() {
 }
 `)
 	writeTestFile(t, root, "docs/target.md", "# Target heading\n\n## Repeated\n\n## Repeated\n")
-	writeTestFile(t, root, "README.md", `# Project
-
-[target](docs/target.md#target-heading)
-[duplicate](docs/target.md#repeated-1)
-[external](https://example.com)
-
-<!-- go-source: internal/docexamples/snippets_test.go hello -->
-`+"```go\nprintln(\"hello\")\n```\n")
+	writeTestFile(t, root, "README.md",
+		"# Project\n\n"+
+			"[target](docs/target.md#target-heading)\n"+
+			"[duplicate](docs/target.md#repeated-1)\n"+
+			"[external](https://example.com)\n"+
+			"Run `task docs:check`.\n\n"+
+			"<!-- go-source: internal/docexamples/snippets_test.go hello -->\n"+
+			"```go\nprintln(\"hello\")\n```\n")
 
 	result, err := audit(root, []string{"README.md", "docs"}, false)
 	if err != nil {
@@ -35,8 +36,63 @@ func example() {
 	if len(result.findings) != 0 {
 		t.Fatalf("findings = %#v", result.findings)
 	}
-	if result.files != 2 || result.localLinks != 2 || result.externalLinks != 1 || result.snippets != 1 {
+	if result.files != 2 || result.localLinks != 2 || result.externalLinks != 1 ||
+		result.snippets != 1 || result.taskReferences != 1 {
 		t.Fatalf("report = %#v", result)
+	}
+}
+
+func TestAuditReportsStaleTaskReferences(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "Taskfile.yml", `tasks:
+  verify:generate:
+    cmds: [true]
+  docs:check:
+    cmds: [true]
+`)
+	writeTestFile(t, root, "README.md",
+		"# Project\n\n"+
+			"Use `task verify:generate` and not `task generate:check`.\n\n"+
+			"```sh\n"+
+			"# task ignored-comment\n"+
+			"task docs:check\n"+
+			"task missing:shell\n"+
+			"```\n\n"+
+			"The task prose is not a command reference.\n")
+
+	result, err := audit(root, []string{"README.md"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.taskReferences != 4 {
+		t.Fatalf("task references = %d, want 4", result.taskReferences)
+	}
+	assertReasons(t, result.findings,
+		`Taskfile.yml does not define task "generate:check"`,
+		`Taskfile.yml does not define task "missing:shell"`,
+	)
+}
+
+func TestLoadTaskNames(t *testing.T) {
+	root := t.TempDir()
+	if names, err := loadTaskNames(root); err != nil || names != nil {
+		t.Fatalf("missing Taskfile names=%#v error=%v", names, err)
+	}
+	writeTestFile(t, root, "Taskfile.yml", "version: '3'\ntasks:\n  test:\n    cmds: [true]\n")
+	names, err := loadTaskNames(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := names["test"]; !ok {
+		t.Fatalf("names = %#v", names)
+	}
+	writeTestFile(t, root, "Taskfile.yml", "tasks: [")
+	if _, err := loadTaskNames(root); err == nil || !strings.Contains(err.Error(), "parse Taskfile.yml") {
+		t.Fatalf("malformed Taskfile error = %v", err)
+	}
+	writeTestFile(t, root, "Taskfile.yml", "version: '3'\n")
+	if _, err := loadTaskNames(root); err == nil || !strings.Contains(err.Error(), "no tasks") {
+		t.Fatalf("empty Taskfile error = %v", err)
 	}
 }
 
