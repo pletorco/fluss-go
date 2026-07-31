@@ -375,6 +375,9 @@ func TestKVWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("writer did not finish after backend release")
 	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("repeated Close() error = %v", err)
+	}
 }
 
 func TestKVWriterRequestTimeoutTerminatesClose(t *testing.T) {
@@ -402,6 +405,54 @@ func TestKVWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	case <-writer.done:
 	default:
 		t.Fatal("writer scheduler remained active after timed out close")
+	}
+}
+
+func TestKVWriterClosePreservesTerminalFailure(t *testing.T) {
+	release := make(chan struct{})
+	backend := kvBackend(0)
+	backend.block = release
+	backend.putErr = errWriterTerminal
+	writer, err := newKVWriter(
+		context.Background(), backend, kvWriterTable(), WithKVLinger(time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Upsert(context.Background(), Row{int32(1), "blocked", nil})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	if err := writer.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first Close() error = %v, want deadline", err)
+	}
+	close(release)
+	if result := future.Await(context.Background()); !errors.Is(result.Err, errWriterTerminal) {
+		t.Fatalf("future = %#v", result)
+	}
+	if err := writer.Close(context.Background()); !errors.Is(err, errWriterTerminal) {
+		t.Fatalf("repeated Close() error = %v, want terminal failure", err)
+	}
+}
+
+func TestKVWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
+	backend := kvBackend(0)
+	backend.putErr = errWriterTerminal
+	writer, err := newKVWriter(
+		context.Background(), backend, kvWriterTable(), WithKVLinger(time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Upsert(context.Background(), Row{int32(1), "one", nil})
+	const callers = 8
+	results := make(chan error, callers)
+	for range callers {
+		go func() { results <- writer.Close(context.Background()) }()
+	}
+	for range callers {
+		if err := <-results; !errors.Is(err, errWriterTerminal) {
+			t.Fatalf("Close() error = %v, want terminal failure", err)
+		}
 	}
 }
 

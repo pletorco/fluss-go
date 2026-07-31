@@ -220,6 +220,7 @@ type KVWriter struct {
 	done        chan struct{}
 	appendMu    sync.Mutex
 	closed      bool
+	closeErr    error
 	observer    MetricsObserver
 }
 
@@ -585,7 +586,10 @@ func (w *KVWriter) Close(ctx context.Context) error {
 		w.appendMu.Unlock()
 		select {
 		case <-w.done:
-			return nil
+			w.appendMu.Lock()
+			err := w.closeErr
+			w.appendMu.Unlock()
+			return err
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -631,7 +635,11 @@ func (l *kvWriterLoop) run() {
 			case command.flush != nil:
 				command.flush <- l.flushAll()
 			case command.close != nil:
-				command.close <- l.flushAll()
+				err := l.flushAll()
+				l.writer.appendMu.Lock()
+				l.writer.closeErr = err
+				l.writer.appendMu.Unlock()
+				command.close <- err
 				l.timer.Stop()
 				return
 			}

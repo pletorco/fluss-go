@@ -40,7 +40,9 @@ budget that sum rather than treating `MaxBuffered` as a client-global limit.
   already accepted batch. `LogWriterConfig.Timeout` and
   `KVWriterConfig.Timeout` independently bound both the server operation and
   the client-side network call, so a responsive backend cannot keep the worker
-  alive indefinitely.
+  alive indefinitely. Once shutdown finishes, concurrent and repeated `Close`
+  calls return the same terminal flush result. A caller that stopped waiting
+  because its own context expired may call `Close` again to observe that result.
 
 The log saturation and failure tests use two writers sharing one backend. A
 separate KV test exercises the same shared-backend isolation. Together they
