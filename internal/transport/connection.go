@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
@@ -106,7 +107,7 @@ func (c *Connection) Request(ctx context.Context, request fmsg.Request) (fmsg.Re
 		return nil, err
 	}
 	defer c.unregister(id)
-	if err := c.writeRequest(id, request, body); err != nil {
+	if err := c.writeRequest(ctx, id, request, body); err != nil {
 		c.fail(err)
 		return nil, err
 	}
@@ -164,7 +165,20 @@ func (c *Connection) unregister(id int32) {
 	c.mu.Unlock()
 }
 
-func (c *Connection) writeRequest(id int32, request fmsg.Request, body []byte) error {
+func (c *Connection) takePending(id int32) chan result {
+	c.mu.Lock()
+	ch := c.pending[id]
+	delete(c.pending, id)
+	c.mu.Unlock()
+	return ch
+}
+
+func (c *Connection) writeRequest(
+	ctx context.Context,
+	id int32,
+	request fmsg.Request,
+	body []byte,
+) (err error) {
 	frame := make([]byte, 4+requestHeaderSize+len(body))
 	binary.BigEndian.PutUint32(frame, uint32(requestHeaderSize+len(body)))
 	binary.BigEndian.PutUint16(frame[4:], uint16(request.APIKey()))
@@ -173,10 +187,43 @@ func (c *Connection) writeRequest(id int32, request fmsg.Request, body []byte) e
 	copy(frame[12:], body)
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	finish, err := c.prepareWrite(ctx)
+	if err != nil {
+		return err
+	}
+	defer finish(&err)
+	return c.writeFrame(ctx, frame)
+}
+
+func (c *Connection) prepareWrite(ctx context.Context) (func(*error), error) {
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := c.conn.SetWriteDeadline(deadline); err != nil {
+			return nil, fmt.Errorf("transport: set write deadline: %w", err)
+		}
+	}
+	interruptDone := make(chan struct{})
+	stopInterrupt := context.AfterFunc(ctx, func() {
+		_ = c.conn.SetWriteDeadline(time.Now())
+		close(interruptDone)
+	})
+	return func(writeErr *error) {
+		if !stopInterrupt() {
+			<-interruptDone
+		}
+		if clearErr := c.conn.SetWriteDeadline(time.Time{}); *writeErr == nil && clearErr != nil {
+			*writeErr = fmt.Errorf("transport: clear write deadline: %w", clearErr)
+		}
+	}, nil
+}
+
+func (c *Connection) writeFrame(ctx context.Context, frame []byte) error {
 	for len(frame) > 0 {
 		written, err := c.conn.Write(frame)
 		if err != nil {
-			return err
+			return interruptedWriteError(ctx, err)
 		}
 		if written == 0 {
 			return io.ErrShortWrite
@@ -184,6 +231,16 @@ func (c *Connection) writeRequest(id int32, request fmsg.Request, body []byte) e
 		frame = frame[written:]
 	}
 	return nil
+}
+
+func interruptedWriteError(ctx context.Context, writeErr error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("transport: write interrupted: %w", ctxErr)
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return fmt.Errorf("transport: write interrupted: %w", context.DeadlineExceeded)
+	}
+	return writeErr
 }
 
 func (c *Connection) readLoop() {
@@ -254,11 +311,9 @@ func (c *Connection) handleFrame(frame []byte) error {
 }
 
 func (c *Connection) deliver(id int32, outcome result) {
-	c.mu.Lock()
-	ch := c.pending[id]
-	c.mu.Unlock()
+	ch := c.takePending(id)
 	if ch != nil {
-		ch <- outcome
+		complete(ch, outcome)
 	}
 }
 
@@ -276,7 +331,14 @@ func (c *Connection) fail(err error) {
 	c.mu.Unlock()
 	_ = c.conn.Close()
 	for _, ch := range pending {
-		ch <- result{err: err}
+		complete(ch, result{err: err})
+	}
+}
+
+func complete(ch chan result, outcome result) {
+	select {
+	case ch <- outcome:
+	default:
 	}
 }
 

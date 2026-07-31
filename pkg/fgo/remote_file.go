@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -69,14 +70,28 @@ func (LocalRemoteFileReader) ReadRemoteFile(
 	default:
 		return nil, fmt.Errorf("%w: unsupported remote file scheme %q", ErrUnsupportedAPI, parsed.Scheme)
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("fgo: open remote file: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(&contextReader{ctx: ctx, reader: file})
 	if err != nil {
 		return nil, fmt.Errorf("fgo: read remote file: %w", err)
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	return data, nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextReader) Read(buffer []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(buffer)
 }
 
 // RemoteFileReadConfig bounds retries, backoff, and object size.
@@ -88,6 +103,11 @@ type RemoteFileReadConfig struct {
 	RetryBackoff time.Duration
 	// MaxFileBytes bounds allocation per object; zero defaults to 256 MiB.
 	MaxFileBytes int64
+	// MaxTotalBytes bounds bytes retained for one snapshot or remote-log read;
+	// zero defaults to 512 MiB.
+	MaxTotalBytes int64
+	// MaxFiles bounds objects referenced by one operation; zero defaults to 4096.
+	MaxFiles int
 }
 
 func (c RemoteFileReadConfig) normalized() (RemoteFileReadConfig, error) {
@@ -100,8 +120,15 @@ func (c RemoteFileReadConfig) normalized() (RemoteFileReadConfig, error) {
 	if c.MaxFileBytes == 0 {
 		c.MaxFileBytes = 256 << 20
 	}
+	if c.MaxTotalBytes == 0 {
+		c.MaxTotalBytes = 512 << 20
+	}
+	if c.MaxFiles == 0 {
+		c.MaxFiles = 4096
+	}
 	if c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.RetryBackoff < 0 ||
-		c.RetryBackoff > time.Minute || c.MaxFileBytes < 1 {
+		c.RetryBackoff > time.Minute || c.MaxFileBytes < 1 ||
+		c.MaxTotalBytes < 1 || c.MaxFiles < 1 || c.MaxFiles > 1_000_000 {
 		return RemoteFileReadConfig{}, fmt.Errorf("%w: invalid remote file settings", ErrInvalidConfig)
 	}
 	return c, nil
@@ -232,6 +259,9 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 	if len(files) == 0 {
 		return nil, fmt.Errorf("%w: snapshot has no files", ErrValidation)
 	}
+	if err := validateRemoteSnapshotFiles(files, p.files.config); err != nil {
+		return nil, err
+	}
 	var token *FileSystemSecurityToken
 	if p.tokenSource != nil {
 		if current, ok := p.tokenSource(); ok {
@@ -241,9 +271,6 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 	}
 	downloaded := make([]RemoteSnapshotFile, len(files))
 	for index, file := range files {
-		if file.Path == "" || file.Size <= 0 || file.Size > p.files.config.MaxFileBytes {
-			return nil, fmt.Errorf("%w: invalid remote snapshot file", ErrValidation)
-		}
 		data, err := readRemoteFileWithRetry(ctx, p.files, RemoteFileRequest{
 			Path: file.Path, ExpectedSize: file.Size, Token: token,
 		}, p.observer)
@@ -253,6 +280,26 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 		downloaded[index] = RemoteSnapshotFile{Path: file.Path, Size: file.Size, Data: data}
 	}
 	return p.decoder.OpenSnapshotFiles(ctx, request, downloaded)
+}
+
+func validateRemoteSnapshotFiles(
+	files []RemoteSnapshotFile,
+	config RemoteFileReadConfig,
+) error {
+	if len(files) > config.MaxFiles {
+		return fmt.Errorf("%w: snapshot exceeds remote file-count limit", ErrValidation)
+	}
+	var total int64
+	for _, file := range files {
+		if file.Path == "" || file.Size <= 0 || file.Size > config.MaxFileBytes {
+			return fmt.Errorf("%w: invalid remote snapshot file", ErrValidation)
+		}
+		if file.Size > config.MaxTotalBytes-total {
+			return fmt.Errorf("%w: snapshot exceeds aggregate remote byte limit", ErrValidation)
+		}
+		total += file.Size
+	}
+	return nil
 }
 
 // RemoteLogSegment describes one immutable remote log object and offset range.
@@ -306,24 +353,74 @@ func readRemoteLogSegments(
 	token *FileSystemSecurityToken,
 	observer MetricsObserver,
 ) ([]byte, error) {
+	normalized, err := settings.config.normalized()
+	if err != nil {
+		return nil, err
+	}
+	settings.config = normalized
 	if strings.TrimSpace(info.TabletDirectory) == "" || info.FirstStartPosition < 0 {
 		return nil, fmt.Errorf("%w: invalid remote log fetch info", ErrValidation)
 	}
+	segments, outputBytes, err := planRemoteLogSegments(settings.config, info)
+	if err != nil {
+		return nil, err
+	}
+	maxInt := int64(^uint(0) >> 1)
+	if outputBytes > maxInt {
+		return nil, fmt.Errorf("%w: remote log exceeds platform allocation limit", ErrValidation)
+	}
+	return downloadRemoteLogSegments(ctx, settings, info, segments, outputBytes, token, observer)
+}
+
+func planRemoteLogSegments(
+	config RemoteFileReadConfig,
+	info RemoteLogFetchInfo,
+) ([]RemoteLogSegment, int64, error) {
 	segments := append([]RemoteLogSegment(nil), info.Segments...)
+	if len(segments) > config.MaxFiles {
+		return nil, 0, fmt.Errorf("%w: remote log exceeds file-count limit", ErrValidation)
+	}
 	sort.Slice(segments, func(i, j int) bool {
 		return segments[i].StartOffset < segments[j].StartOffset
 	})
-	var result []byte
 	var previousEnd int64 = -1
+	var outputBytes int64
 	for index, segment := range segments {
 		if segment.ID == "" || segment.StartOffset < 0 || segment.EndOffset <= segment.StartOffset ||
-			segment.SizeBytes <= 0 || segment.SizeBytes > settings.config.MaxFileBytes {
-			return nil, fmt.Errorf("%w: invalid remote log segment", ErrValidation)
+			segment.SizeBytes <= 0 || segment.SizeBytes > config.MaxFileBytes {
+			return nil, 0, fmt.Errorf("%w: invalid remote log segment", ErrValidation)
 		}
 		if previousEnd >= 0 && previousEnd != segment.StartOffset {
-			return nil, fmt.Errorf("%w: remote log segments have a gap or overlap", ErrValidation)
+			return nil, 0, fmt.Errorf("%w: remote log segments have a gap or overlap", ErrValidation)
 		}
 		previousEnd = segment.EndOffset
+		start := int64(0)
+		if index == 0 {
+			start = int64(info.FirstStartPosition)
+		}
+		if start > segment.SizeBytes {
+			return nil, 0, fmt.Errorf("%w: remote log start position exceeds segment", ErrMalformedRecordBatch)
+		}
+		retained := segment.SizeBytes - start
+		if retained > config.MaxTotalBytes-outputBytes {
+			return nil, 0, fmt.Errorf("%w: remote log exceeds aggregate byte limit", ErrValidation)
+		}
+		outputBytes += retained
+	}
+	return segments, outputBytes, nil
+}
+
+func downloadRemoteLogSegments(
+	ctx context.Context,
+	settings remoteFileSettings,
+	info RemoteLogFetchInfo,
+	segments []RemoteLogSegment,
+	outputBytes int64,
+	token *FileSystemSecurityToken,
+	observer MetricsObserver,
+) ([]byte, error) {
+	result := make([]byte, 0, int(outputBytes))
+	for index, segment := range segments {
 		path := remoteLogSegmentPath(info.TabletDirectory, segment)
 		data, err := readRemoteFileWithRetry(ctx, settings, RemoteFileRequest{
 			Path: path, ExpectedSize: segment.SizeBytes, Token: token,
@@ -386,6 +483,20 @@ func remoteLogSegmentPath(directory string, segment RemoteLogSegment) string {
 }
 
 func remoteReadTemporary(err error) bool {
-	return errors.Is(err, io.ErrUnexpectedEOF) ||
-		(err != nil && !errors.Is(err, ErrInvalidConfig) && !errors.Is(err, ErrValidation))
+	if err == nil || errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, ErrInvalidConfig) || errors.Is(err, ErrValidation) ||
+		errors.Is(err, ErrUnsupportedAPI) || errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, os.ErrPermission) {
+		return errors.Is(err, io.ErrUnexpectedEOF)
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var temporary interface{ Temporary() bool }
+	if errors.As(err, &temporary) {
+		return temporary.Temporary()
+	}
+	var network net.Error
+	return errors.As(err, &network) && network.Timeout()
 }

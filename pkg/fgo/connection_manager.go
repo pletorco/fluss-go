@@ -32,19 +32,13 @@ type connectionKey struct {
 	role    ServerRole
 }
 
-type connectionFlight struct {
-	done   chan struct{}
-	client *Client
-	err    error
-}
-
 type connectionManager struct {
 	cfg config
 
 	mu      sync.Mutex
 	closed  bool
 	clients map[connectionKey]*Client
-	flights map[connectionKey]*connectionFlight
+	flights *coalescer[connectionKey, *Client]
 }
 
 func newConnectionManager(cfg config) *connectionManager {
@@ -57,7 +51,7 @@ func newConnectionManager(cfg config) *connectionManager {
 	return &connectionManager{
 		cfg:     cfg,
 		clients: make(map[connectionKey]*Client),
-		flights: make(map[connectionKey]*connectionFlight),
+		flights: newCoalescer[connectionKey, *Client](),
 	}
 }
 
@@ -89,41 +83,43 @@ func (m *connectionManager) getNode(ctx context.Context, node Node) (*Client, er
 		return nil, err
 	}
 	key := connectionKey{id: node.ID, address: address, role: role}
+	if client, found, err := m.cachedClient(key); found || err != nil {
+		return client, err
+	}
+	return m.flights.Do(ctx, key, func(workCtx context.Context) (*Client, error) {
+		return m.openManagedConnection(workCtx, key, node.ID)
+	}, nil)
+}
+
+func (m *connectionManager) cachedClient(key connectionKey) (*Client, bool, error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
-		m.mu.Unlock()
-		return nil, ErrClosed
+		return nil, false, ErrClosed
 	}
 	if client := m.clients[key]; client != nil {
-		m.mu.Unlock()
-		return client, nil
+		return client, true, nil
 	}
-	if flight := m.flights[key]; flight != nil {
-		m.mu.Unlock()
-		select {
-		case <-flight.done:
-			return flight.client, flight.err
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	return nil, false, nil
+}
+
+func (m *connectionManager) openManagedConnection(
+	ctx context.Context,
+	key connectionKey,
+	serverID int32,
+) (*Client, error) {
+	if client, found, err := m.cachedClient(key); found || err != nil {
+		return client, err
 	}
-	flight := &connectionFlight{done: make(chan struct{})}
-	m.flights[key] = flight
-	m.mu.Unlock()
-
-	client, err := m.open(ctx, address, role)
-
+	client, err := m.open(ctx, key.address, key.role)
 	m.mu.Lock()
-	delete(m.flights, key)
 	if m.closed && err == nil {
 		err = ErrClosed
 	}
 	if err == nil {
-		client.serverID = node.ID
+		client.serverID = serverID
 		m.clients[key] = client
 	}
-	flight.client, flight.err = client, err
-	close(flight.done)
 	m.mu.Unlock()
 	if err != nil && client != nil {
 		_ = client.shutdown()
@@ -270,6 +266,7 @@ func (m *connectionManager) Close() error {
 		clients = append(clients, client)
 	}
 	m.mu.Unlock()
+	m.flights.Close(ErrClosed)
 	var result error
 	for _, client := range clients {
 		if err := client.shutdown(); err != nil && result == nil {

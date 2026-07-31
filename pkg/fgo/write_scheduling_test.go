@@ -161,6 +161,117 @@ func (b schedulingKVBackend) put(ctx context.Context, request kvPutRequest) (int
 	return b.schedule.calls.Load(), nil
 }
 
+type bucketExecutionProbe struct {
+	blockedBucket int32
+	release       <-chan struct{}
+	started       chan struct{}
+	startOnce     sync.Once
+
+	mu        sync.Mutex
+	sequences map[int32][]int32
+}
+
+func newBucketExecutionProbe(blockedBucket int32, release <-chan struct{}) *bucketExecutionProbe {
+	return &bucketExecutionProbe{
+		blockedBucket: blockedBucket, release: release, started: make(chan struct{}),
+		sequences: make(map[int32][]int32),
+	}
+}
+
+func (p *bucketExecutionProbe) execute(
+	ctx context.Context,
+	bucket int32,
+	sequence int32,
+) (int64, error) {
+	p.mu.Lock()
+	p.sequences[bucket] = append(p.sequences[bucket], sequence)
+	p.mu.Unlock()
+	if bucket == p.blockedBucket {
+		p.startOnce.Do(func() { close(p.started) })
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	return int64(sequence + 1), nil
+}
+
+func (p *bucketExecutionProbe) bucketSequences(bucket int32) []int32 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]int32(nil), p.sequences[bucket]...)
+}
+
+type bucketIsolationLogBackend struct {
+	probe     *bucketExecutionProbe
+	locations map[int32]Node
+}
+
+func (b bucketIsolationLogBackend) metadata(
+	context.Context,
+	PhysicalTablePath,
+) (int64, map[int32]Node, error) {
+	return logWriterTable().ID, b.locations, nil
+}
+
+func (bucketIsolationLogBackend) initWriter(
+	context.Context,
+	PhysicalTablePath,
+	int32,
+) (int64, error) {
+	return 1, nil
+}
+
+func (b bucketIsolationLogBackend) produce(
+	ctx context.Context,
+	request logProduceRequest,
+) (int64, error) {
+	batch, err := DecodeLogBatchRows(logWriterTable().Schema, request.records, true)
+	if err != nil {
+		return 0, err
+	}
+	return b.probe.execute(ctx, request.bucket, batch.BatchSequence)
+}
+
+type bucketIsolationKVBackend struct {
+	probe     *bucketExecutionProbe
+	locations map[int32]Node
+}
+
+func (b bucketIsolationKVBackend) metadata(
+	context.Context,
+	PhysicalTablePath,
+) (int64, map[int32]Node, error) {
+	return kvWriterTable().ID, b.locations, nil
+}
+
+func (bucketIsolationKVBackend) initWriter(
+	context.Context,
+	PhysicalTablePath,
+	int32,
+) (int64, error) {
+	return 1, nil
+}
+
+func (b bucketIsolationKVBackend) put(
+	ctx context.Context,
+	request kvPutRequest,
+) (int64, error) {
+	batch, err := DecodeKVBatch(request.records)
+	if err != nil {
+		return 0, err
+	}
+	return b.probe.execute(ctx, request.bucket, batch.BatchSequence)
+}
+
+func twoBucketLocations() map[int32]Node {
+	return map[int32]Node{
+		0: {ID: 1, Address: "tablet-0", Role: TabletServer},
+		1: {ID: 2, Address: "tablet-1", Role: TabletServer},
+	}
+}
+
 func newSchedulingLogWriter(
 	t testing.TB,
 	backend logWriterBackend,
@@ -184,7 +295,7 @@ func TestWriterSchedulingIsolatesSaturationAndShutdown(t *testing.T) {
 	backend.setControl(1, &schedulingBackendControl{block: release, started: started})
 
 	slow := newSchedulingLogWriter(
-		t, backend, 1, WithLogLinger(0), WithLogBuffer(1),
+		t, backend, 1, WithLogLinger(0), WithLogBuffer(2),
 	)
 	fast := newSchedulingLogWriter(t, backend, 1, WithLogLinger(0))
 
@@ -305,6 +416,118 @@ func TestKVWriterSchedulingIsolatesSlowWriter(t *testing.T) {
 	if err := healthy.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLogWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
+	release := make(chan struct{})
+	probe := newBucketExecutionProbe(0, release)
+	backend := bucketIsolationLogBackend{probe: probe, locations: twoBucketLocations()}
+	writer := newSchedulingLogWriter(
+		t, backend, 2, WithLogLinger(0), WithLogConcurrency(2),
+		WithLogBucketAssignment(AssignmentRoundRobin),
+	)
+	first := writer.Append(context.Background(), Row{int32(1), "blocked"})
+	select {
+	case <-probe.started:
+	case <-time.After(time.Second):
+		t.Fatal("blocked bucket did not reach backend")
+	}
+	second := writer.Append(context.Background(), Row{int32(2), "independent"})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if result := second.Await(ctx); result.Err != nil || result.Bucket != 1 {
+		t.Fatalf("independent bucket result = %#v", result)
+	}
+	third := writer.Append(context.Background(), Row{int32(3), "ordered"})
+	time.Sleep(10 * time.Millisecond)
+	if sequences := probe.bucketSequences(0); len(sequences) != 1 ||
+		sequences[0] != 0 {
+		t.Fatalf("blocked bucket sequences before release = %v", sequences)
+	}
+	close(release)
+	for _, future := range []*WriteFuture{first, third} {
+		if result := future.Await(context.Background()); result.Err != nil || result.Bucket != 0 {
+			t.Fatalf("blocked bucket result = %#v", result)
+		}
+	}
+	if sequences := probe.bucketSequences(0); len(sequences) != 2 ||
+		sequences[0] != 0 || sequences[1] != 1 {
+		t.Fatalf("blocked bucket sequences = %v", sequences)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKVWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
+	release := make(chan struct{})
+	probe := newBucketExecutionProbe(0, release)
+	table := kvWriterTable()
+	table.BucketCount = 2
+	backend := bucketIsolationKVBackend{probe: probe, locations: twoBucketLocations()}
+	writer, err := newKVWriter(
+		context.Background(), backend, table,
+		WithKVLinger(0), WithKVConcurrency(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockedID := kvIDForBucket(t, table.Schema, 0)
+	independentID := kvIDForBucket(t, table.Schema, 1)
+	first := writer.Upsert(context.Background(), Row{blockedID, "blocked", nil})
+	select {
+	case <-probe.started:
+	case <-time.After(time.Second):
+		t.Fatal("blocked bucket did not reach backend")
+	}
+	second := writer.Upsert(context.Background(), Row{independentID, "independent", nil})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if result := second.Await(ctx); result.Err != nil || result.Bucket != 1 {
+		t.Fatalf("independent bucket result = %#v", result)
+	}
+	third := writer.Upsert(context.Background(), Row{blockedID, "ordered", nil})
+	time.Sleep(10 * time.Millisecond)
+	if sequences := probe.bucketSequences(0); len(sequences) != 1 ||
+		sequences[0] != 0 {
+		t.Fatalf("blocked bucket sequences before release = %v", sequences)
+	}
+	close(release)
+	for _, future := range []*WriteFuture{first, third} {
+		if result := future.Await(context.Background()); result.Err != nil || result.Bucket != 0 {
+			t.Fatalf("blocked bucket result = %#v", result)
+		}
+	}
+	if sequences := probe.bucketSequences(0); len(sequences) != 2 ||
+		sequences[0] != 0 || sequences[1] != 1 {
+		t.Fatalf("blocked bucket sequences = %v", sequences)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func kvIDForBucket(t *testing.T, schema Schema, bucket int32) int32 {
+	t.Helper()
+	names := schema.BucketKey
+	if len(names) == 0 {
+		names = schema.PrimaryKey
+	}
+	for id := int32(0); id < 10_000; id++ {
+		encoded, err := encodeKeyColumns(schema, names, PrimaryKey{id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hashed, err := flussBucket(encoded, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hashed == bucket {
+			return id
+		}
+	}
+	t.Fatalf("no key found for bucket %d", bucket)
+	return 0
 }
 
 func BenchmarkWriterScheduling(b *testing.B) {

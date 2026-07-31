@@ -126,6 +126,13 @@ type batchScanBackend interface {
 
 type clientBatchScanBackend struct{ client *Client }
 
+func (b clientBatchScanBackend) schemaResolver() schemaResolver {
+	if b.client == nil || b.client.schemas == nil {
+		return nil
+	}
+	return b.client
+}
+
 // ResolveTableBuckets returns a stable bucket-ID ordered snapshot of current tablet leaders.
 func (c *Client) ResolveTableBuckets(
 	ctx context.Context,
@@ -211,6 +218,7 @@ type BatchScanner struct {
 	backend    batchScanBackend
 	snapshot   SnapshotBatchReader
 	projection []int
+	resolver   schemaResolver
 
 	pollMu sync.Mutex
 	mu     sync.RWMutex
@@ -279,7 +287,7 @@ func newBatchScanner(
 	}
 	scanner := &BatchScanner{
 		table: table, bucket: bucket, config: config, backend: backend,
-		snapshot: snapshot, projection: projection,
+		snapshot: snapshot, projection: projection, resolver: resolverFor(backend, table),
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background())
 	return scanner, nil
@@ -361,7 +369,7 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	if err != nil {
 		return BatchResult{}, err
 	}
-	result, err := s.decodeCurrent(isLog, encoded)
+	result, err := s.decodeCurrent(pollCtx, isLog, encoded)
 	if err != nil {
 		return BatchResult{}, err
 	}
@@ -382,8 +390,11 @@ func batchPollContext(caller, life context.Context) (context.Context, context.Ca
 func (s *BatchScanner) pollSnapshot(ctx context.Context) (BatchResult, error) {
 	rows, err := s.snapshot.ReadBatch(ctx, s.config.Limit)
 	if errors.Is(err, io.EOF) {
+		if len(rows) > s.config.Limit {
+			return BatchResult{}, fmt.Errorf("%w: snapshot provider exceeded batch limit", ErrValidation)
+		}
 		s.markDone()
-		return BatchResult{Done: true}, nil
+		return BatchResult{Rows: s.projectRows(rows), Done: true}, nil
 	}
 	if err != nil {
 		return BatchResult{}, err
@@ -394,7 +405,7 @@ func (s *BatchScanner) pollSnapshot(ctx context.Context) (BatchResult, error) {
 	return BatchResult{Rows: s.projectRows(rows)}, nil
 }
 
-func (s *BatchScanner) decodeCurrent(isLog bool, encoded []byte) (BatchResult, error) {
+func (s *BatchScanner) decodeCurrent(ctx context.Context, isLog bool, encoded []byte) (BatchResult, error) {
 	if isLog != (s.table.Kind == LogTable) {
 		return BatchResult{}, fmt.Errorf("%w: LIMIT_SCAN table kind mismatch", ErrValidation)
 	}
@@ -402,7 +413,7 @@ func (s *BatchScanner) decodeCurrent(isLog bool, encoded []byte) (BatchResult, e
 		return BatchResult{}, nil
 	}
 	if !isLog {
-		rows, err := decodeValueRecordBatch(s.table, encoded)
+		rows, err := decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, encoded)
 		if err != nil {
 			return BatchResult{}, err
 		}
@@ -412,8 +423,8 @@ func (s *BatchScanner) decodeCurrent(isLog bool, encoded []byte) (BatchResult, e
 		strings.TrimSpace(s.table.Properties["table.log.format"]),
 		string(LogWriteFormatIndexed),
 	)
-	_, records, arrows, err := decodeFetchedLogFormat(
-		s.table.Schema, s.bucket.BucketID, 0, encoded, compacted,
+	_, records, arrows, err := decodeFetchedLogWithResolver(
+		ctx, s.resolver, s.table, s.bucket.BucketID, 0, encoded, compacted,
 	)
 	if err != nil {
 		return BatchResult{}, err
@@ -433,6 +444,20 @@ func (s *BatchScanner) decodeCurrent(isLog bool, encoded []byte) (BatchResult, e
 }
 
 func decodeValueRecordBatch(table Table, encoded []byte) ([]Row, error) {
+	return decodeValueRecordBatchWithResolver(
+		context.Background(),
+		fixedSchemaResolver{path: table.Path, schemaID: table.SchemaID, schema: table.Schema},
+		table,
+		encoded,
+	)
+}
+
+func decodeValueRecordBatchWithResolver(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	encoded []byte,
+) ([]Row, error) {
 	const headerSize = 9
 	if len(encoded) < headerSize ||
 		int(binary.LittleEndian.Uint32(encoded)) != len(encoded)-4 ||
@@ -446,32 +471,45 @@ func decodeValueRecordBatch(table Table, encoded []byte) ([]Row, error) {
 	rows := make([]Row, 0, count)
 	position := headerSize
 	for range count {
-		if len(encoded)-position < 6 {
-			return nil, fmt.Errorf("%w: truncated value record", ErrMalformedRecordBatch)
-		}
-		size := int(binary.LittleEndian.Uint32(encoded[position:]))
-		position += 4
-		if size < 2 || size > len(encoded)-position {
-			return nil, fmt.Errorf("%w: invalid value record length", ErrMalformedRecordBatch)
-		}
-		schemaID := int16(binary.LittleEndian.Uint16(encoded[position:]))
-		if schemaID != int16(table.SchemaID) {
-			return nil, fmt.Errorf(
-				"%w: value record schema %d does not match table schema %d",
-				ErrInvalidSchema, schemaID, table.SchemaID,
-			)
-		}
-		row, err := DecodeCompactedRow(table.Schema, encoded[position+2:position+size])
+		row, next, err := decodeValueRecord(ctx, resolver, table, encoded, position)
 		if err != nil {
 			return nil, err
 		}
 		rows = append(rows, row)
-		position += size
+		position = next
 	}
 	if position != len(encoded) {
 		return nil, fmt.Errorf("%w: trailing value batch bytes", ErrMalformedRecordBatch)
 	}
 	return rows, nil
+}
+
+func decodeValueRecord(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	encoded []byte,
+	position int,
+) (Row, int, error) {
+	if len(encoded)-position < 6 {
+		return nil, position, fmt.Errorf("%w: truncated value record", ErrMalformedRecordBatch)
+	}
+	size := int(binary.LittleEndian.Uint32(encoded[position:]))
+	position += 4
+	if size < 2 || size > len(encoded)-position {
+		return nil, position, fmt.Errorf("%w: invalid value record length", ErrMalformedRecordBatch)
+	}
+	schemaID := int32(int16(binary.LittleEndian.Uint16(encoded[position:])))
+	schema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
+	if err != nil {
+		return nil, position, fmt.Errorf("fgo: resolve value schema %d: %w", schemaID, err)
+	}
+	row, err := DecodeCompactedRow(schema, encoded[position+2:position+size])
+	if err != nil {
+		return nil, position, err
+	}
+	row, err = evolveRow(schema, table.Schema, row)
+	return row, position + size, err
 }
 
 func (s *BatchScanner) projectRows(rows []Row) []Row {

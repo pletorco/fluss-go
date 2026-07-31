@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,8 @@ import (
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
 )
+
+var errWriterTerminal = errors.New("terminal writer failure")
 
 type producedLog struct {
 	path        PhysicalTablePath
@@ -46,11 +49,15 @@ func (b *fakeLogWriterBackend) initWriter(context.Context, PhysicalTablePath, in
 }
 
 func (b *fakeLogWriterBackend) produce(
-	_ context.Context,
+	ctx context.Context,
 	input logProduceRequest,
 ) (int64, error) {
 	if b.block != nil {
-		<-b.block
+		select {
+		case <-b.block:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -400,8 +407,14 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"nil option", table, logBackend(0), []LogWriterOption{nil}, ErrInvalidConfig},
 		{"bad limits", table, logBackend(0), []LogWriterOption{WithLogBatchLimits(1, 0)}, ErrInvalidConfig},
 		{"bad buffer", table, logBackend(0), []LogWriterOption{WithLogBuffer(0)}, ErrInvalidConfig},
+		{"bad concurrency", table, logBackend(0), []LogWriterOption{WithLogConcurrency(0)}, ErrInvalidConfig},
 		{"bad linger", table, logBackend(0), []LogWriterOption{WithLogLinger(-1)}, ErrInvalidConfig},
 		{"bad request", table, logBackend(0), []LogWriterOption{WithLogRequest(0, 2)}, ErrInvalidConfig},
+		{
+			"request timeout overflow", table, logBackend(0),
+			[]LogWriterOption{WithLogRequest((time.Duration(math.MaxInt32)+1)*time.Millisecond, 1)},
+			ErrInvalidConfig,
+		},
 		{"bad assignment", table, logBackend(0), []LogWriterOption{WithLogBucketAssignment("random")}, ErrInvalidConfig},
 		{"bad format", table, logBackend(0), []LogWriterOption{WithLogWriteFormat("unknown")}, ErrInvalidConfig},
 		{"bad compression", table, logBackend(0), []LogWriterOption{WithLogArrowCompression(ArrowCompression(99))}, ErrInvalidConfig},
@@ -502,6 +515,85 @@ func TestLogWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	case <-writer.done:
 	case <-time.After(time.Second):
 		t.Fatal("writer did not finish after backend release")
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("repeated Close() error = %v", err)
+	}
+}
+
+func TestLogWriterRequestTimeoutTerminatesClose(t *testing.T) {
+	backend := logBackend(0)
+	backend.block = make(chan struct{})
+	writer, err := newLogWriter(
+		context.Background(), backend, logWriterTable(),
+		WithLogLinger(time.Hour), WithLogRequest(20*time.Millisecond, -1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Append(context.Background(), Row{int32(1), "blocked"})
+	started := time.Now()
+	if err := writer.Close(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() error = %v, want deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("Close() took %v", elapsed)
+	}
+	if result := future.Await(context.Background()); !errors.Is(result.Err, context.DeadlineExceeded) {
+		t.Fatalf("future = %#v", result)
+	}
+	select {
+	case <-writer.done:
+	default:
+		t.Fatal("writer scheduler remained active after timed out close")
+	}
+}
+
+func TestLogWriterClosePreservesTerminalFailure(t *testing.T) {
+	release := make(chan struct{})
+	backend := logBackend(0)
+	backend.block = release
+	backend.produceErr = errWriterTerminal
+	writer, err := newLogWriter(
+		context.Background(), backend, logWriterTable(), WithLogLinger(time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Append(context.Background(), Row{int32(1), "blocked"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	if err := writer.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first Close() error = %v, want deadline", err)
+	}
+	close(release)
+	if result := future.Await(context.Background()); !errors.Is(result.Err, errWriterTerminal) {
+		t.Fatalf("future = %#v", result)
+	}
+	if err := writer.Close(context.Background()); !errors.Is(err, errWriterTerminal) {
+		t.Fatalf("repeated Close() error = %v, want terminal failure", err)
+	}
+}
+
+func TestLogWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
+	backend := logBackend(0)
+	backend.produceErr = errWriterTerminal
+	writer, err := newLogWriter(
+		context.Background(), backend, logWriterTable(), WithLogLinger(time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Append(context.Background(), Row{int32(1), "one"})
+	const callers = 8
+	results := make(chan error, callers)
+	for range callers {
+		go func() { results <- writer.Close(context.Background()) }()
+	}
+	for range callers {
+		if err := <-results; !errors.Is(err, errWriterTerminal) {
+			t.Fatalf("Close() error = %v, want terminal failure", err)
+		}
 	}
 }
 

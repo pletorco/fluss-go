@@ -156,9 +156,9 @@ func TestRouterRefreshHonorsWaitingContext(t *testing.T) {
 	})
 	go func() { _ = router.Refresh(context.Background(), path) }()
 	for {
-		router.mu.RLock()
-		inFlight := router.flights[path] != nil
-		router.mu.RUnlock()
+		router.flights.mu.Lock()
+		inFlight := router.flights.calls[path] != nil
+		router.flights.mu.Unlock()
 		if inFlight {
 			break
 		}

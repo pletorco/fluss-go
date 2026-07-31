@@ -8,7 +8,8 @@ The client shares one negotiated connection per server identity through
 `connectionManager`. Log and KV writers own their scheduling state:
 
 - each writer has one bounded FIFO command queue with `MaxBuffered` capacity;
-- each writer has one worker goroutine and at most one active server call;
+- each writer has one scheduler and at most `MaxConcurrentRequests` active
+  server calls for distinct buckets;
 - pending batches are bounded per bucket by `MaxBatchRecords` and
   `MaxBatchBytes`;
 - `Flush` and `Close` are barriers in that writer's queue;
@@ -21,26 +22,35 @@ budget that sum rather than treating `MaxBuffered` as a client-global limit.
 
 ## Invariants
 
-- **Memory:** one writer cannot consume another writer's queue budget. Total
-  queued records grow additively with the number of writers and their configured
-  `MaxBuffered` values.
+- **Memory:** an admission semaphore counts queued, batched, and in-flight
+  records, so one writer has at most `MaxBuffered` accepted records awaiting
+  completion. One writer cannot consume another writer's queue budget. Total
+  records still grow additively across writers.
 - **Queue:** accepted commands retain FIFO order within a writer. No ordering is
-  promised across writers.
+  promised across writers. Only one request per bucket is active, preserving
+  batch sequence and write order within that bucket.
 - **Fairness:** writers independently submit requests to the shared transport.
-  A blocked or poisoned writer cannot prevent another writer from enqueueing,
-  flushing, or closing. The remote server and TCP connection may still affect
-  request latency; strict cross-writer fairness is not promised.
+  A blocked bucket cannot prevent another bucket in the same writer from making
+  progress while concurrency is available, and a blocked or poisoned writer
+  cannot prevent another writer from enqueueing, flushing, or closing. The
+  remote server and TCP connection may still affect request latency; strict
+  cross-writer fairness is not promised.
 - **Failure:** Fluss 0.9.1 writes are not automatically retried after an
   ambiguous response. Bucket poisoning remains writer-local, so one writer's
   uncertain state is not inherited by another.
 - **Shutdown:** `Close` drains commands accepted by that writer and stops its
   worker. Writers should be closed before the parent client. Closing one writer
-  neither flushes nor closes another writer.
+  neither flushes nor closes another writer. The context passed to `Close`
+  bounds how long that caller waits; it does not shorten the timeout of an
+  already accepted batch. `LogWriterConfig.Timeout` and
+  `KVWriterConfig.Timeout` independently bound both the server operation and
+  the client-side network call, so a responsive backend cannot keep the worker
+  alive indefinitely. Once shutdown finishes, concurrent and repeated `Close`
+  calls return the same terminal flush result. A caller that stopped waiting
+  because its own context expired may call `Close` again to observe that result.
 
-The log saturation and failure tests use two writers sharing one backend. A
-separate KV test exercises the same shared-backend isolation. Together they
-verify that a full, blocked queue and an ambiguous failure do not block or
-poison a healthy writer, and that all worker goroutines terminate after close.
+The scheduling tests cover saturation, ambiguous failures, slow-bucket
+isolation, per-bucket sequence order, and shutdown for both log and KV writers.
 The package race test covers the same paths under the race detector.
 
 ## Decision
@@ -48,7 +58,7 @@ The package race test covers the same paths under the race detector.
 A connection-owned shared accumulator/sender is not introduced. The current
 design already shares network connections, while keeping queue capacity,
 failure state, flush, and close ownership local to each writer. Centralizing
-those queues would save one goroutine and timer per writer, but would require a
+those queues would save one scheduler and timer per writer, but would require a
 global admission policy and fair scheduling and would add a head-of-line
 blocking risk to independent writers.
 

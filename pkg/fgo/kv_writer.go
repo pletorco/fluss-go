@@ -23,9 +23,11 @@ type KVWriterConfig struct {
 	MaxBatchRecords int
 	// MaxBuffered bounds accepted mutations awaiting completion.
 	MaxBuffered int
+	// MaxConcurrentRequests bounds active put calls across distinct buckets.
+	MaxConcurrentRequests int
 	// Linger is the maximum delay used to fill a non-full batch.
 	Linger time.Duration
-	// Timeout is the server-side put timeout.
+	// Timeout bounds both the server-side put operation and the client call.
 	Timeout time.Duration
 	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
 	Acks int32
@@ -85,6 +87,18 @@ func WithKVBuffer(records int) KVWriterOption {
 	}
 }
 
+// WithKVConcurrency bounds active put calls across distinct buckets.
+// Calls for one bucket remain strictly ordered.
+func WithKVConcurrency(requests int) KVWriterOption {
+	return func(config *KVWriterConfig) error {
+		if requests < 1 || requests > 64 {
+			return fmt.Errorf("%w: KV concurrency must be in [1, 64]", ErrInvalidConfig)
+		}
+		config.MaxConcurrentRequests = requests
+		return nil
+	}
+}
+
 // WithKVLinger sets the maximum delay used to collect a non-full batch.
 func WithKVLinger(linger time.Duration) KVWriterOption {
 	return func(config *KVWriterConfig) error {
@@ -96,7 +110,7 @@ func WithKVLinger(linger time.Duration) KVWriterOption {
 	}
 }
 
-// WithKVRequest sets the server timeout and acknowledgement mode.
+// WithKVRequest sets the server and client call timeout and acknowledgement mode.
 func WithKVRequest(timeout time.Duration, acks int32) KVWriterOption {
 	return func(config *KVWriterConfig) error {
 		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 ||
@@ -217,9 +231,11 @@ type KVWriter struct {
 	writerID    int64
 	buckets     []int32
 	commands    chan kvWriterCommand
+	slots       chan struct{}
 	done        chan struct{}
 	appendMu    sync.Mutex
 	closed      bool
+	closeErr    error
 	observer    MetricsObserver
 }
 
@@ -247,12 +263,25 @@ type kvPendingBatch struct {
 }
 
 type kvWriterLoop struct {
-	writer    *KVWriter
-	batches   map[int32]*kvPendingBatch
-	sequences map[int32]int32
-	poisoned  map[int32]error
-	timer     *time.Timer
-	timerC    <-chan time.Time
+	writer      *KVWriter
+	batches     map[int32]*kvPendingBatch
+	pending     map[int32][]*kvPendingBatch
+	active      map[int32]bool
+	sequences   map[int32]int32
+	poisoned    map[int32]error
+	completions chan kvBatchCompletion
+	inFlight    int
+	timer       *time.Timer
+	timerC      <-chan time.Time
+}
+
+type kvBatchCompletion struct {
+	bucket  int32
+	batch   *kvPendingBatch
+	logEnd  int64
+	bytes   int
+	started time.Time
+	err     error
 }
 
 // NewKVWriter creates a primary-key writer for table.
@@ -305,7 +334,8 @@ func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, opti
 	writer := &KVWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, writerID: writerID, buckets: buckets,
-		commands: make(chan kvWriterCommand, config.MaxBuffered), done: make(chan struct{}),
+		commands: make(chan kvWriterCommand, config.MaxBuffered),
+		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
 	}
 	if path.Partition != "" {
 		writer.partitionID = physicalID
@@ -342,7 +372,8 @@ func validateKVWriterTable(table Table) error {
 func kvWriterConfig(options []KVWriterOption) (KVWriterConfig, error) {
 	config := KVWriterConfig{
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
-		Linger: 5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
+		MaxConcurrentRequests: 4,
+		Linger:                5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -532,6 +563,16 @@ func contains(values []string, target string) bool {
 }
 
 func (w *KVWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
+	select {
+	case w.slots <- struct{}{}:
+		item.future.release = func() { <-w.slots }
+	case <-ctx.Done():
+		item.future.complete(WriteResult{Err: ctx.Err()})
+		return
+	case <-w.done:
+		item.future.complete(WriteResult{Err: ErrClosed})
+		return
+	}
 	w.appendMu.Lock()
 	defer w.appendMu.Unlock()
 	if w.closed {
@@ -585,7 +626,10 @@ func (w *KVWriter) Close(ctx context.Context) error {
 		w.appendMu.Unlock()
 		select {
 		case <-w.done:
-			return nil
+			w.appendMu.Lock()
+			err := w.closeErr
+			w.appendMu.Unlock()
+			return err
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -615,8 +659,11 @@ func (w *KVWriter) run() {
 		<-timer.C
 	}
 	loop := &kvWriterLoop{
-		writer: w, batches: make(map[int32]*kvPendingBatch), sequences: make(map[int32]int32),
-		poisoned: make(map[int32]error), timer: timer,
+		writer: w, batches: make(map[int32]*kvPendingBatch), pending: make(map[int32][]*kvPendingBatch),
+		active: make(map[int32]bool), sequences: make(map[int32]int32),
+		poisoned:    make(map[int32]error),
+		completions: make(chan kvBatchCompletion, w.config.MaxConcurrentRequests),
+		timer:       timer,
 	}
 	loop.run()
 }
@@ -631,13 +678,19 @@ func (l *kvWriterLoop) run() {
 			case command.flush != nil:
 				command.flush <- l.flushAll()
 			case command.close != nil:
-				command.close <- l.flushAll()
+				err := l.flushAll()
+				l.writer.appendMu.Lock()
+				l.writer.closeErr = err
+				l.writer.appendMu.Unlock()
+				command.close <- err
 				l.timer.Stop()
 				return
 			}
 		case <-l.timerC:
 			l.timerC = nil
-			_ = l.flushAll()
+			_ = l.queueAll()
+		case completion := <-l.completions:
+			_ = l.handleCompletion(completion)
 		}
 	}
 }
@@ -696,43 +749,107 @@ func (l *kvWriterLoop) flushBucket(bucket int32) error {
 	}
 	delete(l.batches, bucket)
 	if err := l.poisoned[bucket]; err != nil {
-		l.writer.completeKVBatch(batch, bucket, 0, fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err))
-		return err
+		poisoned := fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err)
+		l.writer.completeKVBatch(batch, bucket, 0, poisoned)
+		return poisoned
 	}
+	l.pending[bucket] = append(l.pending[bucket], batch)
+	l.dispatch()
+	return nil
+}
+
+func (l *kvWriterLoop) dispatch() {
+	for l.inFlight < l.writer.config.MaxConcurrentRequests {
+		dispatched := false
+		for _, bucket := range l.writer.buckets {
+			if l.active[bucket] || len(l.pending[bucket]) == 0 {
+				continue
+			}
+			batch := l.pending[bucket][0]
+			l.pending[bucket] = l.pending[bucket][1:]
+			l.active[bucket] = true
+			l.inFlight++
+			sequence := l.sequences[bucket]
+			go l.executeBatch(bucket, batch, sequence)
+			dispatched = true
+			if l.inFlight == l.writer.config.MaxConcurrentRequests {
+				break
+			}
+		}
+		if !dispatched {
+			return
+		}
+	}
+}
+
+func (l *kvWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequence int32) {
 	encoded, err := (KVBatch{
 		SchemaID: int16(l.writer.table.SchemaID), WriterID: l.writer.writerID,
-		BatchSequence: l.sequences[bucket], Records: batch.records,
+		BatchSequence: sequence, Records: batch.records,
 	}).Encode()
 	var logEnd int64
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		logEnd, err = l.writer.backend.put(context.Background(), kvPutRequest{
+		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.Timeout)
+		logEnd, err = l.writer.backend.put(requestCtx, kvPutRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 			targets: batch.targets, records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
 			mergeMode: l.writer.config.MergeMode,
 		})
+		if err != nil && requestCtx.Err() != nil {
+			err = requestCtx.Err()
+		}
+		cancel()
 	}
+	l.completions <- kvBatchCompletion{
+		bucket: bucket, batch: batch, logEnd: logEnd,
+		bytes: len(encoded), started: started, err: err,
+	}
+}
+
+func (l *kvWriterLoop) handleCompletion(completion kvBatchCompletion) error {
+	delete(l.active, completion.bucket)
+	l.inFlight--
 	queueTime := time.Duration(0)
-	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {
-		queueTime = time.Since(batch.items[0].queuedAt)
+	if len(completion.batch.items) != 0 && !completion.batch.items[0].queuedAt.IsZero() {
+		queueTime = time.Since(completion.batch.items[0].queuedAt)
 	}
 	observeMetric(l.writer.observer, MetricEvent{
 		Kind: MetricWriteBatch, Operation: MetricOperationKVWrite,
-		Duration: metricDuration(started), QueueTime: queueTime,
-		QueueSize: len(l.writer.commands), Records: int64(len(batch.records)), Bytes: int64(len(encoded)),
-		Failed: err != nil, ErrorClass: metricErrorClass(err),
+		Duration: metricDuration(completion.started), QueueTime: queueTime,
+		QueueSize: len(l.writer.commands), Records: int64(len(completion.batch.records)), Bytes: int64(completion.bytes),
+		Failed: completion.err != nil, ErrorClass: metricErrorClass(completion.err),
 	})
-	if err != nil {
-		l.poisoned[bucket] = err
-		l.writer.completeKVBatch(batch, bucket, 0, err)
-		return err
+	if completion.err != nil {
+		l.poisoned[completion.bucket] = completion.err
+		l.writer.completeKVBatch(completion.batch, completion.bucket, 0, completion.err)
+		for _, batch := range l.pending[completion.bucket] {
+			poisoned := fmt.Errorf(
+				"%w: bucket %d: %v", ErrWriterState, completion.bucket, completion.err,
+			)
+			l.writer.completeKVBatch(batch, completion.bucket, 0, poisoned)
+		}
+		delete(l.pending, completion.bucket)
+	} else {
+		l.sequences[completion.bucket]++
+		l.writer.completeKVBatch(
+			completion.batch, completion.bucket, completion.logEnd, nil,
+		)
 	}
-	l.sequences[bucket]++
-	l.writer.completeKVBatch(batch, bucket, logEnd, nil)
-	return nil
+	l.dispatch()
+	return completion.err
 }
 
 func (l *kvWriterLoop) flushAll() error {
+	l.stopTimer()
+	err := l.queueAll()
+	for l.inFlight > 0 {
+		err = errors.Join(err, l.handleCompletion(<-l.completions))
+	}
+	return err
+}
+
+func (l *kvWriterLoop) queueAll() error {
 	l.stopTimer()
 	var joined error
 	for _, bucket := range l.writer.buckets {

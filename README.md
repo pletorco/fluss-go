@@ -71,14 +71,14 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Protocol framing and request correlation | Implemented | [`internal/transport`](internal/transport) has bounded framing, cancellation, and protocol tests. |
 | Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, bounds retries to safe reads, and supports bounded-cardinality `MetricsObserver` events. |
 | Coordinator/tablet metadata and partition routing | Implemented | Metadata refreshes are coalesced, stale leaders are rerouted once, `ResolveTableBuckets` returns stable bucket snapshots, and opt-in dynamic partition creation supports partitioned writers. |
-| Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables and load authoritative schemas through `OpenTable`. |
+| Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables, load authoritative schemas through `OpenTable`, and resolve historical record schemas through a bounded client cache. |
 | Arrow schema and record batches | Supported | Full Fluss logical schema conversion plus v0/v1 Arrow log batches with NONE, LZ4, and ZSTD IPC compression; decoded records use explicit `Release` ownership. |
 | Row, key, KV and log record-batch codecs | Supported | Compacted/indexed rows, nested values, projected rows, v0/v1 lookup keys, KV batches, and row/Arrow log batches are covered by pinned Java 0.9.1 fixtures. |
 | Log append writers | Supported | `LogWriter` provides row and Arrow appends; auto, Arrow, indexed, and compacted formats; hash/sticky/round-robin assignment; bounded batching; idempotent sequences; `Flush`; and `Close`. |
-| Log scanners | Supported | `LogScanner` provides explicit/earliest/latest/timestamp subscriptions, projection pushdown, row limits, exclusive stopping offsets, remote-log merging, `Wakeup`, partial bucket errors, and row or Arrow polling. |
+| Log scanners | Supported | `LogScanner` provides explicit/earliest/latest/timestamp subscriptions, schema-aware projection, row limits, exclusive stopping offsets, remote-log merging, `Wakeup`, partial bucket errors, and row or Arrow polling. |
 | Current-state and snapshot batch scans | Supported | `ResolveTableBuckets`, `NewBatchScanner`, and `NewSnapshotBatchScanner` provide bounded current-state and pluggable immutable snapshot reads with projection and explicit result ownership. |
 | Primary-key writers | Supported | `KVWriter` provides full and projected upsert, delete, Fluss hash routing, merge-engine or overwrite modes, idempotent per-bucket sequences, batching, partial results, and bounded lifecycle operations. |
-| Point and prefix lookups | Supported | `LookupClient` validates and batches keys by bucket, preserves input association, distinguishes not-found results, bounds concurrency, supports leading-key prefixes, and can atomically insert missing rows. |
+| Point and prefix lookups | Supported | `LookupClient` validates and batches keys by bucket, preserves input association, resolves compatible historical schemas, distinguishes not-found results, bounds concurrency, supports leading-key prefixes, and can atomically insert missing rows. |
 | Typed data APIs | Supported | Generic wrappers cover log and KV writers, point and prefix lookup, log scans, current-state scans, and snapshot scans through explicit application codecs. |
 | Remote storage adapters | Supported | Pluggable readers compose remote log segments and snapshot files without mandatory filesystem SDKs; local paths and `file://` URIs are built in. |
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
@@ -89,11 +89,13 @@ updated here. Protocol-message coverage is not end-user feature parity.
 ## Documentation
 
 - [Release changelog](CHANGELOG.md)
+- [Schema evolution](docs/schema-evolution.md)
 - API reference:
   [fmsg](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg),
   [fgo](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo), and
   [fadm](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm)
 - [Public architecture and ownership](docs/architecture/v0.1.md)
+- [Build-vs-buy decisions](docs/build-vs-buy.md)
 - [TLS and SASL secure connections](docs/authentication.md)
 - [Error handling and recovery](docs/error-handling.md)
 - [Advanced administration](docs/admin-operations.md)

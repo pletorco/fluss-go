@@ -401,3 +401,85 @@ func TestClientCloseStopsSecurityTokenManager(t *testing.T) {
 	unstarted.Start()
 	unstarted.Stop()
 }
+
+func TestSecurityTokenReceiverCanCloseClient(t *testing.T) {
+	clock := &fakeSecurityTokenClock{now: time.Unix(6_000, 0)}
+	client := newClient(nil, nil)
+	closed := make(chan error, 1)
+	receiver := FileSystemSecurityTokenReceiverFunc(func(FileSystemSecurityToken) error {
+		closed <- client.Close()
+		return nil
+	})
+	manager := newSecurityTokenManager(
+		FileSystemSecurityTokenProviderFunc(func(context.Context) (FileSystemSecurityToken, error) {
+			return FileSystemSecurityToken{
+				Schema: "hadoop", Token: []byte("secret"),
+				ExpiresAt: clock.Now().Add(time.Hour),
+			}, nil
+		}),
+		tokenTestConfig(clock), []FileSystemSecurityTokenReceiver{receiver},
+	)
+	client.tokenManager = manager
+	manager.Start()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("receiver Client.Close() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("receiver deadlocked while closing client")
+	}
+	select {
+	case <-manager.done:
+	default:
+		t.Fatal("receiver close did not stop token manager")
+	}
+	if _, ok := manager.Current(); ok {
+		t.Fatal("token was published after receiver-triggered shutdown")
+	}
+	manager.Stop()
+}
+
+func TestSecurityTokenStopDoesNotWaitForBlockedReceiver(t *testing.T) {
+	clock := &fakeSecurityTokenClock{now: time.Unix(7_000, 0)}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	receiverDone := make(chan struct{})
+	receiver := FileSystemSecurityTokenReceiverFunc(func(FileSystemSecurityToken) error {
+		close(entered)
+		<-release
+		close(receiverDone)
+		return nil
+	})
+	manager := newSecurityTokenManager(
+		FileSystemSecurityTokenProviderFunc(func(context.Context) (FileSystemSecurityToken, error) {
+			return FileSystemSecurityToken{
+				Schema: "hadoop", Token: []byte("secret"),
+				ExpiresAt: clock.Now().Add(time.Hour),
+			}, nil
+		}),
+		tokenTestConfig(clock), []FileSystemSecurityTokenReceiver{receiver},
+	)
+	manager.Start()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("receiver was not called")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		manager.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop waited for blocked receiver")
+	}
+	close(release)
+	select {
+	case <-receiverDone:
+	case <-time.After(time.Second):
+		t.Fatal("receiver did not finish after release")
+	}
+}
