@@ -1,5 +1,6 @@
-// Package s3 provides an optional AWS SDK v2 remote-file adapter.
-package s3
+// Package oss provides an optional Alibaba Cloud OSS SDK v2 remote-file
+// adapter.
+package oss
 
 import (
 	"context"
@@ -8,39 +9,39 @@ import (
 	"io"
 	"math"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	aliyunoss "github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
 	"github.com/pletorco/fluss-go/internal/storageadapter"
 	"github.com/pletorco/fluss-go/pkg/fgo"
 )
 
-// GetObjectAPI is the subset of the official S3 client used by Reader.
+// GetObjectAPI is the subset of the official OSS client used by Reader.
 type GetObjectAPI interface {
 	// GetObject retrieves one complete object or byte range.
 	GetObject(
 		context.Context,
-		*awss3.GetObjectInput,
-		...func(*awss3.Options),
-	) (*awss3.GetObjectOutput, error)
+		*aliyunoss.GetObjectRequest,
+		...func(*aliyunoss.Options),
+	) (*aliyunoss.GetObjectResult, error)
 }
 
-// Reader adapts the official AWS SDK v2 S3 client to fgo remote-file reads.
+// Reader adapts the official Alibaba Cloud OSS SDK v2 client to fgo
+// remote-file reads.
 type Reader struct {
 	client GetObjectAPI
 }
 
-// New creates an S3 reader from an official SDK client.
+// New creates an OSS reader from an official SDK client.
 func New(client GetObjectAPI) (*Reader, error) {
 	if client == nil {
-		return nil, fmt.Errorf("%w: nil S3 client", fgo.ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: nil OSS client", fgo.ErrInvalidConfig)
 	}
 	return &Reader{client: client}, nil
 }
 
-// NewFromConfig creates a reader with the official S3 client and optional
+// NewFromConfig creates a reader with the official OSS client and optional
 // client configuration functions.
-func NewFromConfig(config aws.Config, options ...func(*awss3.Options)) *Reader {
-	return &Reader{client: awss3.NewFromConfig(config, options...)}
+func NewFromConfig(config *aliyunoss.Config, options ...func(*aliyunoss.Options)) *Reader {
+	return &Reader{client: aliyunoss.NewClient(config, options...)}
 }
 
 // ReadRemoteFile reads one bounded complete object for compatibility with
@@ -50,7 +51,7 @@ func (r *Reader) ReadRemoteFile(
 	request fgo.RemoteFileRequest,
 ) ([]byte, error) {
 	if request.ExpectedSize <= 0 || request.ExpectedSize > int64(^uint(0)>>1) {
-		return nil, fmt.Errorf("%w: S3 complete reads require expected size", fgo.ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: OSS complete reads require expected size", fgo.ErrInvalidConfig)
 	}
 	request.Offset, request.Length = 0, request.ExpectedSize
 	body, err := r.OpenRemoteFile(ctx, request)
@@ -71,21 +72,21 @@ func (r *Reader) ReadRemoteFile(
 	}
 	if int64(len(data)) != request.ExpectedSize {
 		return nil, fmt.Errorf(
-			"%w: S3 object size mismatch: %w",
+			"%w: OSS object size mismatch: %w",
 			fgo.ErrValidation, io.ErrUnexpectedEOF,
 		)
 	}
 	return data, nil
 }
 
-// OpenRemoteFile opens one exact S3 object range. The caller owns and must
+// OpenRemoteFile opens one exact OSS object range. The caller owns and must
 // close the returned SDK response body.
 func (r *Reader) OpenRemoteFile(
 	ctx context.Context,
 	request fgo.RemoteFileRequest,
 ) (io.ReadCloser, error) {
 	if r == nil || r.client == nil {
-		return nil, fmt.Errorf("%w: nil S3 reader", fgo.ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: nil OSS reader", fgo.ErrInvalidConfig)
 	}
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: nil context", fgo.ErrInvalidConfig)
@@ -99,17 +100,17 @@ func (r *Reader) OpenRemoteFile(
 		return nil, err
 	}
 	end := offset + length - 1
-	rangeHeader := fmt.Sprintf("bytes=%d-%d", offset, end)
-	output, err := r.client.GetObject(ctx, &awss3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Range:  aws.String(rangeHeader),
+	output, err := r.client.GetObject(ctx, &aliyunoss.GetObjectRequest{
+		Bucket:        aliyunoss.Ptr(bucket),
+		Key:           aliyunoss.Ptr(key),
+		Range:         aliyunoss.Ptr(fmt.Sprintf("bytes=%d-%d", offset, end)),
+		RangeBehavior: aliyunoss.Ptr("standard"),
 	})
 	if err != nil {
 		return nil, err
 	}
 	if output == nil || output.Body == nil {
-		return nil, fmt.Errorf("%w: S3 response omitted body", fgo.ErrValidation)
+		return nil, fmt.Errorf("%w: OSS response omitted body", fgo.ErrValidation)
 	}
 	if err := validateResponse(output, offset, length, request.ExpectedSize); err != nil {
 		return nil, errors.Join(err, output.Body.Close())
@@ -118,7 +119,7 @@ func (r *Reader) OpenRemoteFile(
 }
 
 func parseURI(raw string) (string, string, error) {
-	bucket, key, err := storageadapter.ParseObjectURI(raw, "s3")
+	bucket, key, err := storageadapter.ParseObjectURI(raw, "oss")
 	if err != nil {
 		return "", "", fmt.Errorf("%w: %v", fgo.ErrInvalidConfig, err)
 	}
@@ -130,33 +131,28 @@ func validateRange(request fgo.RemoteFileRequest) (int64, int64, error) {
 		request.Offset, request.Length, request.ExpectedSize, request.MaxBytes,
 	)
 	if err != nil {
-		return 0, 0, fmt.Errorf("%w: invalid S3 object range: %v", fgo.ErrInvalidConfig, err)
+		return 0, 0, fmt.Errorf("%w: invalid OSS object range: %v", fgo.ErrInvalidConfig, err)
 	}
 	return offset, length, nil
 }
 
 func validateResponse(
-	output *awss3.GetObjectOutput,
+	output *aliyunoss.GetObjectResult,
 	offset int64,
 	length int64,
 	expectedSize int64,
 ) error {
-	if output.ContentLength == nil || *output.ContentLength != length {
-		return fmt.Errorf("%w: S3 content length mismatch", fgo.ErrValidation)
+	if output.ContentLength != length {
+		return fmt.Errorf("%w: OSS content length mismatch", fgo.ErrValidation)
 	}
 	if output.ContentRange == nil {
-		return fmt.Errorf("%w: S3 response omitted content range", fgo.ErrValidation)
+		return fmt.Errorf("%w: OSS response omitted content range", fgo.ErrValidation)
 	}
-	start, end, total, err := parseContentRange(*output.ContentRange)
-	if err != nil || start != offset || end != offset+length-1 ||
-		total != expectedSize {
-		return fmt.Errorf("%w: S3 content range mismatch", fgo.ErrValidation)
+	start, end, total, err := storageadapter.ParseContentRange(*output.ContentRange)
+	if err != nil || start != offset || end != offset+length-1 || total != expectedSize {
+		return fmt.Errorf("%w: OSS content range mismatch", fgo.ErrValidation)
 	}
 	return nil
-}
-
-func parseContentRange(value string) (int64, int64, int64, error) {
-	return storageadapter.ParseContentRange(value)
 }
 
 var (
