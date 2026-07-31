@@ -10,6 +10,10 @@
 // producer offsets, primary-key snapshots and leases, filesystem security
 // tokens, lake snapshots, and table statistics.
 //
+// Advanced operational semantics, asynchronous cleanup, ID scopes, leases,
+// and partial-result handling are described in the
+// [advanced administration guide].
+//
 // Methods validate local input before sending requests. Operations that span
 // multiple buckets return one result per bucket so callers can distinguish
 // partial failure from complete failure. Errors returned by the server retain
@@ -17,4 +21,6 @@
 //
 // The public Go API is experimental before v1. Applications should pin a
 // release and review the project changelog before upgrading.
+//
+// [advanced administration guide]: https://github.com/pletorco/fluss-go/blob/main/docs/admin-operations.md
 package fadm

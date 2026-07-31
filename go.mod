@@ -6,6 +6,7 @@ toolchain go1.26.5
 
 require (
 	github.com/apache/arrow-go/v18 v18.7.0
+	github.com/yuin/goldmark v1.8.5
 	google.golang.org/protobuf v1.36.11
 )
 

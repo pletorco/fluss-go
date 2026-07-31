@@ -8,8 +8,19 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.3] - 2026-07-31
+
 ### Changed
 
+- Added production TLS and SASL PLAIN configuration and authentication-error
+  guidance with compile-checked examples.
+- Added error classification, safe-retry, ambiguous-writer recovery, and
+  partial-result guidance with deterministic examples.
+- Added advanced administration guidance for cluster settings, server tags,
+  rebalances, producer offsets, snapshot leases, filesystem credentials, lake
+  snapshots, and per-bucket statistics with compile-checked lifecycle examples.
+- Added deterministic Markdown link and anchor validation plus source-backed,
+  compile-checked Go fences to the documentation CI gate.
 - Expanded pkg.go.dev contracts for typed APIs, extension interfaces,
   configuration, result ownership, partial failures, and pre-v1 stability.
 - Added a CI documentation audit for public packages, declarations, methods,
@@ -89,7 +100,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.2...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.3...HEAD
+[v0.1.0-beta.3]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.2...v0.1.0-beta.3
 [v0.1.0-beta.2]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.1...v0.1.0-beta.2
 [v0.1.0-beta.1]: https://github.com/pletorco/fluss-go/compare/v0.1.0-alpha.1...v0.1.0-beta.1
 [v0.1.0-alpha.1]: https://github.com/pletorco/fluss-go/releases/tag/v0.1.0-alpha.1

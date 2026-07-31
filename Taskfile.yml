@@ -46,24 +46,44 @@ tasks:
       - test -z "{{.GO_PACKAGES}}" || go vet ./...
 
   docs:check:
-    desc: Verify public package manuals and canonical examples
+    desc: Verify GoDoc, Markdown links, and compile-checked examples
     deps:
       - docs:examples:compile
       - docs:examples:run
+      - docs:markdown
+      - docs:snippets:compile
     cmds:
       - go run ./cmd/doccheck ./pkg/fmsg ./pkg/fgo ./pkg/fadm
       - go doc ./pkg/fmsg >/dev/null
       - go doc ./pkg/fgo >/dev/null
       - go doc ./pkg/fadm >/dev/null
 
+  docs:markdown:
+    desc: Verify local Markdown links, anchors, and synchronized Go fences
+    cmds:
+      - go run ./cmd/mdcheck .
+
+  docs:snippets:compile:
+    desc: Compile Markdown Go snippet sources without live-cluster execution
+    cmds:
+      - echo "Compiling Markdown snippets only; live Fluss workflows are not executed."
+      - go test ./internal/docexamples -run '^$'
+
+  docs:snippets:sync:
+    desc: Update Markdown Go fences from compile-checked sources
+    cmds:
+      - go run ./cmd/mdcheck -write .
+
   docs:examples:compile:
     desc: Compile all pkg.go.dev examples, including live-cluster workflows
     cmds:
+      - echo "Compiling pkg.go.dev examples only; live Fluss workflows are not executed."
       - go test ./pkg/fmsg ./pkg/fgo ./pkg/fadm -run '^$'
 
   docs:examples:run:
     desc: Execute deterministic pkg.go.dev examples with expected output
     cmds:
+      - echo "Executing deterministic pkg.go.dev examples with Output directives."
       - go test -v ./pkg/fmsg ./pkg/fgo ./pkg/fadm -run '^Example'
 
   test:
@@ -196,9 +216,10 @@ tasks:
       - vet
       - test
       - test:race
-      - test:fuzz
       - coverage
       - security
+    cmds:
+      - task: test:fuzz
 
   ci:
     desc: Run the CI verification suite
