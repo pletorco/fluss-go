@@ -116,6 +116,23 @@ the client discovers it automatically, so applications do not need to change
 `WithRemoteFileReader`. Stream implementations must release SDK response bodies
 from `Close`, including after cancellation or a partial read.
 
+## Amazon S3 adapter
+
+The optional [`adapters/s3`](../adapters/s3) package uses the official AWS SDK
+for Go v2. It parses only `s3://bucket/key` locations, issues ranged
+`GetObject` calls, validates S3 response lengths and content ranges, and
+preserves SDK error identity. Core `pkg/fgo` does not import the AWS SDK.
+
+Applications load credentials, region, retry mode, and optional endpoint into
+an `aws.Config`, create the reader with `s3.NewFromConfig`, and pass it to
+`WithRemoteFileReader`. Opaque Fluss filesystem-token bytes are not interpreted
+as AWS credentials. See the [adapter manual](../adapters/s3/README.md) for the
+reviewed SDK version, endpoint guidance, and opt-in service-test variables.
+
+HDFS and Alibaba Cloud OSS remain separate adapter work because their official
+clients, credentials, token semantics, and integration environments require
+independent dependency and security reviews.
+
 Retries are limited to truncated reads and errors whose type explicitly reports
 temporary or timeout behavior. Authentication, permission, not-found,
 configuration, validation, and unsupported-operation errors fail immediately.
