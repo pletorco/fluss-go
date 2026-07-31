@@ -521,25 +521,33 @@ func (c *LookupClient) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey)
 		if task == nil {
 			continue
 		}
-		select {
-		case raw := <-task.result:
-			if raw.err != nil {
-				results[index].Err = raw.err
-				continue
-			}
-			for _, value := range raw.rows {
-				row, err := decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
-				if err != nil {
-					results[index].Err = err
-					break
-				}
-				results[index].Rows = append(results[index].Rows, row)
-			}
-		case <-ctx.Done():
-			results[index].Err = ctx.Err()
-		}
+		c.awaitPrefixLookup(ctx, task, &results[index])
 	}
 	return results
+}
+
+func (c *LookupClient) awaitPrefixLookup(
+	ctx context.Context,
+	task *lookupTask,
+	result *PrefixLookupResult,
+) {
+	select {
+	case raw := <-task.result:
+		if raw.err != nil {
+			result.Err = raw.err
+			return
+		}
+		for _, value := range raw.rows {
+			row, err := decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
+			if err != nil {
+				result.Err = err
+				return
+			}
+			result.Rows = append(result.Rows, row)
+		}
+	case <-ctx.Done():
+		result.Err = ctx.Err()
+	}
 }
 
 func (c *LookupClient) lookupContextError(ctx context.Context) error {

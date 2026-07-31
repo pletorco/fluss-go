@@ -333,30 +333,46 @@ func githubSlug(value string) string {
 
 func (c *checker) checkDocument(doc *document) error {
 	return ast.Walk(doc.root, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-		switch value := node.(type) {
-		case *ast.Link:
-			c.checkLink(doc, node, string(value.Destination))
-		case *ast.Image:
-			c.checkLink(doc, node, string(value.Destination))
-		case *ast.CodeSpan:
-			c.checkTaskReferences(doc, nodeLine(doc.source, node), value.Text(doc.source))
-		case *ast.FencedCodeBlock:
-			language := strings.ToLower(string(value.Language(doc.source)))
-			if language == "go" || language == "golang" {
-				if err := c.checkGoSnippet(doc, value); err != nil {
-					return ast.WalkStop, err
-				}
-			}
-			if language == "sh" || language == "bash" ||
-				language == "shell" || language == "console" {
-				c.checkTaskReferences(doc, nodeLine(doc.source, node), value.Text(doc.source))
-			}
-		}
-		return ast.WalkContinue, nil
+		return c.checkNode(doc, node, entering)
 	})
+}
+
+func (c *checker) checkNode(
+	doc *document,
+	node ast.Node,
+	entering bool,
+) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+	switch value := node.(type) {
+	case *ast.Link:
+		c.checkLink(doc, node, string(value.Destination))
+	case *ast.Image:
+		c.checkLink(doc, node, string(value.Destination))
+	case *ast.CodeSpan:
+		c.checkTaskReferences(doc, nodeLine(doc.source, node), value.Text(doc.source))
+	case *ast.FencedCodeBlock:
+		return c.checkFencedBlock(doc, value)
+	}
+	return ast.WalkContinue, nil
+}
+
+func (c *checker) checkFencedBlock(
+	doc *document,
+	block *ast.FencedCodeBlock,
+) (ast.WalkStatus, error) {
+	language := strings.ToLower(string(block.Language(doc.source)))
+	if language == "go" || language == "golang" {
+		if err := c.checkGoSnippet(doc, block); err != nil {
+			return ast.WalkStop, err
+		}
+	}
+	if language == "sh" || language == "bash" ||
+		language == "shell" || language == "console" {
+		c.checkTaskReferences(doc, nodeLine(doc.source, block), block.Text(doc.source))
+	}
+	return ast.WalkContinue, nil
 }
 
 func (c *checker) checkTaskReferences(doc *document, line int, source []byte) {

@@ -380,14 +380,33 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 	if err := validateRemoteSnapshotFiles(files, p.files.config); err != nil {
 		return nil, err
 	}
-	var token *FileSystemSecurityToken
-	if p.tokenSource != nil {
-		if current, ok := p.tokenSource(); ok {
-			cloned := current.Clone()
-			token = &cloned
-		}
-	}
+	token := currentRemoteToken(p.tokenSource)
 	downloaded := make([]RemoteSnapshotFile, len(files))
+	jobs := p.snapshotDownloadJobs(files, downloaded, token)
+	if err := runRemoteDownloads(ctx, p.files.config, jobs); err != nil {
+		clearRemoteSnapshotData(downloaded)
+		return nil, err
+	}
+	return p.decoder.OpenSnapshotFiles(ctx, request, downloaded)
+}
+
+func currentRemoteToken(source FileSystemSecurityTokenSource) *FileSystemSecurityToken {
+	if source == nil {
+		return nil
+	}
+	current, ok := source()
+	if !ok {
+		return nil
+	}
+	cloned := current.Clone()
+	return &cloned
+}
+
+func (p *RemoteSnapshotBatchProvider) snapshotDownloadJobs(
+	files []RemoteSnapshotFile,
+	downloaded []RemoteSnapshotFile,
+	token *FileSystemSecurityToken,
+) []remoteDownloadJob {
 	jobs := make([]remoteDownloadJob, len(files))
 	for index, file := range files {
 		index, file := index, file
@@ -395,7 +414,10 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 			size: file.Size,
 			run: func(ctx context.Context) error {
 				if file.Size > int64(^uint(0)>>1) {
-					return fmt.Errorf("%w: snapshot file exceeds platform allocation limit", ErrValidation)
+					return fmt.Errorf(
+						"%w: snapshot file exceeds platform allocation limit",
+						ErrValidation,
+					)
 				}
 				data := make([]byte, int(file.Size))
 				request := RemoteFileRequest{
@@ -414,13 +436,13 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 			},
 		}
 	}
-	if err := runRemoteDownloads(ctx, p.files.config, jobs); err != nil {
-		for index := range downloaded {
-			downloaded[index].Data = nil
-		}
-		return nil, err
+	return jobs
+}
+
+func clearRemoteSnapshotData(files []RemoteSnapshotFile) {
+	for index := range files {
+		files[index].Data = nil
 	}
-	return p.decoder.OpenSnapshotFiles(ctx, request, downloaded)
 }
 
 func validateRemoteSnapshotFiles(
@@ -662,32 +684,54 @@ func readRemoteFileAttempt(
 		return 0, fmt.Errorf("%w: invalid remote file range", ErrValidation)
 	}
 	if streamReader, ok := reader.(RemoteFileStreamReader); ok {
-		request.Length = int64(len(destination))
-		stream, err := streamReader.OpenRemoteFile(ctx, request)
-		if err != nil {
-			return 0, err
-		}
-		read, readErr := io.ReadFull(stream, destination)
-		if readErr == nil {
-			var extra [1]byte
-			extraRead, extraErr := stream.Read(extra[:])
-			switch {
-			case extraRead != 0:
-				readErr = fmt.Errorf("%w: remote range exceeds expected size", ErrValidation)
-			case extraErr != nil && !errors.Is(extraErr, io.EOF):
-				readErr = extraErr
-			}
-		}
-		closeErr := stream.Close()
-		if readErr != nil {
-			return read, readErr
-		}
-		if closeErr != nil {
-			return read, closeErr
-		}
-		return read, nil
+		return readRemoteFileStreamAttempt(ctx, streamReader, request, destination)
 	}
+	return readRemoteFileLegacyAttempt(ctx, reader, request, destination)
+}
 
+func readRemoteFileStreamAttempt(
+	ctx context.Context,
+	reader RemoteFileStreamReader,
+	request RemoteFileRequest,
+	destination []byte,
+) (int, error) {
+	request.Length = int64(len(destination))
+	stream, err := reader.OpenRemoteFile(ctx, request)
+	if err != nil {
+		return 0, err
+	}
+	read, readErr := io.ReadFull(stream, destination)
+	if readErr == nil {
+		readErr = validateRemoteStreamEnd(stream)
+	}
+	closeErr := stream.Close()
+	if readErr != nil {
+		return read, readErr
+	}
+	if closeErr != nil {
+		return read, closeErr
+	}
+	return read, nil
+}
+
+func validateRemoteStreamEnd(stream io.Reader) error {
+	var extra [1]byte
+	extraRead, err := stream.Read(extra[:])
+	if extraRead != 0 {
+		return fmt.Errorf("%w: remote range exceeds expected size", ErrValidation)
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
+func readRemoteFileLegacyAttempt(
+	ctx context.Context,
+	reader RemoteFileReader,
+	request RemoteFileRequest,
+	destination []byte,
+) (int, error) {
 	completeRequest := request
 	completeRequest.Offset, completeRequest.Length = 0, 0
 	data, err := reader.ReadRemoteFile(ctx, completeRequest)
@@ -714,6 +758,20 @@ type remoteDownloadResult struct {
 	err  error
 }
 
+type remoteDownloadScheduler struct {
+	ctx         context.Context
+	runCtx      context.Context
+	cancel      context.CancelFunc
+	config      RemoteFileReadConfig
+	jobs        []remoteDownloadJob
+	completed   chan remoteDownloadResult
+	contextDone <-chan struct{}
+	next        int
+	active      int
+	activeBytes int64
+	firstErr    error
+}
+
 func runRemoteDownloads(
 	ctx context.Context,
 	config RemoteFileReadConfig,
@@ -724,49 +782,65 @@ func runRemoteDownloads(
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	completed := make(chan remoteDownloadResult, config.MaxConcurrentReads)
-	next, active := 0, 0
-	var activeBytes int64
-	var firstErr error
-	contextDone := ctx.Done()
-	for next < len(jobs) || active != 0 {
-		for firstErr == nil && next < len(jobs) &&
-			active < config.MaxConcurrentReads &&
-			jobs[next].size <= config.MaxConcurrentBytes-activeBytes {
-			job := jobs[next]
-			next++
-			active++
-			activeBytes += job.size
-			go func() {
-				completed <- remoteDownloadResult{size: job.size, err: job.run(runCtx)}
-			}()
-		}
-		if active == 0 {
-			if firstErr != nil {
-				return firstErr
-			}
-			return fmt.Errorf(
-				"%w: remote object exceeds concurrent byte budget",
-				ErrValidation,
-			)
-		}
-		select {
-		case result := <-completed:
-			active--
-			activeBytes -= result.size
-			if result.err != nil && firstErr == nil {
-				firstErr = result.err
-				cancel()
-			}
-		case <-contextDone:
-			if firstErr == nil {
-				firstErr = ctx.Err()
-				cancel()
-			}
-			contextDone = nil
-		}
+	scheduler := remoteDownloadScheduler{
+		ctx: ctx, runCtx: runCtx, cancel: cancel, config: config, jobs: jobs,
+		completed:   make(chan remoteDownloadResult, config.MaxConcurrentReads),
+		contextDone: ctx.Done(),
 	}
-	return firstErr
+	for scheduler.hasWork() {
+		scheduler.startReady()
+		if scheduler.active == 0 {
+			return scheduler.idleError()
+		}
+		scheduler.awaitCompletion()
+	}
+	return scheduler.firstErr
+}
+
+func (s *remoteDownloadScheduler) hasWork() bool {
+	return s.next < len(s.jobs) || s.active != 0
+}
+
+func (s *remoteDownloadScheduler) startReady() {
+	for s.firstErr == nil && s.next < len(s.jobs) &&
+		s.active < s.config.MaxConcurrentReads &&
+		s.jobs[s.next].size <= s.config.MaxConcurrentBytes-s.activeBytes {
+		job := s.jobs[s.next]
+		s.next++
+		s.active++
+		s.activeBytes += job.size
+		go func() {
+			s.completed <- remoteDownloadResult{size: job.size, err: job.run(s.runCtx)}
+		}()
+	}
+}
+
+func (s *remoteDownloadScheduler) idleError() error {
+	if s.firstErr != nil {
+		return s.firstErr
+	}
+	return fmt.Errorf(
+		"%w: remote object exceeds concurrent byte budget",
+		ErrValidation,
+	)
+}
+
+func (s *remoteDownloadScheduler) awaitCompletion() {
+	select {
+	case result := <-s.completed:
+		s.active--
+		s.activeBytes -= result.size
+		if result.err != nil && s.firstErr == nil {
+			s.firstErr = result.err
+			s.cancel()
+		}
+	case <-s.contextDone:
+		if s.firstErr == nil {
+			s.firstErr = s.ctx.Err()
+			s.cancel()
+		}
+		s.contextDone = nil
+	}
 }
 
 func cloneRemoteToken(token *FileSystemSecurityToken) *FileSystemSecurityToken {

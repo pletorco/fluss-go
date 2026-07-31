@@ -538,53 +538,66 @@ func kvIDForBucket(t *testing.T, schema Schema, bucket int32) int32 {
 }
 
 func BenchmarkWriterScheduling(b *testing.B) {
-	b.Run("single_writer_single_bucket_saturation", func(b *testing.B) {
-		benchmarkParallelWriters(b, 1, 1, 100*time.Microsecond)
-	})
-	b.Run("single_writer_8_buckets_saturation", func(b *testing.B) {
-		benchmarkParallelWriters(b, 1, 8, 100*time.Microsecond)
-	})
-	b.Run("16_writers_8_buckets", func(b *testing.B) {
-		benchmarkParallelWriters(b, 16, 8, 0)
-	})
-	b.Run("16_writers_slow_server", func(b *testing.B) {
-		benchmarkParallelWriters(b, 16, 8, 100*time.Microsecond)
-	})
+	for _, test := range []struct {
+		name        string
+		writers     int
+		buckets     int
+		serverDelay time.Duration
+	}{
+		{"single_writer_single_bucket_saturation", 1, 1, 100 * time.Microsecond},
+		{"single_writer_8_buckets_saturation", 1, 8, 100 * time.Microsecond},
+		{"16_writers_8_buckets", 16, 8, 0},
+		{"16_writers_slow_server", 16, 8, 100 * time.Microsecond},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			benchmarkParallelWriters(
+				b, test.writers, test.buckets, test.serverDelay,
+			)
+		})
+	}
 	b.Run("failing_server_lifecycle", func(b *testing.B) {
-		failure := errors.New("server failure")
-		b.ReportAllocs()
-		for index := range b.N {
-			backend := newSchedulingLogBackend(1)
-			backend.err = failure
-			writer := newSchedulingLogWriter(b, backend, 1, WithLogLinger(0))
-			result := writer.Append(
-				context.Background(), Row{int32(index), "failure"},
-			).Await(context.Background())
-			if !errors.Is(result.Err, failure) {
-				b.Fatalf("write result = %#v", result)
-			}
+		benchmarkFailingWriterLifecycle(b)
+	})
+	b.Run("64_writer_lifecycle", func(b *testing.B) {
+		benchmarkWriterLifecycle(b, 64)
+	})
+}
+
+func benchmarkFailingWriterLifecycle(b *testing.B) {
+	failure := errors.New("server failure")
+	b.ReportAllocs()
+	for index := range b.N {
+		backend := newSchedulingLogBackend(1)
+		backend.err = failure
+		writer := newSchedulingLogWriter(b, backend, 1, WithLogLinger(0))
+		result := writer.Append(
+			context.Background(), Row{int32(index), "failure"},
+		).Await(context.Background())
+		if !errors.Is(result.Err, failure) {
+			b.Fatalf("write result = %#v", result)
+		}
+		if err := writer.Close(context.Background()); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchmarkWriterLifecycle(b *testing.B, count int) {
+	b.ReportAllocs()
+	for range b.N {
+		backend := newSchedulingLogBackend(8)
+		writers := make([]*LogWriter, count)
+		for index := range writers {
+			writers[index] = newSchedulingLogWriter(
+				b, backend, 8, WithLogLinger(0), WithLogBuffer(64),
+			)
+		}
+		for _, writer := range writers {
 			if err := writer.Close(context.Background()); err != nil {
 				b.Fatal(err)
 			}
 		}
-	})
-	b.Run("64_writer_lifecycle", func(b *testing.B) {
-		b.ReportAllocs()
-		for range b.N {
-			backend := newSchedulingLogBackend(8)
-			writers := make([]*LogWriter, 64)
-			for index := range writers {
-				writers[index] = newSchedulingLogWriter(
-					b, backend, 8, WithLogLinger(0), WithLogBuffer(64),
-				)
-			}
-			for _, writer := range writers {
-				if err := writer.Close(context.Background()); err != nil {
-					b.Fatal(err)
-				}
-			}
-		}
-	})
+	}
 }
 
 func BenchmarkWriterBatching(b *testing.B) {

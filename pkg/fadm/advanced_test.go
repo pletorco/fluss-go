@@ -140,43 +140,11 @@ func advancedSnapshotResponse(t *testing.T, message any, response fmsg.Response)
 	t.Helper()
 	switch message := message.(type) {
 	case *fmsg.GetLatestKvSnapshotsRequest:
-		if message.GetTablePath().GetTableName() != "users" || message.GetPartitionName() != "region=kr" {
-			t.Fatalf("GetLatestKvSnapshots request = %#v", message)
-		}
-		latest := response.Message().(*fmsg.GetLatestKvSnapshotsResponse)
-		latest.TableId, latest.PartitionId = proto.Int64(12), proto.Int64(4)
-		latest.LatestSnapshots = []*fmsg.PbKvSnapshot{
-			{BucketId: proto.Int32(0), SnapshotId: proto.Int64(30), LogOffset: proto.Int64(40)},
-			{BucketId: proto.Int32(1)},
-		}
+		latestSnapshotResponse(t, message, response)
 	case *fmsg.GetKvSnapshotMetadataRequest:
-		if message.GetTableId() != 12 || message.GetPartitionId() != 4 ||
-			message.GetBucketId() != 0 || message.GetSnapshotId() != 30 {
-			t.Fatalf("GetKvSnapshotMetadata request = %#v", message)
-		}
-		metadata := response.Message().(*fmsg.GetKvSnapshotMetadataResponse)
-		metadata.LogOffset = proto.Int64(40)
-		metadata.SnapshotFiles = []*fmsg.PbRemotePathAndLocalFile{{
-			RemotePath: proto.String("s3://bucket/1"), LocalFileName: proto.String("1.sst"),
-		}}
+		snapshotMetadataResponse(t, message, response)
 	case *fmsg.AcquireKvSnapshotLeaseRequest:
-		if message.GetLeaseId() != "lease-1" || message.GetLeaseDurationMs() != 3000 {
-			t.Fatalf("AcquireKvSnapshotLease request = %#v", message)
-		}
-		if len(message.GetSnapshotsToLease()) == 0 {
-			return
-		}
-		if len(message.GetSnapshotsToLease()) != 2 ||
-			len(message.GetSnapshotsToLease()[0].GetBucketSnapshots()) != 2 {
-			t.Fatalf("AcquireKvSnapshotLease snapshots = %#v", message.GetSnapshotsToLease())
-		}
-		response.Message().(*fmsg.AcquireKvSnapshotLeaseResponse).UnavailableSnapshots =
-			[]*fmsg.PbKvSnapshotLeaseForTable{{
-				TableId: proto.Int64(13),
-				BucketSnapshots: []*fmsg.PbKvSnapshotLeaseForBucket{{
-					BucketId: proto.Int32(2), SnapshotId: proto.Int64(32),
-				}},
-			}}
+		acquireSnapshotLeaseResponse(t, message, response)
 	case *fmsg.ReleaseKvSnapshotLeaseRequest:
 		if message.GetLeaseId() != "lease-1" || len(message.GetBucketsToRelease()) != 2 ||
 			message.GetBucketsToRelease()[0].GetPartitionId() != 4 {
@@ -187,6 +155,65 @@ func advancedSnapshotResponse(t *testing.T, message any, response fmsg.Response)
 			t.Fatalf("DropKvSnapshotLease request = %#v", message)
 		}
 	}
+}
+
+func latestSnapshotResponse(
+	t *testing.T,
+	message *fmsg.GetLatestKvSnapshotsRequest,
+	response fmsg.Response,
+) {
+	t.Helper()
+	if message.GetTablePath().GetTableName() != "users" || message.GetPartitionName() != "region=kr" {
+		t.Fatalf("GetLatestKvSnapshots request = %#v", message)
+	}
+	latest := response.Message().(*fmsg.GetLatestKvSnapshotsResponse)
+	latest.TableId, latest.PartitionId = proto.Int64(12), proto.Int64(4)
+	latest.LatestSnapshots = []*fmsg.PbKvSnapshot{
+		{BucketId: proto.Int32(0), SnapshotId: proto.Int64(30), LogOffset: proto.Int64(40)},
+		{BucketId: proto.Int32(1)},
+	}
+}
+
+func snapshotMetadataResponse(
+	t *testing.T,
+	message *fmsg.GetKvSnapshotMetadataRequest,
+	response fmsg.Response,
+) {
+	t.Helper()
+	if message.GetTableId() != 12 || message.GetPartitionId() != 4 ||
+		message.GetBucketId() != 0 || message.GetSnapshotId() != 30 {
+		t.Fatalf("GetKvSnapshotMetadata request = %#v", message)
+	}
+	metadata := response.Message().(*fmsg.GetKvSnapshotMetadataResponse)
+	metadata.LogOffset = proto.Int64(40)
+	metadata.SnapshotFiles = []*fmsg.PbRemotePathAndLocalFile{{
+		RemotePath: proto.String("s3://bucket/1"), LocalFileName: proto.String("1.sst"),
+	}}
+}
+
+func acquireSnapshotLeaseResponse(
+	t *testing.T,
+	message *fmsg.AcquireKvSnapshotLeaseRequest,
+	response fmsg.Response,
+) {
+	t.Helper()
+	if message.GetLeaseId() != "lease-1" || message.GetLeaseDurationMs() != 3000 {
+		t.Fatalf("AcquireKvSnapshotLease request = %#v", message)
+	}
+	if len(message.GetSnapshotsToLease()) == 0 {
+		return
+	}
+	if len(message.GetSnapshotsToLease()) != 2 ||
+		len(message.GetSnapshotsToLease()[0].GetBucketSnapshots()) != 2 {
+		t.Fatalf("AcquireKvSnapshotLease snapshots = %#v", message.GetSnapshotsToLease())
+	}
+	response.Message().(*fmsg.AcquireKvSnapshotLeaseResponse).UnavailableSnapshots =
+		[]*fmsg.PbKvSnapshotLeaseForTable{{
+			TableId: proto.Int64(13),
+			BucketSnapshots: []*fmsg.PbKvSnapshotLeaseForBucket{{
+				BucketId: proto.Int32(2), SnapshotId: proto.Int64(32),
+			}},
+		}}
 }
 
 func advancedStorageResponse(t *testing.T, message any, response fmsg.Response, tokenBytes []byte) {

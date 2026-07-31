@@ -362,30 +362,40 @@ func TestReadRemoteLogSegmentsOrdersSlicesAndRetries(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	firstCalls, secondCalls := 0, 0
-	for _, path := range paths {
-		if strings.Contains(path, "first/00000000000000000000.log") {
-			firstCalls++
-		}
-		if strings.Contains(path, "second/00000000000000000010.log") {
-			secondCalls++
-		}
-	}
+	firstCalls, secondCalls := countRemoteLogPaths(paths)
 	if len(paths) != 3 || firstCalls == 0 || secondCalls == 0 {
 		t.Fatalf("paths = %#v", paths)
 	}
 	events := observer.snapshot()
+	failures, bytesRead := summarizeRemoteMetrics(events)
+	if len(events) != 3 || failures != 1 || bytesRead != 11 {
+		t.Fatalf("remote metrics = %#v", events)
+	}
+}
+
+func countRemoteLogPaths(paths []string) (int, int) {
+	first, second := 0, 0
+	for _, path := range paths {
+		if strings.Contains(path, "first/00000000000000000000.log") {
+			first++
+		}
+		if strings.Contains(path, "second/00000000000000000010.log") {
+			second++
+		}
+	}
+	return first, second
+}
+
+func summarizeRemoteMetrics(events []MetricEvent) (int, int64) {
 	failures, bytesRead := 0, int64(0)
 	for _, event := range events {
 		if event.Failed {
 			failures++
-		} else {
-			bytesRead += event.Bytes
+			continue
 		}
+		bytesRead += event.Bytes
 	}
-	if len(events) != 3 || failures != 1 || bytesRead != 11 {
-		t.Fatalf("remote metrics = %#v", events)
-	}
+	return failures, bytesRead
 }
 
 func TestReadRemoteLogSegmentsPrefetchesRangesAndPreservesOrder(t *testing.T) {

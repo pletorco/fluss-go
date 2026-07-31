@@ -196,6 +196,15 @@ func TestObserverMapsBoundedMetricsAndAttributes(t *testing.T) {
 		"fluss.client.attempt":        2,
 		"fluss.client.lag":            6,
 	}
+	assertMeasurements(t, measurements, expected)
+}
+
+func assertMeasurements(
+	t *testing.T,
+	measurements []measurement,
+	expected map[string]float64,
+) {
+	t.Helper()
 	for _, got := range measurements {
 		value := float64(got.intValue)
 		if got.floatValue != 0 {

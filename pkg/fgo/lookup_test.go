@@ -824,35 +824,39 @@ func BenchmarkLookupCrossCallBatching(b *testing.B) {
 		{"batch_64", 64, 100 * time.Microsecond},
 	} {
 		b.Run(test.name, func(b *testing.B) {
-			table := lookupTable()
-			backend := lookupBackendFor(table, 0, 1)
-			backend.delay = 100 * time.Microsecond
-			key := PrimaryKey{"bench", int32(1)}
-			putLookupValue(b, backend, table, key, Row{"bench", int32(1), "one"})
-			client, err := newLookupClient(
-				context.Background(), backend, table,
-				WithLookupBatch(test.batch, 8),
-				WithLookupQueue(1024, test.delay),
-			)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() {
-				if err := client.Close(); err != nil {
-					b.Error(err)
-				}
-			})
-			b.ReportAllocs()
-			b.ResetTimer()
-			b.RunParallel(func(parallel *testing.PB) {
-				for parallel.Next() {
-					result := client.Lookup(context.Background(), key)[0]
-					if result.Err != nil {
-						b.Error(result.Err)
-						return
-					}
-				}
-			})
+			benchmarkLookupCrossCallBatching(b, test.batch, test.delay)
 		})
 	}
+}
+
+func benchmarkLookupCrossCallBatching(b *testing.B, batch int, delay time.Duration) {
+	table := lookupTable()
+	backend := lookupBackendFor(table, 0, 1)
+	backend.delay = 100 * time.Microsecond
+	key := PrimaryKey{"bench", int32(1)}
+	putLookupValue(b, backend, table, key, Row{"bench", int32(1), "one"})
+	client, err := newLookupClient(
+		context.Background(), backend, table,
+		WithLookupBatch(batch, 8),
+		WithLookupQueue(1024, delay),
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			b.Error(err)
+		}
+	})
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(parallel *testing.PB) {
+		for parallel.Next() {
+			result := client.Lookup(context.Background(), key)[0]
+			if result.Err != nil {
+				b.Error(result.Err)
+				return
+			}
+		}
+	})
 }
