@@ -190,9 +190,18 @@ func (c *Connection) writeRequest(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	finish, err := c.prepareWrite(ctx)
+	if err != nil {
+		return err
+	}
+	defer finish(&err)
+	return c.writeFrame(ctx, frame)
+}
+
+func (c *Connection) prepareWrite(ctx context.Context) (func(*error), error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := c.conn.SetWriteDeadline(deadline); err != nil {
-			return fmt.Errorf("transport: set write deadline: %w", err)
+			return nil, fmt.Errorf("transport: set write deadline: %w", err)
 		}
 	}
 	interruptDone := make(chan struct{})
@@ -200,24 +209,21 @@ func (c *Connection) writeRequest(
 		_ = c.conn.SetWriteDeadline(time.Now())
 		close(interruptDone)
 	})
-	defer func() {
+	return func(writeErr *error) {
 		if !stopInterrupt() {
 			<-interruptDone
 		}
-		if clearErr := c.conn.SetWriteDeadline(time.Time{}); err == nil && clearErr != nil {
-			err = fmt.Errorf("transport: clear write deadline: %w", clearErr)
+		if clearErr := c.conn.SetWriteDeadline(time.Time{}); *writeErr == nil && clearErr != nil {
+			*writeErr = fmt.Errorf("transport: clear write deadline: %w", clearErr)
 		}
-	}()
+	}, nil
+}
+
+func (c *Connection) writeFrame(ctx context.Context, frame []byte) error {
 	for len(frame) > 0 {
 		written, err := c.conn.Write(frame)
 		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return fmt.Errorf("transport: write interrupted: %w", ctxErr)
-			}
-			if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
-				return fmt.Errorf("transport: write interrupted: %w", context.DeadlineExceeded)
-			}
-			return err
+			return interruptedWriteError(ctx, err)
 		}
 		if written == 0 {
 			return io.ErrShortWrite
@@ -225,6 +231,16 @@ func (c *Connection) writeRequest(
 		frame = frame[written:]
 	}
 	return nil
+}
+
+func interruptedWriteError(ctx context.Context, writeErr error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("transport: write interrupted: %w", ctxErr)
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return fmt.Errorf("transport: write interrupted: %w", context.DeadlineExceeded)
+	}
+	return writeErr
 }
 
 func (c *Connection) readLoop() {

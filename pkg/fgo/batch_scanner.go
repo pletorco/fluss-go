@@ -471,34 +471,45 @@ func decodeValueRecordBatchWithResolver(
 	rows := make([]Row, 0, count)
 	position := headerSize
 	for range count {
-		if len(encoded)-position < 6 {
-			return nil, fmt.Errorf("%w: truncated value record", ErrMalformedRecordBatch)
-		}
-		size := int(binary.LittleEndian.Uint32(encoded[position:]))
-		position += 4
-		if size < 2 || size > len(encoded)-position {
-			return nil, fmt.Errorf("%w: invalid value record length", ErrMalformedRecordBatch)
-		}
-		schemaID := int32(int16(binary.LittleEndian.Uint16(encoded[position:])))
-		schema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
-		if err != nil {
-			return nil, fmt.Errorf("fgo: resolve value schema %d: %w", schemaID, err)
-		}
-		row, err := DecodeCompactedRow(schema, encoded[position+2:position+size])
-		if err != nil {
-			return nil, err
-		}
-		row, err = evolveRow(schema, table.Schema, row)
+		row, next, err := decodeValueRecord(ctx, resolver, table, encoded, position)
 		if err != nil {
 			return nil, err
 		}
 		rows = append(rows, row)
-		position += size
+		position = next
 	}
 	if position != len(encoded) {
 		return nil, fmt.Errorf("%w: trailing value batch bytes", ErrMalformedRecordBatch)
 	}
 	return rows, nil
+}
+
+func decodeValueRecord(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	encoded []byte,
+	position int,
+) (Row, int, error) {
+	if len(encoded)-position < 6 {
+		return nil, position, fmt.Errorf("%w: truncated value record", ErrMalformedRecordBatch)
+	}
+	size := int(binary.LittleEndian.Uint32(encoded[position:]))
+	position += 4
+	if size < 2 || size > len(encoded)-position {
+		return nil, position, fmt.Errorf("%w: invalid value record length", ErrMalformedRecordBatch)
+	}
+	schemaID := int32(int16(binary.LittleEndian.Uint16(encoded[position:])))
+	schema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
+	if err != nil {
+		return nil, position, fmt.Errorf("fgo: resolve value schema %d: %w", schemaID, err)
+	}
+	row, err := DecodeCompactedRow(schema, encoded[position+2:position+size])
+	if err != nil {
+		return nil, position, err
+	}
+	row, err = evolveRow(schema, table.Schema, row)
+	return row, position + size, err
 }
 
 func (s *BatchScanner) projectRows(rows []Row) []Row {

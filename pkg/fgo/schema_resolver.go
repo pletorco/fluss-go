@@ -96,54 +96,55 @@ func (c *schemaCache) resolveSchema(
 		return Schema{}, fmt.Errorf("%w: negative schema ID %d", ErrInvalidSchema, schemaID)
 	}
 	key := schemaCacheKey{path: path, id: schemaID}
+	if schema, found, err := c.cached(key); found || err != nil {
+		return schema, err
+	}
+	return c.flights.Do(ctx, key, func(fetchCtx context.Context) (Schema, error) {
+		return c.fetchAndStore(fetchCtx, key)
+	}, nil)
+}
+
+func (c *schemaCache) cached(key schemaCacheKey) (Schema, bool, error) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.closed {
-		c.mu.Unlock()
-		return Schema{}, ErrClosed
+		return Schema{}, false, ErrClosed
 	}
 	if entry, ok := c.entries[key]; ok {
 		c.clock++
 		entry.used = c.clock
 		c.entries[key] = entry
-		c.mu.Unlock()
-		return entry.schema, nil
+		return entry.schema, true, nil
 	}
 	if c.fetch == nil {
-		c.mu.Unlock()
-		return Schema{}, fmt.Errorf("%w: schema resolver is unavailable", ErrInvalidConfig)
+		return Schema{}, false, fmt.Errorf("%w: schema resolver is unavailable", ErrInvalidConfig)
 	}
-	c.mu.Unlock()
-	return c.flights.Do(ctx, key, func(fetchCtx context.Context) (Schema, error) {
-		c.mu.Lock()
-		if c.closed {
-			c.mu.Unlock()
-			return Schema{}, ErrClosed
-		}
-		if entry, ok := c.entries[key]; ok {
-			c.clock++
-			entry.used = c.clock
-			c.entries[key] = entry
-			c.mu.Unlock()
-			return entry.schema, nil
-		}
-		c.mu.Unlock()
-		schema, err := c.fetch(fetchCtx, key.path, key.id)
-		if err == nil {
-			err = schema.Validate()
-		}
-		if err != nil {
-			return Schema{}, err
-		}
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if c.closed {
-			return Schema{}, ErrClosed
-		}
-		c.clock++
-		c.entries[key] = schemaCacheEntry{schema: schema, used: c.clock}
-		c.evictLocked()
-		return schema, nil
-	}, nil)
+	return Schema{}, false, nil
+}
+
+func (c *schemaCache) fetchAndStore(
+	ctx context.Context,
+	key schemaCacheKey,
+) (Schema, error) {
+	if schema, found, err := c.cached(key); found || err != nil {
+		return schema, err
+	}
+	schema, err := c.fetch(ctx, key.path, key.id)
+	if err == nil {
+		err = schema.Validate()
+	}
+	if err != nil {
+		return Schema{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return Schema{}, ErrClosed
+	}
+	c.clock++
+	c.entries[key] = schemaCacheEntry{schema: schema, used: c.clock}
+	c.evictLocked()
+	return schema, nil
 }
 
 func (c *schemaCache) store(path TablePath, schemaID int32, schema Schema) {

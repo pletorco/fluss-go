@@ -276,34 +276,39 @@ func (m *securityTokenManager) run(ctx context.Context) {
 		if !waitSecurityToken(ctx, m.config.clock, delay) {
 			return
 		}
-		token, err := m.provider.AcquireFileSystemSecurityToken(ctx)
-		if errors.Is(err, ErrSecurityTokenProviderDisabled) {
-			m.disable()
+		next, stop := m.refreshOnce(ctx)
+		if stop {
 			return
 		}
-		if err != nil || validateSecurityToken(token, m.config.clock.Now(), m.config.ClockSkew) != nil {
-			delay = m.failedDelay()
-			continue
-		}
-		if err := m.publish(ctx, token); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			delay = m.failedDelay()
-			continue
-		}
-		m.mu.Lock()
-		m.failures = 0
-		m.mu.Unlock()
-		if token.Revoked {
-			delay = m.jitter(m.config.RetryBackoff)
-			continue
-		}
-		if token.ExpiresAt.IsZero() {
-			return
-		}
-		delay = m.renewalDelay(token.ExpiresAt)
+		delay = next
 	}
+}
+
+func (m *securityTokenManager) refreshOnce(ctx context.Context) (time.Duration, bool) {
+	token, err := m.provider.AcquireFileSystemSecurityToken(ctx)
+	if errors.Is(err, ErrSecurityTokenProviderDisabled) {
+		m.disable()
+		return 0, true
+	}
+	if err != nil || validateSecurityToken(token, m.config.clock.Now(), m.config.ClockSkew) != nil {
+		return m.failedDelay(), false
+	}
+	if err := m.publish(ctx, token); err != nil {
+		if ctx.Err() != nil {
+			return 0, true
+		}
+		return m.failedDelay(), false
+	}
+	m.mu.Lock()
+	m.failures = 0
+	m.mu.Unlock()
+	if token.Revoked {
+		return m.jitter(m.config.RetryBackoff), false
+	}
+	if token.ExpiresAt.IsZero() {
+		return 0, true
+	}
+	return m.renewalDelay(token.ExpiresAt), false
 }
 
 func (m *securityTokenManager) publish(

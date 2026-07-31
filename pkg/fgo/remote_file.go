@@ -361,9 +361,24 @@ func readRemoteLogSegments(
 	if strings.TrimSpace(info.TabletDirectory) == "" || info.FirstStartPosition < 0 {
 		return nil, fmt.Errorf("%w: invalid remote log fetch info", ErrValidation)
 	}
+	segments, outputBytes, err := planRemoteLogSegments(settings.config, info)
+	if err != nil {
+		return nil, err
+	}
+	maxInt := int64(^uint(0) >> 1)
+	if outputBytes > maxInt {
+		return nil, fmt.Errorf("%w: remote log exceeds platform allocation limit", ErrValidation)
+	}
+	return downloadRemoteLogSegments(ctx, settings, info, segments, outputBytes, token, observer)
+}
+
+func planRemoteLogSegments(
+	config RemoteFileReadConfig,
+	info RemoteLogFetchInfo,
+) ([]RemoteLogSegment, int64, error) {
 	segments := append([]RemoteLogSegment(nil), info.Segments...)
-	if len(segments) > settings.config.MaxFiles {
-		return nil, fmt.Errorf("%w: remote log exceeds file-count limit", ErrValidation)
+	if len(segments) > config.MaxFiles {
+		return nil, 0, fmt.Errorf("%w: remote log exceeds file-count limit", ErrValidation)
 	}
 	sort.Slice(segments, func(i, j int) bool {
 		return segments[i].StartOffset < segments[j].StartOffset
@@ -372,11 +387,11 @@ func readRemoteLogSegments(
 	var outputBytes int64
 	for index, segment := range segments {
 		if segment.ID == "" || segment.StartOffset < 0 || segment.EndOffset <= segment.StartOffset ||
-			segment.SizeBytes <= 0 || segment.SizeBytes > settings.config.MaxFileBytes {
-			return nil, fmt.Errorf("%w: invalid remote log segment", ErrValidation)
+			segment.SizeBytes <= 0 || segment.SizeBytes > config.MaxFileBytes {
+			return nil, 0, fmt.Errorf("%w: invalid remote log segment", ErrValidation)
 		}
 		if previousEnd >= 0 && previousEnd != segment.StartOffset {
-			return nil, fmt.Errorf("%w: remote log segments have a gap or overlap", ErrValidation)
+			return nil, 0, fmt.Errorf("%w: remote log segments have a gap or overlap", ErrValidation)
 		}
 		previousEnd = segment.EndOffset
 		start := int64(0)
@@ -384,18 +399,26 @@ func readRemoteLogSegments(
 			start = int64(info.FirstStartPosition)
 		}
 		if start > segment.SizeBytes {
-			return nil, fmt.Errorf("%w: remote log start position exceeds segment", ErrMalformedRecordBatch)
+			return nil, 0, fmt.Errorf("%w: remote log start position exceeds segment", ErrMalformedRecordBatch)
 		}
 		retained := segment.SizeBytes - start
-		if retained > settings.config.MaxTotalBytes-outputBytes {
-			return nil, fmt.Errorf("%w: remote log exceeds aggregate byte limit", ErrValidation)
+		if retained > config.MaxTotalBytes-outputBytes {
+			return nil, 0, fmt.Errorf("%w: remote log exceeds aggregate byte limit", ErrValidation)
 		}
 		outputBytes += retained
 	}
-	maxInt := int64(^uint(0) >> 1)
-	if outputBytes > maxInt {
-		return nil, fmt.Errorf("%w: remote log exceeds platform allocation limit", ErrValidation)
-	}
+	return segments, outputBytes, nil
+}
+
+func downloadRemoteLogSegments(
+	ctx context.Context,
+	settings remoteFileSettings,
+	info RemoteLogFetchInfo,
+	segments []RemoteLogSegment,
+	outputBytes int64,
+	token *FileSystemSecurityToken,
+	observer MetricsObserver,
+) ([]byte, error) {
 	result := make([]byte, 0, int(outputBytes))
 	for index, segment := range segments {
 		path := remoteLogSegmentPath(info.TabletDirectory, segment)

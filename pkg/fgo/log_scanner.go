@@ -1003,40 +1003,12 @@ func decodeFetchedLogWithResolver(
 			return fetchOffset, nil, nil, err
 		}
 		payload := encoded[:size]
-		_, _, schemaOffset, err := logBatchHeader(payload)
-		if err != nil {
-			releaseScanArrows(arrows)
-			return fetchOffset, nil, nil, err
-		}
-		schemaID := int32(int16(binary.LittleEndian.Uint16(payload[schemaOffset:])))
-		writerSchema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
-		if err != nil {
-			releaseScanArrows(arrows)
-			return fetchOffset, nil, nil, fmt.Errorf("fgo: resolve log schema %d: %w", schemaID, err)
-		}
-		batchNext, batchRows, arrowBatch, err := decodeFetchedBatch(
-			writerSchema, bucket, next, payload, compacted,
+		batchNext, batchRows, arrowBatch, err := decodeEvolvedFetchedBatch(
+			ctx, resolver, table, bucket, next, payload, compacted,
 		)
 		if err != nil {
 			releaseScanArrows(arrows)
 			return fetchOffset, nil, nil, err
-		}
-		for index := range batchRows {
-			batchRows[index].Record.Value, err = evolveRow(
-				writerSchema, table.Schema, batchRows[index].Record.Value,
-			)
-			if err != nil {
-				releaseScanArrows(arrows)
-				return fetchOffset, nil, nil, err
-			}
-		}
-		if arrowBatch != nil {
-			err = evolveArrowBatch(&arrowBatch.Batch, writerSchema, table.Schema)
-			if err != nil {
-				arrowBatch.Batch.Release()
-				releaseScanArrows(arrows)
-				return fetchOffset, nil, nil, err
-			}
 		}
 		next = batchNext
 		rows = append(rows, batchRows...)
@@ -1046,6 +1018,53 @@ func decodeFetchedLogWithResolver(
 		encoded = encoded[size:]
 	}
 	return next, rows, arrows, nil
+}
+
+func decodeEvolvedFetchedBatch(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	bucket int32,
+	offset int64,
+	payload []byte,
+	compacted bool,
+) (int64, []ScanRecord, *ScanArrowBatch, error) {
+	_, _, schemaOffset, err := logBatchHeader(payload)
+	if err != nil {
+		return offset, nil, nil, err
+	}
+	schemaID := int32(int16(binary.LittleEndian.Uint16(payload[schemaOffset:])))
+	writerSchema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
+	if err != nil {
+		return offset, nil, nil, fmt.Errorf("fgo: resolve log schema %d: %w", schemaID, err)
+	}
+	next, rows, arrowBatch, err := decodeFetchedBatch(
+		writerSchema, bucket, offset, payload, compacted,
+	)
+	if err != nil {
+		return offset, nil, nil, err
+	}
+	if err := evolveScanRecords(rows, writerSchema, table.Schema); err != nil {
+		return offset, nil, nil, err
+	}
+	if arrowBatch != nil {
+		if err := evolveArrowBatch(&arrowBatch.Batch, writerSchema, table.Schema); err != nil {
+			arrowBatch.Batch.Release()
+			return offset, nil, nil, err
+		}
+	}
+	return next, rows, arrowBatch, nil
+}
+
+func evolveScanRecords(records []ScanRecord, source, target Schema) error {
+	for index := range records {
+		row, err := evolveRow(source, target, records[index].Record.Value)
+		if err != nil {
+			return err
+		}
+		records[index].Record.Value = row
+	}
+	return nil
 }
 
 func schemaIDFromFetched(encoded []byte) int32 {

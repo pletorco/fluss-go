@@ -549,16 +549,7 @@ func testSchemaEvolution(
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldWriter, err := client.NewLogWriter(ctx, oldTable, fgo.WithLogLinger(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result := oldWriter.Append(ctx, fgo.Row{int32(1), "old"}).Await(ctx); result.Err != nil {
-		t.Fatal(result.Err)
-	}
-	if err := oldWriter.Close(ctx); err != nil {
-		t.Fatal(err)
-	}
+	appendSchemaEvolutionRow(t, ctx, client, oldTable, fgo.Row{int32(1), "old"})
 	if err := admin.AlterTable(ctx, path, fadm.AlterTable{Add: []fadm.AddColumn{{
 		Name: "extra",
 		Type: fgo.LogicalType{Root: "BIGINT", Nullable: true},
@@ -566,19 +557,43 @@ func testSchemaEvolution(
 		t.Fatal(err)
 	}
 	current := waitForSchemaChange(t, ctx, client, path, oldTable.SchemaID)
-	writer, err := client.NewLogWriter(ctx, current, fgo.WithLogLinger(0))
+	appendSchemaEvolutionRow(t, ctx, client, current, fgo.Row{int32(2), "new", int64(9)})
+	rows := scanSchemaEvolutionRows(t, ctx, client, current)
+	if len(rows[1]) != 3 || rows[1][2] != nil || rows[2][2] != int64(9) {
+		t.Fatalf("schema-evolved rows = %#v", rows)
+	}
+}
+
+func appendSchemaEvolutionRow(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+	row fgo.Row,
+) {
+	t.Helper()
+	writer, err := client.NewLogWriter(ctx, table, fgo.WithLogLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result := writer.Append(ctx, fgo.Row{int32(2), "new", int64(9)}).Await(ctx); result.Err != nil {
+	if result := writer.Append(ctx, row).Await(ctx); result.Err != nil {
 		t.Fatal(result.Err)
 	}
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func scanSchemaEvolutionRows(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) map[int32]fgo.Row {
+	t.Helper()
 	scanner, err := client.NewLogScanner(
 		ctx,
-		current,
+		table,
 		fgo.Earliest(),
 		fgo.WithScanRowLimit(2),
 		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
@@ -598,9 +613,7 @@ func testSchemaEvolution(
 		}
 		result.Release()
 	}
-	if len(rows[1]) != 3 || rows[1][2] != nil || rows[2][2] != int64(9) {
-		t.Fatalf("schema-evolved rows = %#v", rows)
-	}
+	return rows
 }
 
 func waitForSchemaChange(

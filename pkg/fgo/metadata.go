@@ -222,38 +222,56 @@ func (r *Router) refreshPhysical(
 	path PhysicalTablePath,
 	force bool,
 ) error {
-	if err := path.Validate(); err != nil {
+	handled, err := r.preparePhysicalRefresh(ctx, path)
+	if handled || err != nil {
 		return err
 	}
-	if path.Partition == "" {
-		return r.Refresh(ctx, path.TablePath)
-	}
-	if !r.hasTable(path.TablePath) {
-		if err := r.refresh(ctx, path.TablePath, false); err != nil {
-			return err
-		}
-	}
 	key := physicalTableKey(path)
-	_, err := r.partitionFlights.Do(ctx, key, func(workCtx context.Context) (struct{}, error) {
-		if !force {
-			r.mu.RLock()
-			cached := r.hasPartition(path)
-			r.mu.RUnlock()
-			if cached {
-				return struct{}{}, nil
-			}
-		}
-		partition, fetchUsed, fetchErr := r.fetchPhysicalMetadata(workCtx, path, key)
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if fetchErr == nil && fetchUsed {
-			fetchErr = r.applyPhysicalMetadata(path, key, partition)
-		}
-		if fetchErr == nil && !r.hasPartition(path) {
-			fetchErr = fmt.Errorf("%w: %s", ErrUnknownPartition, path)
-		}
-		return struct{}{}, fetchErr
+	_, err = r.partitionFlights.Do(ctx, key, func(workCtx context.Context) (struct{}, error) {
+		return struct{}{}, r.refreshPhysicalOnce(workCtx, path, key, force)
 	}, nil)
+	return err
+}
+
+func (r *Router) preparePhysicalRefresh(
+	ctx context.Context,
+	path PhysicalTablePath,
+) (bool, error) {
+	if err := path.Validate(); err != nil {
+		return true, err
+	}
+	if path.Partition == "" {
+		return true, r.Refresh(ctx, path.TablePath)
+	}
+	if r.hasTable(path.TablePath) {
+		return false, nil
+	}
+	return false, r.refresh(ctx, path.TablePath, false)
+}
+
+func (r *Router) refreshPhysicalOnce(
+	ctx context.Context,
+	path PhysicalTablePath,
+	key string,
+	force bool,
+) error {
+	if !force {
+		r.mu.RLock()
+		cached := r.hasPartition(path)
+		r.mu.RUnlock()
+		if cached {
+			return nil
+		}
+	}
+	partition, fetchUsed, err := r.fetchPhysicalMetadata(ctx, path, key)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err == nil && fetchUsed {
+		err = r.applyPhysicalMetadata(path, key, partition)
+	}
+	if err == nil && !r.hasPartition(path) {
+		err = fmt.Errorf("%w: %s", ErrUnknownPartition, path)
+	}
 	return err
 }
 

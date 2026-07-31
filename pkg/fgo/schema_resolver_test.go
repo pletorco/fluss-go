@@ -47,23 +47,7 @@ func TestSchemaCacheCoalescesFetchesAndSeparatesWaiterCancellation(t *testing.T)
 		}()
 	}
 	<-started
-	deadline := time.Now().Add(time.Second)
-	for {
-		cache.flights.mu.Lock()
-		call := cache.flights.calls[schemaCacheKey{path: path, id: 1}]
-		waiters := 0
-		if call != nil {
-			waiters = call.waiters
-		}
-		cache.flights.mu.Unlock()
-		if waiters == 8 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("schema fetch waiters = %d", waiters)
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForCoalescerWaiters(t, cache.flights, schemaCacheKey{path: path, id: 1}, 8)
 	cancel()
 	if result := <-canceledResult; !errors.Is(result.err, context.Canceled) {
 		t.Fatalf("canceled resolve = %#v", result)

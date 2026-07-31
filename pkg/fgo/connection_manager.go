@@ -83,42 +83,48 @@ func (m *connectionManager) getNode(ctx context.Context, node Node) (*Client, er
 		return nil, err
 	}
 	key := connectionKey{id: node.ID, address: address, role: role}
+	if client, found, err := m.cachedClient(key); found || err != nil {
+		return client, err
+	}
+	return m.flights.Do(ctx, key, func(workCtx context.Context) (*Client, error) {
+		return m.openManagedConnection(workCtx, key, node.ID)
+	}, nil)
+}
+
+func (m *connectionManager) cachedClient(key connectionKey) (*Client, bool, error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
-		m.mu.Unlock()
-		return nil, ErrClosed
+		return nil, false, ErrClosed
 	}
 	if client := m.clients[key]; client != nil {
-		m.mu.Unlock()
-		return client, nil
+		return client, true, nil
+	}
+	return nil, false, nil
+}
+
+func (m *connectionManager) openManagedConnection(
+	ctx context.Context,
+	key connectionKey,
+	serverID int32,
+) (*Client, error) {
+	if client, found, err := m.cachedClient(key); found || err != nil {
+		return client, err
+	}
+	client, err := m.open(ctx, key.address, key.role)
+	m.mu.Lock()
+	if m.closed && err == nil {
+		err = ErrClosed
+	}
+	if err == nil {
+		client.serverID = serverID
+		m.clients[key] = client
 	}
 	m.mu.Unlock()
-	return m.flights.Do(ctx, key, func(workCtx context.Context) (*Client, error) {
-		m.mu.Lock()
-		if m.closed {
-			m.mu.Unlock()
-			return nil, ErrClosed
-		}
-		if client := m.clients[key]; client != nil {
-			m.mu.Unlock()
-			return client, nil
-		}
-		m.mu.Unlock()
-		client, err := m.open(workCtx, address, role)
-		m.mu.Lock()
-		if m.closed && err == nil {
-			err = ErrClosed
-		}
-		if err == nil {
-			client.serverID = node.ID
-			m.clients[key] = client
-		}
-		m.mu.Unlock()
-		if err != nil && client != nil {
-			_ = client.shutdown()
-		}
-		return client, err
-	}, nil)
+	if err != nil && client != nil {
+		_ = client.shutdown()
+	}
+	return client, err
 }
 
 func (m *connectionManager) open(ctx context.Context, address string, expectedRole ServerRole) (*Client, error) {

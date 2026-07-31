@@ -347,17 +347,19 @@ func TestSnapshotBatchScannerLifecycle(t *testing.T) {
 	}
 }
 
+type snapshotEOFCase struct {
+	name       string
+	rows       []Row
+	options    []BatchScannerOption
+	wantRows   int
+	wantDone   bool
+	wantErr    error
+	wantFields int
+}
+
 func TestSnapshotBatchScannerPreservesFinalEOFResult(t *testing.T) {
 	table := kvWriterTable()
-	tests := []struct {
-		name       string
-		rows       []Row
-		options    []BatchScannerOption
-		wantRows   int
-		wantDone   bool
-		wantErr    error
-		wantFields int
-	}{
+	tests := []snapshotEOFCase{
 		{name: "empty", wantDone: true},
 		{
 			name: "rows", rows: []Row{{int32(1), "one", int64(10)}},
@@ -375,42 +377,44 @@ func TestSnapshotBatchScannerPreservesFinalEOFResult(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			reader := &fakeSnapshotBatchReader{
-				batches: [][]Row{test.rows}, eofWithLast: true,
-			}
-			scanner, err := newBatchScanner(
-				context.Background(), nil, reader, table, testTableBucket(table),
-				test.options...,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := scanner.Poll(context.Background())
-			if !errors.Is(err, test.wantErr) {
-				t.Fatalf("Poll() error = %v, want %v", err, test.wantErr)
-			}
-			if test.wantErr != nil {
-				if result.Done || scanner.Done() {
-					t.Fatalf("failed final result marked done: %#v", result)
-				}
-				_ = scanner.Close()
-				return
-			}
-			if result.Done != test.wantDone || scanner.Done() != test.wantDone ||
-				len(result.Rows) != test.wantRows {
-				t.Fatalf("Poll() = %#v, scanner done = %v", result, scanner.Done())
-			}
-			if test.wantRows != 0 && len(result.Rows[0]) != test.wantFields {
-				t.Fatalf("projected fields = %d, want %d", len(result.Rows[0]), test.wantFields)
-			}
-			again, err := scanner.Poll(context.Background())
-			if err != nil || !again.Done || len(again.Rows) != 0 {
-				t.Fatalf("terminal Poll() = %#v, %v", again, err)
-			}
-			if err := scanner.Close(); err != nil || reader.closed.Load() != 1 {
-				t.Fatalf("Close() = %v calls=%d", err, reader.closed.Load())
-			}
+			assertSnapshotEOFCase(t, table, test)
 		})
+	}
+}
+
+func assertSnapshotEOFCase(t *testing.T, table Table, test snapshotEOFCase) {
+	t.Helper()
+	reader := &fakeSnapshotBatchReader{batches: [][]Row{test.rows}, eofWithLast: true}
+	scanner, err := newBatchScanner(
+		context.Background(), nil, reader, table, testTableBucket(table), test.options...,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if !errors.Is(err, test.wantErr) {
+		t.Fatalf("Poll() error = %v, want %v", err, test.wantErr)
+	}
+	if test.wantErr != nil {
+		if result.Done || scanner.Done() {
+			t.Fatalf("failed final result marked done: %#v", result)
+		}
+		_ = scanner.Close()
+		return
+	}
+	if result.Done != test.wantDone || scanner.Done() != test.wantDone ||
+		len(result.Rows) != test.wantRows {
+		t.Fatalf("Poll() = %#v, scanner done = %v", result, scanner.Done())
+	}
+	if test.wantRows != 0 && len(result.Rows[0]) != test.wantFields {
+		t.Fatalf("projected fields = %d, want %d", len(result.Rows[0]), test.wantFields)
+	}
+	again, err := scanner.Poll(context.Background())
+	if err != nil || !again.Done || len(again.Rows) != 0 {
+		t.Fatalf("terminal Poll() = %#v, %v", again, err)
+	}
+	if err := scanner.Close(); err != nil || reader.closed.Load() != 1 {
+		t.Fatalf("Close() = %v calls=%d", err, reader.closed.Load())
 	}
 }
 
