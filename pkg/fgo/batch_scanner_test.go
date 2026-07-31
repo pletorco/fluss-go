@@ -272,12 +272,13 @@ func TestBatchScannerCurrentFailures(t *testing.T) {
 }
 
 type fakeSnapshotBatchReader struct {
-	mu       sync.Mutex
-	batches  [][]Row
-	block    bool
-	closed   atomic.Int32
-	readErr  error
-	closeErr error
+	mu          sync.Mutex
+	batches     [][]Row
+	eofWithLast bool
+	block       bool
+	closed      atomic.Int32
+	readErr     error
+	closeErr    error
 }
 
 func (r *fakeSnapshotBatchReader) ReadBatch(ctx context.Context, _ int) ([]Row, error) {
@@ -295,6 +296,9 @@ func (r *fakeSnapshotBatchReader) ReadBatch(ctx context.Context, _ int) ([]Row, 
 	}
 	rows := r.batches[0]
 	r.batches = r.batches[1:]
+	if r.eofWithLast && len(r.batches) == 0 {
+		return rows, io.EOF
+	}
 	return rows, nil
 }
 
@@ -340,6 +344,73 @@ func TestSnapshotBatchScannerLifecycle(t *testing.T) {
 	}
 	if err := scanner.Close(); err != nil || reader.closed.Load() != 1 {
 		t.Fatalf("repeated Close() = %v calls=%d", err, reader.closed.Load())
+	}
+}
+
+func TestSnapshotBatchScannerPreservesFinalEOFResult(t *testing.T) {
+	table := kvWriterTable()
+	tests := []struct {
+		name       string
+		rows       []Row
+		options    []BatchScannerOption
+		wantRows   int
+		wantDone   bool
+		wantErr    error
+		wantFields int
+	}{
+		{name: "empty", wantDone: true},
+		{
+			name: "rows", rows: []Row{{int32(1), "one", int64(10)}},
+			wantRows: 1, wantDone: true, wantFields: 3,
+		},
+		{
+			name: "projection", rows: []Row{{int32(1), "one", int64(10)}},
+			options:  []BatchScannerOption{WithBatchProjection("name")},
+			wantRows: 1, wantDone: true, wantFields: 1,
+		},
+		{
+			name: "oversized", rows: []Row{{int32(1)}, {int32(2)}},
+			options: []BatchScannerOption{WithBatchLimit(1)}, wantErr: ErrValidation,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reader := &fakeSnapshotBatchReader{
+				batches: [][]Row{test.rows}, eofWithLast: true,
+			}
+			scanner, err := newBatchScanner(
+				context.Background(), nil, reader, table, testTableBucket(table),
+				test.options...,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := scanner.Poll(context.Background())
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("Poll() error = %v, want %v", err, test.wantErr)
+			}
+			if test.wantErr != nil {
+				if result.Done || scanner.Done() {
+					t.Fatalf("failed final result marked done: %#v", result)
+				}
+				_ = scanner.Close()
+				return
+			}
+			if result.Done != test.wantDone || scanner.Done() != test.wantDone ||
+				len(result.Rows) != test.wantRows {
+				t.Fatalf("Poll() = %#v, scanner done = %v", result, scanner.Done())
+			}
+			if test.wantRows != 0 && len(result.Rows[0]) != test.wantFields {
+				t.Fatalf("projected fields = %d, want %d", len(result.Rows[0]), test.wantFields)
+			}
+			again, err := scanner.Poll(context.Background())
+			if err != nil || !again.Done || len(again.Rows) != 0 {
+				t.Fatalf("terminal Poll() = %#v, %v", again, err)
+			}
+			if err := scanner.Close(); err != nil || reader.closed.Load() != 1 {
+				t.Fatalf("Close() = %v calls=%d", err, reader.closed.Load())
+			}
+		})
 	}
 }
 

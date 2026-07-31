@@ -382,8 +382,11 @@ func batchPollContext(caller, life context.Context) (context.Context, context.Ca
 func (s *BatchScanner) pollSnapshot(ctx context.Context) (BatchResult, error) {
 	rows, err := s.snapshot.ReadBatch(ctx, s.config.Limit)
 	if errors.Is(err, io.EOF) {
+		if len(rows) > s.config.Limit {
+			return BatchResult{}, fmt.Errorf("%w: snapshot provider exceeded batch limit", ErrValidation)
+		}
 		s.markDone()
-		return BatchResult{Done: true}, nil
+		return BatchResult{Rows: s.projectRows(rows), Done: true}, nil
 	}
 	if err != nil {
 		return BatchResult{}, err
