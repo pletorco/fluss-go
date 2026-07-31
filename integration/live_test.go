@@ -323,6 +323,15 @@ func testCatalog(t *testing.T, admin *fadm.Client, database string, logPath, kvP
 	if err != nil || len(tables) != 2 {
 		t.Fatalf("ListTables() = %#v, %v", tables, err)
 	}
+	const leaseID = "fluss-go-integration-renewal"
+	if err := admin.RenewKVSnapshotLease(
+		context.Background(), leaseID, time.Minute,
+	); err != nil {
+		t.Fatalf("RenewKVSnapshotLease() = %v", err)
+	}
+	if err := admin.DropKVSnapshotLease(context.Background(), leaseID); err != nil {
+		t.Fatalf("DropKVSnapshotLease() = %v", err)
+	}
 }
 
 func requireEnvironment(t *testing.T) {

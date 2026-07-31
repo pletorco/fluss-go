@@ -160,10 +160,15 @@ func advancedSnapshotResponse(t *testing.T, message any, response fmsg.Response)
 			RemotePath: proto.String("s3://bucket/1"), LocalFileName: proto.String("1.sst"),
 		}}
 	case *fmsg.AcquireKvSnapshotLeaseRequest:
-		if message.GetLeaseId() != "lease-1" || message.GetLeaseDurationMs() != 3000 ||
-			len(message.GetSnapshotsToLease()) != 2 ||
-			len(message.GetSnapshotsToLease()[0].GetBucketSnapshots()) != 2 {
+		if message.GetLeaseId() != "lease-1" || message.GetLeaseDurationMs() != 3000 {
 			t.Fatalf("AcquireKvSnapshotLease request = %#v", message)
+		}
+		if len(message.GetSnapshotsToLease()) == 0 {
+			return
+		}
+		if len(message.GetSnapshotsToLease()) != 2 ||
+			len(message.GetSnapshotsToLease()[0].GetBucketSnapshots()) != 2 {
+			t.Fatalf("AcquireKvSnapshotLease snapshots = %#v", message.GetSnapshotsToLease())
 		}
 		response.Message().(*fmsg.AcquireKvSnapshotLeaseResponse).UnavailableSnapshots =
 			[]*fmsg.PbKvSnapshotLeaseForTable{{
@@ -406,6 +411,9 @@ func exerciseSnapshots(t *testing.T, ctx context.Context, client *Client, path f
 	if err != nil || len(unavailable) != 1 || unavailable[0].PartitionID != -1 {
 		t.Fatalf("AcquireKVSnapshotLease() = %#v, %v", unavailable, err)
 	}
+	if err := client.RenewKVSnapshotLease(ctx, "lease-1", 3*time.Second); err != nil {
+		t.Fatalf("RenewKVSnapshotLease() = %v", err)
+	}
 	if err := client.ReleaseKVSnapshotLease(ctx, "lease-1", []fgo.TableBucket{
 		{TableID: 12, PartitionID: 4, BucketID: 0},
 		{TableID: 12, PartitionID: -1, BucketID: 1},
@@ -532,6 +540,9 @@ func TestAdvancedAdminValidation(t *testing.T) {
 			invalid.SnapshotID = -1
 			_, err := client.AcquireKVSnapshotLease(ctx, "lease", time.Second, []SnapshotLease{invalid})
 			return err
+		},
+		"renew empty": func() error {
+			return client.RenewKVSnapshotLease(ctx, "", 0)
 		},
 		"release empty": func() error { return client.ReleaseKVSnapshotLease(ctx, "", nil) },
 		"release invalid": func() error {

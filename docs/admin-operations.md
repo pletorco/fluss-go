@@ -105,7 +105,10 @@ requested snapshot was leased. With a mixed result, preserve successful
 leases, exclude every unavailable snapshot from reads, and still clean up the
 lease.
 
-Use `ReleaseKVSnapshotLease` to release selected table buckets early.
+Use `RenewKVSnapshotLease` before the lease duration expires when snapshot
+processing continues. Renewal sends the existing lease ID and a new positive
+duration without reacquiring individual snapshots. Use
+`ReleaseKVSnapshotLease` to release selected table buckets early.
 `DropKVSnapshotLease` releases everything held by the lease ID. Always arrange
 a bounded drop after a successful acquire attempt; server-side expiration is a
 last resort rather than the normal cleanup path.

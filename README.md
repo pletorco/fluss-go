@@ -83,7 +83,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Remote storage adapters | Supported | Pluggable readers compose remote log segments and snapshot files with per-object, aggregate-byte, and file-count limits without mandatory filesystem SDKs; local paths and `file://` URIs are built in. |
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
 | Core `fadm` catalog client | Supported | `pkg/fadm` shares the `fgo` connection pool and implements database, table, schema, alter, partition, and per-bucket offset operations. |
-| Advanced `fadm` operations | Supported | ACL, cluster config, server discovery and tags, rebalance, producer-offset, KV snapshot lease, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
+| Advanced `fadm` operations | Supported | ACL, cluster config, server discovery and tags, rebalance, producer-offset, KV snapshot acquire/renew/release, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
 | Live Fluss 0.9.1 compatibility | Verified | `task test:integration` runs Java-compatible golden fixtures and live plaintext, SASL PLAIN, multi-tablet, catalog, log, KV, lookup, prefix-lookup, schema-evolution, and leader-failover checks against the digest-pinned official 0.9.1 image. |
 
 ## Documentation

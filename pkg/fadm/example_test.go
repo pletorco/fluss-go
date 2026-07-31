@@ -365,6 +365,9 @@ func ExampleClient_AcquireKVSnapshotLease() {
 		log.Fatal(err)
 	}
 	defer exampleDropSnapshotLease(admin, leaseID)
+	if err := admin.RenewKVSnapshotLease(ctx, leaseID, 10*time.Minute); err != nil {
+		log.Fatal(err)
+	}
 
 	unavailableSet := make(map[fadm.SnapshotLease]struct{}, len(unavailable))
 	for _, snapshot := range unavailable {
