@@ -1,0 +1,62 @@
+name: Feature request
+description: Propose a scoped capability or compatibility improvement.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and proposals for this feature.
+          required: true
+        - label: I reviewed the documented Apache Fluss compatibility boundary.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user workflow or limitation, not only a preferred API.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the expected public behavior, errors, lifecycle, and cancellation semantics.
+    validations:
+      required: true
+  - type: textarea
+    id: fluss_surface
+    attributes:
+      label: Apache Fluss surface
+      description: Identify the Fluss version, Java client behavior, protocol API, or server capability involved.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and existing libraries
+      description: List standard-library, existing project, extension-point, and maintained Go library alternatives and why they do not satisfy the need.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and operational impact
+      description: Describe API, dependency, security, performance, data-integrity, and deployment effects.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Proposed verification
+      description: Identify unit, golden, fuzz, race, integration, or benchmark evidence that would validate the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Link public specifications, upstream issues, or example applications.

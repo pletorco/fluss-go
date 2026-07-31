@@ -1,11 +1,15 @@
 # fluss-go
 
-Experimental Go client for Apache Fluss 0.9.1-incubating.
+Public beta Go client for Apache Fluss 0.9.1-incubating.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/pletorco/fluss-go.svg)](https://pkg.go.dev/github.com/pletorco/fluss-go)
 
 Development and review follow the project
 [coding guidelines](CODING_GUIDELINES.md).
+
+The current release is `v0.1.0-beta.7`. It is suitable for compatibility
+testing and application evaluation against the pinned Fluss 0.9.1 target, but
+it does not yet provide a stable v1 API or a production support commitment.
 
 The public API will follow the package separation used by `franz-go` while
 remaining centered on the Apache Fluss table model:
@@ -17,7 +21,7 @@ remaining centered on the Apache Fluss table model:
 ## Install
 
 ```sh
-go get github.com/pletorco/fluss-go@latest
+go get github.com/pletorco/fluss-go@v0.1.0-beta.7
 ```
 
 The API is experimental before v1. Pin a release in production rather than
@@ -29,7 +33,7 @@ OpenTelemetry SDKs to the root module graph. Install an adapter at the same
 release version when it is needed, for example:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/s3@latest
+go get github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.7
 ```
 
 ## Quick Start
@@ -129,6 +133,17 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Initial 0.9.1 delivery record](docs/roadmap-v0.1.md)
 - [Security exception policy](docs/security-exceptions.md)
 - [Dependency license policy](docs/dependency-license-policy.md)
+
+## Community
+
+- Read [SUPPORT.md](SUPPORT.md) before opening a usage question or bug report.
+- Use the structured [issue forms](https://github.com/pletorco/fluss-go/issues/new/choose)
+  for bugs, feature proposals, documentation improvements, and questions.
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md) for branch, test, commit, and pull
+  request requirements.
+- Report suspected vulnerabilities privately according to
+  [SECURITY.md](SECURITY.md).
+- Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Development
 

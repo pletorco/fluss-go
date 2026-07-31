@@ -1,0 +1,101 @@
+name: Bug report
+description: Report reproducible incorrect behavior in a supported release.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve fluss-go. Search existing issues first. For a suspected vulnerability, stop here and use the private security-reporting link instead.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and did not find the same problem.
+          required: true
+        - label: I removed credentials, tokens, private keys, and production data.
+          required: true
+        - label: This report does not describe an unpatched security vulnerability.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - pkg/fgo
+        - pkg/fadm
+        - pkg/fmsg
+        - adapters/hdfs
+        - adapters/oss
+        - adapters/otel
+        - adapters/s3
+        - integration or tooling
+        - documentation
+        - not sure
+    validations:
+      required: true
+  - type: input
+    id: fluss_go_version
+    attributes:
+      label: fluss-go version
+      description: Use a tag or exact commit, for example v0.1.0-beta.N.
+      placeholder: v0.1.0-beta.N
+    validations:
+      required: true
+  - type: input
+    id: fluss_version
+    attributes:
+      label: Apache Fluss version
+      description: Include the image digest or commit when available.
+      placeholder: 0.9.1-incubating
+    validations:
+      required: true
+  - type: input
+    id: go_version
+    attributes:
+      label: Go version
+      description: Paste the output of go version.
+      placeholder: go version go1.26.5 linux/amd64
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Describe the operating system, topology, authentication, TLS termination, storage service, and relevant configuration with secrets removed.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest program or deterministic request sequence that reproduces the problem.
+      render: go
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exact errors and whether the behavior is consistent or intermittent.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Add logs, stack traces, offsets, or protocol errors only when safe to publish.
+      render: text
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Describe workarounds, regressions from an earlier tag, or other relevant details.

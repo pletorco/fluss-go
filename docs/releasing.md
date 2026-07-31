@@ -26,7 +26,10 @@ The current prepared prerelease is `v0.1.0-beta.7`, with release notes in
 4. Run `task ci` on that commit. Run `task sonar` once and confirm the Sonar
    Quality Gate passes.
 5. Confirm that `CHANGELOG.md` records the version and publication date and
-   that the prepared release notes match it.
+   that the prepared release notes match it. Update the current release and
+   installation examples in `README.md`, and move the supported prerelease in
+   `SECURITY.md` to the version being published. Search user-facing manuals for
+   the previous tag and review every remaining reference intentionally.
 6. Inspect `task security:licenses` after every dependency change and confirm
    that any new attribution obligations are reflected in `LICENSE`, `NOTICE`,
    module documentation, and the release notes.

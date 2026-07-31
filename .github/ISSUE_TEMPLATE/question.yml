@@ -1,0 +1,62 @@
+name: Usage question
+description: Ask a scoped question about a supported fluss-go release.
+title: "question: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Community support is best effort. Read SUPPORT.md and search existing issues before submitting a question.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched the README, package documentation, guides, and existing issues.
+          required: true
+        - label: I removed credentials, tokens, private keys, and production data.
+          required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Provide the fluss-go, Apache Fluss, and Go versions.
+      placeholder: fluss-go v0.1.0-beta.N; Fluss 0.9.1-incubating; Go 1.26.5
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - pkg/fgo
+        - pkg/fadm
+        - pkg/fmsg
+        - remote storage adapter
+        - OpenTelemetry adapter
+        - installation or tooling
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: Explain the application workflow you are trying to implement.
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: Include a minimal code sample or configuration with secrets removed.
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: State the specific decision or behavior you need help with.
+    validations:
+      required: true

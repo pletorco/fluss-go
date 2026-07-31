@@ -1,0 +1,40 @@
+name: Documentation improvement
+description: Report missing, incorrect, or unclear project documentation.
+title: "docs: "
+labels:
+  - documentation
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues for the same documentation problem.
+          required: true
+  - type: input
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link the README, guide, package, symbol, or example.
+      placeholder: https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Explain what is missing, incorrect, stale, or difficult to understand.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested_change
+    attributes:
+      label: Suggested improvement
+      description: Describe the information or example that would resolve the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include the relevant fluss-go and Apache Fluss versions when behavior is version-specific.
