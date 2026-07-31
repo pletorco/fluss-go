@@ -95,6 +95,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
   [fgo](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo), and
   [fadm](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm)
 - [Public architecture and ownership](docs/architecture/v0.1.md)
+- [Build-vs-buy decisions](docs/build-vs-buy.md)
 - [TLS and SASL secure connections](docs/authentication.md)
 - [Error handling and recovery](docs/error-handling.md)
 - [Advanced administration](docs/admin-operations.md)
