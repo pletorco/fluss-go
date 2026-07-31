@@ -475,9 +475,13 @@ func TestLookupClientCloseCompletesQueuedAndInflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 3 {
-		result := <-results
-		if !errors.Is(result.Err, context.Canceled) && !errors.Is(result.Err, ErrClosed) {
-			t.Fatalf("close result = %#v", result)
+		select {
+		case result := <-results:
+			if !errors.Is(result.Err, context.Canceled) && !errors.Is(result.Err, ErrClosed) {
+				t.Fatalf("close result = %#v", result)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Lookup() did not complete after Close()")
 		}
 	}
 	if len(client.slots) != 0 {
