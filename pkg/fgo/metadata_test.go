@@ -13,8 +13,11 @@ func TestRouterCoalescesConcurrentRefresh(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	var calls atomic.Int32
 	release := make(chan struct{})
+	started := make(chan struct{})
+	var startOnce sync.Once
 	router := NewRouter(Node{ID: 1}, func(context.Context, TablePath) (TableMetadata, error) {
 		calls.Add(1)
+		startOnce.Do(func() { close(started) })
 		<-release
 		return TableMetadata{Path: path, Buckets: map[int32]Node{3: {ID: 8, Address: "tablet:9123"}}}, nil
 	})
@@ -37,9 +40,13 @@ func TestRouterCoalescesConcurrentRefresh(t *testing.T) {
 		<-ready
 	}
 	close(start)
-	for calls.Load() == 0 {
-	}
-	time.Sleep(10 * time.Millisecond)
+	<-started
+	waitForTestCondition(t, "all refresh waiters", func() bool {
+		router.flights.mu.Lock()
+		defer router.flights.mu.Unlock()
+		call := router.flights.calls[path]
+		return call != nil && call.waiters == 8
+	})
 	close(release)
 	wait.Wait()
 	if got, want := calls.Load(), int32(1); got != want {
@@ -72,11 +79,14 @@ func TestRouterRoutesPhysicalPartitionAndCoalescesRefresh(t *testing.T) {
 	path := PhysicalTablePath{TablePath: table, Partition: "day=2026-07-30"}
 	var tableCalls, partitionCalls atomic.Int32
 	release := make(chan struct{})
+	started := make(chan struct{})
+	var startOnce sync.Once
 	router := NewRouter(Node{ID: 1, Role: Coordinator}, func(context.Context, TablePath) (TableMetadata, error) {
 		tableCalls.Add(1)
 		return TableMetadata{Path: table}, nil
 	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
 		partitionCalls.Add(1)
+		startOnce.Do(func() { close(started) })
 		<-release
 		return PartitionMetadata{Path: path, ID: 11, Buckets: map[int32]Node{2: {ID: 4, Address: "tablet:9123", Role: TabletServer}}}, nil
 	})
@@ -92,9 +102,13 @@ func TestRouterRoutesPhysicalPartitionAndCoalescesRefresh(t *testing.T) {
 			}
 		}()
 	}
-	for partitionCalls.Load() == 0 {
-		time.Sleep(time.Millisecond)
-	}
+	<-started
+	waitForTestCondition(t, "all partition refresh waiters", func() bool {
+		router.partitionFlights.mu.Lock()
+		defer router.partitionFlights.mu.Unlock()
+		call := router.partitionFlights.calls[physicalTableKey(path)]
+		return call != nil && call.waiters == 6
+	})
 	close(release)
 	wait.Wait()
 	if got := partitionCalls.Load(); got != 1 {
@@ -150,20 +164,14 @@ func TestRouterMetadataErrorRefreshesOnce(t *testing.T) {
 func TestRouterRefreshHonorsWaitingContext(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	release := make(chan struct{})
+	started := make(chan struct{})
 	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+		close(started)
 		<-release
 		return TableMetadata{Path: path}, nil
 	})
 	go func() { _ = router.Refresh(context.Background(), path) }()
-	for {
-		router.flights.mu.Lock()
-		inFlight := router.flights.calls[path] != nil
-		router.flights.mu.Unlock()
-		if inFlight {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
+	<-started
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	if err := router.Refresh(ctx, path); !errors.Is(err, context.DeadlineExceeded) {

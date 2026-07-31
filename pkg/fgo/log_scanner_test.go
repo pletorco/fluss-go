@@ -33,6 +33,8 @@ type fakeLogScannerBackend struct {
 	fetches     map[int32]scannerFetch
 	fetchErr    map[int32]error
 	block       <-chan struct{}
+	entered     chan struct{}
+	enterOnce   sync.Once
 	calls       []scannerFetchCall
 }
 
@@ -64,6 +66,9 @@ func (b *fakeLogScannerBackend) fetch(
 		projection: append([]int32(nil), input.projection...), config: input.config,
 	})
 	b.mu.Unlock()
+	if b.entered != nil {
+		b.enterOnce.Do(func() { close(b.entered) })
+	}
 	if b.block != nil {
 		select {
 		case <-b.block:
@@ -344,8 +349,10 @@ func TestLogScannerSlicesArrowBatchAtLimit(t *testing.T) {
 func TestLogScannerWakeupAndErrorPrecedence(t *testing.T) {
 	table := logWriterTable()
 	block := make(chan struct{})
+	entered := make(chan struct{})
 	backend := scannerBackend(0)
 	backend.block = block
+	backend.entered = entered
 	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(0))
 	if err != nil {
 		t.Fatal(err)
@@ -355,7 +362,7 @@ func TestLogScannerWakeupAndErrorPrecedence(t *testing.T) {
 		_, pollErr := scanner.Poll(context.Background())
 		polled <- pollErr
 	}()
-	time.Sleep(10 * time.Millisecond)
+	<-entered
 	scanner.Wakeup()
 	if err := <-polled; !errors.Is(err, ErrWakeup) {
 		t.Fatalf("Wakeup Poll error = %v", err)
@@ -370,12 +377,14 @@ func TestLogScannerWakeupAndErrorPrecedence(t *testing.T) {
 	}
 
 	backend.block = block
+	backend.entered = make(chan struct{})
+	backend.enterOnce = sync.Once{}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		_, pollErr := scanner.Poll(ctx)
 		polled <- pollErr
 	}()
-	time.Sleep(10 * time.Millisecond)
+	<-backend.entered
 	cancel()
 	scanner.Wakeup()
 	if err := <-polled; !errors.Is(err, context.Canceled) {
@@ -389,6 +398,7 @@ func TestLogScannerSubscribeCloseAndCancellation(t *testing.T) {
 	backend := scannerBackend(0)
 	block := make(chan struct{})
 	backend.block = block
+	backend.entered = make(chan struct{})
 	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(0))
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +414,7 @@ func TestLogScannerSubscribeCloseAndCancellation(t *testing.T) {
 		_, pollErr := scanner.Poll(context.Background())
 		polled <- pollErr
 	}()
-	time.Sleep(10 * time.Millisecond)
+	<-backend.entered
 	if err := scanner.Close(); err != nil {
 		t.Fatal(err)
 	}

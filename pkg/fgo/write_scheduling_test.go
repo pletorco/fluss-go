@@ -439,7 +439,10 @@ func TestLogWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
 		t.Fatalf("independent bucket result = %#v", result)
 	}
 	third := writer.Append(context.Background(), Row{int32(3), "ordered"})
-	time.Sleep(10 * time.Millisecond)
+	fourth := writer.Append(context.Background(), Row{int32(4), "barrier"})
+	if result := fourth.Await(ctx); result.Err != nil || result.Bucket != 1 {
+		t.Fatalf("barrier bucket result = %#v", result)
+	}
 	if sequences := probe.bucketSequences(0); len(sequences) != 1 ||
 		sequences[0] != 0 {
 		t.Fatalf("blocked bucket sequences before release = %v", sequences)
@@ -487,7 +490,10 @@ func TestKVWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
 		t.Fatalf("independent bucket result = %#v", result)
 	}
 	third := writer.Upsert(context.Background(), Row{blockedID, "ordered", nil})
-	time.Sleep(10 * time.Millisecond)
+	fourth := writer.Upsert(context.Background(), Row{independentID, "barrier", nil})
+	if result := fourth.Await(ctx); result.Err != nil || result.Bucket != 1 {
+		t.Fatalf("barrier bucket result = %#v", result)
+	}
 	if sequences := probe.bucketSequences(0); len(sequences) != 1 ||
 		sequences[0] != 0 {
 		t.Fatalf("blocked bucket sequences before release = %v", sequences)

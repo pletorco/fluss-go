@@ -140,6 +140,8 @@ func TestDynamicPartitionCreatorCreatesAndRefreshes(t *testing.T) {
 func TestDynamicPartitionCreatorDeduplicatesConcurrentCreation(t *testing.T) {
 	var checks, creates atomic.Int32
 	created := make(chan struct{})
+	started := make(chan struct{})
+	var startOnce sync.Once
 	backend := partitionCreationBackendFunc{
 		check: func(context.Context, PhysicalTablePath) error {
 			if checks.Add(1) == 1 {
@@ -149,6 +151,7 @@ func TestDynamicPartitionCreatorDeduplicatesConcurrentCreation(t *testing.T) {
 		},
 		create: func(context.Context, TablePath, PartitionSpec) error {
 			creates.Add(1)
+			startOnce.Do(func() { close(started) })
 			<-created
 			return nil
 		},
@@ -164,9 +167,7 @@ func TestDynamicPartitionCreatorDeduplicatesConcurrentCreation(t *testing.T) {
 			errs <- creator.Ensure(context.Background(), path, []string{"region"})
 		}()
 	}
-	for creates.Load() == 0 {
-		time.Sleep(time.Millisecond)
-	}
+	<-started
 	close(created)
 	group.Wait()
 	close(errs)

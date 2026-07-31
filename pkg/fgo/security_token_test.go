@@ -93,14 +93,7 @@ func tokenTestConfig(clock *fakeSecurityTokenClock) FileSystemSecurityTokenRefre
 
 func waitTokenTest(t *testing.T, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if condition() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("timed out waiting for security token state")
+	waitForTestCondition(t, "security token state", condition)
 }
 
 func refreshingTokenProvider(

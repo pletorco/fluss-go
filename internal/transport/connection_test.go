@@ -547,20 +547,29 @@ func TestCanceledRequestDoesNotConsumeLateResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer connection.Close()
+	firstRead := make(chan struct{})
+	releaseLate := make(chan struct{})
 	go func() {
 		firstID := readRequestID(t, server)
-		time.Sleep(30 * time.Millisecond)
+		close(firstRead)
+		<-releaseLate
 		body, _ := proto.Marshal(&fmsg.ApiVersionsResponse{})
 		writeResponse(t, server, 0, firstID, body)
 		id := readRequestID(t, server)
 		writeResponse(t, server, 0, id, body)
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	_, err = connection.Request(ctx, apiVersionsRequest(t))
-	if !errors.Is(err, context.DeadlineExceeded) {
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, requestErr := connection.Request(ctx, apiVersionsRequest(t))
+		result <- requestErr
+	}()
+	<-firstRead
+	cancel()
+	if err = <-result; !errors.Is(err, context.Canceled) {
 		t.Fatalf("first Request() error = %v", err)
 	}
+	close(releaseLate)
 	if _, err := connection.Request(context.Background(), apiVersionsRequest(t)); err != nil {
 		t.Fatalf("second Request() error = %v", err)
 	}

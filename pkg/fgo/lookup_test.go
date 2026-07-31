@@ -33,6 +33,8 @@ type fakeLookupBackend struct {
 	lookupErr   error
 	prefixErr   error
 	block       <-chan struct{}
+	entered     chan struct{}
+	enterOnce   sync.Once
 	calls       []lookupCall
 	active      int
 	maxActive   int
@@ -94,6 +96,9 @@ func (b *fakeLookupBackend) begin(ctx context.Context, call lookupCall) error {
 		b.maxActive = b.active
 	}
 	b.mu.Unlock()
+	if b.entered != nil {
+		b.enterOnce.Do(func() { close(b.entered) })
+	}
 	if b.block != nil {
 		select {
 		case <-b.block:
@@ -294,15 +299,17 @@ func TestLookupClientPartialErrorsAndValidation(t *testing.T) {
 func TestLookupClientCancellationAndClose(t *testing.T) {
 	table := lookupTable()
 	release := make(chan struct{})
+	entered := make(chan struct{})
 	backend := lookupBackendFor(table, 0, 1)
 	backend.block = release
+	backend.entered = entered
 	client, err := newLookupClient(context.Background(), backend, table)
 	if err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan []LookupResult, 1)
 	go func() { done <- client.Lookup(context.Background(), PrimaryKey{"a", int32(1)}) }()
-	time.Sleep(10 * time.Millisecond)
+	<-entered
 	_ = client.Close()
 	if result := <-done; !errors.Is(result[0].Err, context.Canceled) {
 		t.Fatalf("close result = %#v", result)
