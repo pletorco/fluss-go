@@ -77,9 +77,23 @@ client, err := fgo.Open(
 
 `RemoteSnapshotResolver` discovers files for one snapshot, while
 `RemoteSnapshotDecoder` owns the storage-format-specific decoding step.
-`RemoteFileReadConfig` bounds attempts, retry delay, and maximum object size.
-The provider validates file metadata and exact downloaded sizes before passing
-data to the decoder.
+`RemoteFileReadConfig` bounds attempts, retry delay, object size, aggregate
+bytes, and file count. Defaults allow at most 256 MiB per object, 512 MiB per
+operation, and 4096 objects. The provider validates all advertised metadata
+with overflow-safe arithmetic before downloading any object, then verifies
+exact downloaded sizes before passing data to the decoder.
+
+The current adapter contract returns complete objects because Fluss 0.9.1
+snapshot decoders consume complete file descriptors. Aggregate limits are
+therefore the memory safety boundary. A future streaming or range API requires
+a matching incremental snapshot-decoder contract and is intentionally not
+emulated by buffering behind an `io.Reader`.
+
+Retries are limited to truncated reads and errors whose type explicitly reports
+temporary or timeout behavior. Authentication, permission, not-found,
+configuration, validation, and unsupported-operation errors fail immediately.
+Filesystem adapters should preserve or wrap their SDK's retry classification
+instead of returning an untyped generic error.
 
 The integration contract is covered by
 `TestRemoteAndLocalLogPayloadsMergeWithoutGaps`,

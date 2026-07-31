@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,9 @@ func TestRemoteFileSettingsValidation(t *testing.T) {
 	}
 	if config.remoteFiles.config.MaxAttempts != 3 ||
 		config.remoteFiles.config.RetryBackoff != 50*time.Millisecond ||
-		config.remoteFiles.config.MaxFileBytes != 256<<20 {
+		config.remoteFiles.config.MaxFileBytes != 256<<20 ||
+		config.remoteFiles.config.MaxTotalBytes != 512<<20 ||
+		config.remoteFiles.config.MaxFiles != 4096 {
 		t.Fatalf("defaults = %#v", config.remoteFiles.config)
 	}
 	for _, settings := range []RemoteFileReadConfig{
@@ -62,6 +65,9 @@ func TestRemoteFileSettingsValidation(t *testing.T) {
 		{MaxAttempts: 11},
 		{MaxAttempts: 1, RetryBackoff: -1},
 		{MaxAttempts: 1, MaxFileBytes: -1},
+		{MaxAttempts: 1, MaxTotalBytes: -1},
+		{MaxAttempts: 1, MaxFiles: -1},
+		{MaxAttempts: 1, MaxFiles: 1_000_001},
 	} {
 		if err := WithRemoteFileReader(reader, settings)(&config); !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("settings %#v error = %v", settings, err)
@@ -69,6 +75,68 @@ func TestRemoteFileSettingsValidation(t *testing.T) {
 	}
 	if err := WithRemoteFileReader(nil, RemoteFileReadConfig{})(&config); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil reader error = %v", err)
+	}
+}
+
+func TestRemoteLogRejectsAggregateLimitsBeforeReading(t *testing.T) {
+	var calls atomic.Int32
+	reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+		calls.Add(1)
+		return nil, errors.New("must not read")
+	})
+	base := RemoteLogFetchInfo{
+		TabletDirectory: "/remote",
+		Segments: []RemoteLogSegment{
+			{ID: "one", StartOffset: 0, EndOffset: 1, SizeBytes: 4},
+			{ID: "two", StartOffset: 1, EndOffset: 2, SizeBytes: 4},
+		},
+	}
+	for _, test := range []struct {
+		name   string
+		config RemoteFileReadConfig
+		info   RemoteLogFetchInfo
+	}{
+		{
+			name: "file count",
+			config: RemoteFileReadConfig{
+				MaxAttempts: 1, MaxFileBytes: 10, MaxTotalBytes: 10, MaxFiles: 1,
+			},
+			info: base,
+		},
+		{
+			name: "total bytes",
+			config: RemoteFileReadConfig{
+				MaxAttempts: 1, MaxFileBytes: 10, MaxTotalBytes: 7, MaxFiles: 2,
+			},
+			info: base,
+		},
+		{
+			name: "overflow",
+			config: RemoteFileReadConfig{
+				MaxAttempts: 1, MaxFileBytes: math.MaxInt64,
+				MaxTotalBytes: math.MaxInt64, MaxFiles: 2,
+			},
+			info: RemoteLogFetchInfo{
+				TabletDirectory: "/remote",
+				Segments: []RemoteLogSegment{
+					{ID: "one", StartOffset: 0, EndOffset: 1, SizeBytes: math.MaxInt64},
+					{ID: "two", StartOffset: 1, EndOffset: 2, SizeBytes: 1},
+				},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := readRemoteLogSegments(
+				context.Background(),
+				remoteFileSettings{reader: reader, config: test.config},
+				test.info, nil, nil,
+			); !errors.Is(err, ErrValidation) {
+				t.Fatalf("readRemoteLogSegments() error = %v", err)
+			}
+		})
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("reader calls = %d, want 0", calls.Load())
 	}
 }
 
@@ -343,5 +411,119 @@ func TestRemoteSnapshotBatchProviderValidation(t *testing.T) {
 		context.Background(), SnapshotBatchRequest{},
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil provider error = %v", err)
+	}
+}
+
+func TestRemoteSnapshotRejectsAggregateLimitsBeforeReading(t *testing.T) {
+	var calls atomic.Int32
+	reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+		calls.Add(1)
+		return []byte("data"), nil
+	})
+	resolver := RemoteSnapshotResolverFunc(func(
+		context.Context,
+		SnapshotBatchRequest,
+	) ([]RemoteSnapshotFile, error) {
+		return []RemoteSnapshotFile{{Path: "one", Size: 4}, {Path: "two", Size: 4}}, nil
+	})
+	decoder := RemoteSnapshotDecoderFunc(func(
+		context.Context,
+		SnapshotBatchRequest,
+		[]RemoteSnapshotFile,
+	) (SnapshotBatchReader, error) {
+		return nil, errors.New("must not decode")
+	})
+	for _, settings := range []RemoteFileReadConfig{
+		{MaxAttempts: 1, MaxFileBytes: 10, MaxTotalBytes: 7, MaxFiles: 2},
+		{MaxAttempts: 1, MaxFileBytes: 10, MaxTotalBytes: 10, MaxFiles: 1},
+	} {
+		provider, err := NewRemoteSnapshotBatchProvider(
+			reader, settings, resolver, decoder, nil, nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := provider.OpenSnapshot(
+			context.Background(), SnapshotBatchRequest{},
+		); !errors.Is(err, ErrValidation) {
+			t.Fatalf("OpenSnapshot() error = %v", err)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("reader calls = %d, want 0", calls.Load())
+	}
+}
+
+type temporaryRemoteError struct {
+	temporary bool
+}
+
+func (e temporaryRemoteError) Error() string   { return "remote failure" }
+func (e temporaryRemoteError) Temporary() bool { return e.temporary }
+
+func TestRemoteReadRetriesOnlyTemporaryFailures(t *testing.T) {
+	settings := RemoteFileReadConfig{
+		MaxAttempts: 3, RetryBackoff: time.Nanosecond,
+		MaxFileBytes: 10, MaxTotalBytes: 10, MaxFiles: 1,
+	}
+	t.Run("permanent", func(t *testing.T) {
+		var calls atomic.Int32
+		reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+			calls.Add(1)
+			return nil, os.ErrPermission
+		})
+		_, err := readRemoteFileWithRetry(
+			context.Background(), remoteFileSettings{reader: reader, config: settings},
+			RemoteFileRequest{Path: "object", ExpectedSize: 1}, nil,
+		)
+		if !errors.Is(err, os.ErrPermission) || calls.Load() != 1 {
+			t.Fatalf("read = %v calls=%d", err, calls.Load())
+		}
+	})
+	t.Run("temporary", func(t *testing.T) {
+		var calls atomic.Int32
+		reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+			if calls.Add(1) < 3 {
+				return nil, temporaryRemoteError{temporary: true}
+			}
+			return []byte("x"), nil
+		})
+		data, err := readRemoteFileWithRetry(
+			context.Background(), remoteFileSettings{reader: reader, config: settings},
+			RemoteFileRequest{Path: "object", ExpectedSize: 1}, nil,
+		)
+		if err != nil || string(data) != "x" || calls.Load() != 3 {
+			t.Fatalf("read = %q, %v calls=%d", data, err, calls.Load())
+		}
+	})
+}
+
+func BenchmarkReadRemoteLogSegments(b *testing.B) {
+	const segmentSize = 1024
+	data := make([]byte, segmentSize)
+	segments := make([]RemoteLogSegment, 8)
+	for index := range segments {
+		segments[index] = RemoteLogSegment{
+			ID: string(rune('a' + index)), StartOffset: int64(index),
+			EndOffset: int64(index + 1), SizeBytes: segmentSize,
+		}
+	}
+	settings := remoteFileSettings{
+		reader: RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+			return data, nil
+		}),
+		config: RemoteFileReadConfig{
+			MaxAttempts: 1, MaxFileBytes: segmentSize,
+			MaxTotalBytes: segmentSize * int64(len(segments)), MaxFiles: len(segments),
+		},
+	}
+	info := RemoteLogFetchInfo{TabletDirectory: "/remote", Segments: segments}
+	b.ReportAllocs()
+	for range b.N {
+		if _, err := readRemoteLogSegments(
+			context.Background(), settings, info, nil, nil,
+		); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
