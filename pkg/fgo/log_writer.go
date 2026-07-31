@@ -57,6 +57,9 @@ type LogWriterConfig struct {
 	Timeout time.Duration
 	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
 	Acks int32
+	// Retry controls bounded retries of idempotent batches. More than one
+	// attempt requires Acks=-1.
+	Retry WriterRetryPolicy
 	// Assignment selects routing for records without a key.
 	Assignment BucketAssignment
 	// Partition selects one named physical partition; empty selects the table.
@@ -129,6 +132,15 @@ func WithLogRequest(timeout time.Duration, acks int32) LogWriterOption {
 	}
 }
 
+// WithLogRetryPolicy configures bounded idempotent produce retries.
+// Retries preserve the encoded batch, writer ID, and bucket sequence.
+func WithLogRetryPolicy(policy WriterRetryPolicy) LogWriterOption {
+	return func(config *LogWriterConfig) error {
+		config.Retry = policy
+		return nil
+	}
+}
+
 // WithLogBucketAssignment selects routing for rows without a key.
 func WithLogBucketAssignment(assignment BucketAssignment) LogWriterOption {
 	return func(config *LogWriterConfig) error {
@@ -197,8 +209,11 @@ func WithLogArrowCompression(compression ArrowCompression) LogWriterOption {
 type WriteResult struct {
 	// Bucket is the target bucket, or zero when routing did not complete.
 	Bucket int32
-	// BaseOffset is the first assigned offset and is valid when Err is nil.
+	// BaseOffset is the first assigned offset when OffsetKnown is true.
 	BaseOffset int64
+	// OffsetKnown reports whether the successful response included an offset.
+	// A recovered duplicate-sequence acknowledgement can succeed without one.
+	OffsetKnown bool
 	// Records is the number of records completed by this result.
 	Records int
 	// Err is the terminal mutation error.
@@ -389,13 +404,14 @@ type logWriterLoop struct {
 }
 
 type logBatchCompletion struct {
-	bucket     int32
-	batch      *bucketBatch
-	baseOffset int64
-	records    int
-	bytes      int
-	started    time.Time
-	err        error
+	bucket      int32
+	batch       *bucketBatch
+	baseOffset  int64
+	offsetKnown bool
+	records     int
+	bytes       int
+	started     time.Time
+	err         error
 }
 
 // NewLogWriter creates an append writer for a log table.
@@ -501,6 +517,7 @@ func logWriterConfig(options []LogWriterOption) (LogWriterConfig, error) {
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
 		MaxConcurrentRequests: 4,
 		Linger:                5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
+		Retry:      defaultWriterRetryPolicy(),
 		Assignment: AssignmentAuto, Format: LogWriteFormatAuto,
 	}
 	for _, option := range options {
@@ -510,6 +527,9 @@ func logWriterConfig(options []LogWriterOption) (LogWriterConfig, error) {
 		if err := option(&config); err != nil {
 			return LogWriterConfig{}, err
 		}
+	}
+	if err := validateWriterRetryPolicy(config.Retry, config.Acks); err != nil {
+		return LogWriterConfig{}, err
 	}
 	return config, nil
 }
@@ -800,7 +820,7 @@ func (l *logWriterLoop) flushBucket(bucket int32) error {
 	delete(l.batches, bucket)
 	if err := l.poisoned[bucket]; err != nil {
 		poisoned := fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err)
-		l.writer.completeBatch(batch, bucket, 0, poisoned)
+		l.writer.completeBatch(batch, bucket, 0, false, poisoned)
 		return poisoned
 	}
 	l.pending[bucket] = append(l.pending[bucket], batch)
@@ -834,22 +854,30 @@ func (l *logWriterLoop) dispatch() {
 
 func (l *logWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequence int32) {
 	encoded, records, err := l.writer.encodeBatch(batch, sequence)
-	var baseOffset int64
+	var result writerAttemptResult
 	started := metricStart(l.writer.observer)
 	if err == nil {
 		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.Timeout)
-		baseOffset, err = l.writer.backend.produce(requestCtx, logProduceRequest{
-			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
-			records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
-		})
-		if err != nil && requestCtx.Err() != nil {
-			err = requestCtx.Err()
+		result = executeWriterAttempts(
+			requestCtx, l.writer.config.Retry, l.writer.observer, MetricOperationLogWrite,
+			func(ctx context.Context) (int64, bool, error) {
+				offset, err := l.writer.backend.produce(ctx, logProduceRequest{
+					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
+					records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+				})
+				return offset, err == nil, err
+			},
+		)
+		if result.err != nil && requestCtx.Err() != nil {
+			result.err = requestCtx.Err()
 		}
 		cancel()
+	} else {
+		result.err = err
 	}
 	l.completions <- logBatchCompletion{
-		bucket: bucket, batch: batch, baseOffset: baseOffset,
-		records: records, bytes: len(encoded), started: started, err: err,
+		bucket: bucket, batch: batch, baseOffset: result.offset, offsetKnown: result.offsetKnown,
+		records: records, bytes: len(encoded), started: started, err: result.err,
 	}
 }
 
@@ -868,18 +896,18 @@ func (l *logWriterLoop) handleCompletion(completion logBatchCompletion) error {
 	})
 	if completion.err != nil {
 		l.poisoned[completion.bucket] = completion.err
-		l.writer.completeBatch(completion.batch, completion.bucket, 0, completion.err)
+		l.writer.completeBatch(completion.batch, completion.bucket, 0, false, completion.err)
 		for _, batch := range l.pending[completion.bucket] {
 			poisoned := fmt.Errorf(
 				"%w: bucket %d: %v", ErrWriterState, completion.bucket, completion.err,
 			)
-			l.writer.completeBatch(batch, completion.bucket, 0, poisoned)
+			l.writer.completeBatch(batch, completion.bucket, 0, false, poisoned)
 		}
 		delete(l.pending, completion.bucket)
 	} else {
 		l.sequences[completion.bucket]++
 		l.writer.completeBatch(
-			completion.batch, completion.bucket, completion.baseOffset, nil,
+			completion.batch, completion.bucket, completion.baseOffset, completion.offsetKnown, nil,
 		)
 	}
 	l.dispatch()
@@ -937,15 +965,26 @@ func (w *LogWriter) encodeBatch(batch *bucketBatch, sequence int32) ([]byte, int
 	return encoded, len(batch.records), err
 }
 
-func (w *LogWriter) completeBatch(batch *bucketBatch, bucket int32, baseOffset int64, err error) {
+func (w *LogWriter) completeBatch(
+	batch *bucketBatch,
+	bucket int32,
+	baseOffset int64,
+	offsetKnown bool,
+	err error,
+) {
 	offset := baseOffset
 	for _, item := range batch.items {
 		count := 1
 		if item.arrow != nil {
 			count = len(item.changes)
 		}
-		item.future.complete(WriteResult{Bucket: bucket, BaseOffset: offset, Records: count, Err: err})
-		offset += int64(count)
+		item.future.complete(WriteResult{
+			Bucket: bucket, BaseOffset: offset, OffsetKnown: offsetKnown,
+			Records: count, Err: err,
+		})
+		if offsetKnown {
+			offset += int64(count)
+		}
 	}
 }
 
