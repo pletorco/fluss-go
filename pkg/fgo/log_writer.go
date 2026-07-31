@@ -51,7 +51,7 @@ type LogWriterConfig struct {
 	MaxBuffered int
 	// Linger is the maximum delay used to fill a non-full batch.
 	Linger time.Duration
-	// Timeout is the server-side produce timeout.
+	// Timeout bounds both the server-side produce operation and the client call.
 	Timeout time.Duration
 	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
 	Acks int32
@@ -103,10 +103,11 @@ func WithLogLinger(linger time.Duration) LogWriterOption {
 	}
 }
 
-// WithLogRequest sets the server timeout and acknowledgement mode.
+// WithLogRequest sets the server and client call timeout and acknowledgement mode.
 func WithLogRequest(timeout time.Duration, acks int32) LogWriterOption {
 	return func(config *LogWriterConfig) error {
-		if timeout <= 0 || (acks != 0 && acks != 1 && acks != -1) {
+		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 ||
+			(acks != 0 && acks != 1 && acks != -1) {
 			return fmt.Errorf("%w: invalid log request settings", ErrInvalidConfig)
 		}
 		config.Timeout, config.Acks = timeout, acks
@@ -748,10 +749,15 @@ func (l *logWriterLoop) flushBucket(bucket int32) error {
 	var baseOffset int64
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		baseOffset, err = l.writer.backend.produce(context.Background(), logProduceRequest{
+		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.Timeout)
+		baseOffset, err = l.writer.backend.produce(requestCtx, logProduceRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 			records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
 		})
+		if err != nil && requestCtx.Err() != nil {
+			err = requestCtx.Err()
+		}
+		cancel()
 	}
 	queueTime := time.Duration(0)
 	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {

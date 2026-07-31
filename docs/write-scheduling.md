@@ -35,7 +35,12 @@ budget that sum rather than treating `MaxBuffered` as a client-global limit.
   uncertain state is not inherited by another.
 - **Shutdown:** `Close` drains commands accepted by that writer and stops its
   worker. Writers should be closed before the parent client. Closing one writer
-  neither flushes nor closes another writer.
+  neither flushes nor closes another writer. The context passed to `Close`
+  bounds how long that caller waits; it does not shorten the timeout of an
+  already accepted batch. `LogWriterConfig.Timeout` and
+  `KVWriterConfig.Timeout` independently bound both the server operation and
+  the client-side network call, so a responsive backend cannot keep the worker
+  alive indefinitely.
 
 The log saturation and failure tests use two writers sharing one backend. A
 separate KV test exercises the same shared-backend isolation. Together they

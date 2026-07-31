@@ -44,11 +44,15 @@ func (b *fakeKVWriterBackend) initWriter(context.Context, PhysicalTablePath, int
 }
 
 func (b *fakeKVWriterBackend) put(
-	_ context.Context,
+	ctx context.Context,
 	input kvPutRequest,
 ) (int64, error) {
 	if b.block != nil {
-		<-b.block
+		select {
+		case <-b.block:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -370,6 +374,34 @@ func TestKVWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	case <-writer.done:
 	case <-time.After(time.Second):
 		t.Fatal("writer did not finish after backend release")
+	}
+}
+
+func TestKVWriterRequestTimeoutTerminatesClose(t *testing.T) {
+	backend := kvBackend(0)
+	backend.block = make(chan struct{})
+	writer, err := newKVWriter(
+		context.Background(), backend, kvWriterTable(),
+		WithKVLinger(time.Hour), WithKVRequest(20*time.Millisecond, -1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Upsert(context.Background(), Row{int32(1), "blocked", nil})
+	started := time.Now()
+	if err := writer.Close(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() error = %v, want deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("Close() took %v", elapsed)
+	}
+	if result := future.Await(context.Background()); !errors.Is(result.Err, context.DeadlineExceeded) {
+		t.Fatalf("future = %#v", result)
+	}
+	select {
+	case <-writer.done:
+	default:
+		t.Fatal("writer scheduler remained active after timed out close")
 	}
 }
 

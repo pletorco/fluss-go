@@ -25,7 +25,7 @@ type KVWriterConfig struct {
 	MaxBuffered int
 	// Linger is the maximum delay used to fill a non-full batch.
 	Linger time.Duration
-	// Timeout is the server-side put timeout.
+	// Timeout bounds both the server-side put operation and the client call.
 	Timeout time.Duration
 	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
 	Acks int32
@@ -96,7 +96,7 @@ func WithKVLinger(linger time.Duration) KVWriterOption {
 	}
 }
 
-// WithKVRequest sets the server timeout and acknowledgement mode.
+// WithKVRequest sets the server and client call timeout and acknowledgement mode.
 func WithKVRequest(timeout time.Duration, acks int32) KVWriterOption {
 	return func(config *KVWriterConfig) error {
 		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 ||
@@ -706,11 +706,16 @@ func (l *kvWriterLoop) flushBucket(bucket int32) error {
 	var logEnd int64
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		logEnd, err = l.writer.backend.put(context.Background(), kvPutRequest{
+		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.Timeout)
+		logEnd, err = l.writer.backend.put(requestCtx, kvPutRequest{
 			path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 			targets: batch.targets, records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
 			mergeMode: l.writer.config.MergeMode,
 		})
+		if err != nil && requestCtx.Err() != nil {
+			err = requestCtx.Err()
+		}
+		cancel()
 	}
 	queueTime := time.Duration(0)
 	if len(batch.items) != 0 && !batch.items[0].queuedAt.IsZero() {

@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -46,11 +47,15 @@ func (b *fakeLogWriterBackend) initWriter(context.Context, PhysicalTablePath, in
 }
 
 func (b *fakeLogWriterBackend) produce(
-	_ context.Context,
+	ctx context.Context,
 	input logProduceRequest,
 ) (int64, error) {
 	if b.block != nil {
-		<-b.block
+		select {
+		case <-b.block:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -402,6 +407,11 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"bad buffer", table, logBackend(0), []LogWriterOption{WithLogBuffer(0)}, ErrInvalidConfig},
 		{"bad linger", table, logBackend(0), []LogWriterOption{WithLogLinger(-1)}, ErrInvalidConfig},
 		{"bad request", table, logBackend(0), []LogWriterOption{WithLogRequest(0, 2)}, ErrInvalidConfig},
+		{
+			"request timeout overflow", table, logBackend(0),
+			[]LogWriterOption{WithLogRequest((time.Duration(math.MaxInt32)+1)*time.Millisecond, 1)},
+			ErrInvalidConfig,
+		},
 		{"bad assignment", table, logBackend(0), []LogWriterOption{WithLogBucketAssignment("random")}, ErrInvalidConfig},
 		{"bad format", table, logBackend(0), []LogWriterOption{WithLogWriteFormat("unknown")}, ErrInvalidConfig},
 		{"bad compression", table, logBackend(0), []LogWriterOption{WithLogArrowCompression(ArrowCompression(99))}, ErrInvalidConfig},
@@ -502,6 +512,34 @@ func TestLogWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	case <-writer.done:
 	case <-time.After(time.Second):
 		t.Fatal("writer did not finish after backend release")
+	}
+}
+
+func TestLogWriterRequestTimeoutTerminatesClose(t *testing.T) {
+	backend := logBackend(0)
+	backend.block = make(chan struct{})
+	writer, err := newLogWriter(
+		context.Background(), backend, logWriterTable(),
+		WithLogLinger(time.Hour), WithLogRequest(20*time.Millisecond, -1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := writer.Append(context.Background(), Row{int32(1), "blocked"})
+	started := time.Now()
+	if err := writer.Close(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() error = %v, want deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("Close() took %v", elapsed)
+	}
+	if result := future.Await(context.Background()); !errors.Is(result.Err, context.DeadlineExceeded) {
+		t.Fatalf("future = %#v", result)
+	}
+	select {
+	case <-writer.done:
+	default:
+		t.Fatal("writer scheduler remained active after timed out close")
 	}
 }
 
