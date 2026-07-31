@@ -6,6 +6,13 @@ SDK is Apache-2.0 licensed, maintained by Alibaba Cloud, supports context-aware
 operations, V4 signing, standard range requests, endpoint configuration, and
 SDK-owned credentials and retries.
 
+This adapter is a separately versioned Go module. Install the adapter version
+that matches the root client release:
+
+```sh
+go get github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.7
+```
+
 Create an `oss.Config` with `oss.LoadDefaultConfig`, pass it to
 `oss.NewFromConfig`, and configure the resulting reader with
 `fgo.WithRemoteFileReader`. The compiled `ExampleNewFromConfig` on pkg.go.dev

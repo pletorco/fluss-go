@@ -12,7 +12,7 @@ exports may change accidentally.
 | `pkg/fgo` | Application data API, configuration, lifecycle, errors, extension interfaces, and Arrow integration. Review all changes for source compatibility and runtime behavior. |
 | `pkg/fadm` | Administrative API over a shared `fgo.Client`. Review names, partial results, identifiers, and server-side side effects. |
 | `pkg/fmsg` | Pinned Fluss 0.9.1 wire messages, API metadata, raw request escape hatch, and protocol errors. Generated protobuf changes follow upstream inputs and are reviewed separately from client ergonomics. |
-| `adapters/*` | Optional integration APIs. Their module and version boundaries are reviewed independently before RC. |
+| `adapters/*` | Separately versioned optional modules. Their API baselines, dependencies, and prefixed tags are reviewed independently. |
 | `internal/*` and `cmd/*` | Not supported as application APIs. Repository tooling commands may change with the development workflow. |
 
 The intended extension points are `fmsg.Requester`, `fgo.Codec`,
@@ -41,6 +41,8 @@ examples where useful, a changelog entry, and migration guidance for renamed,
 removed, or behaviorally changed APIs.
 
 Before RC, review the complete surface for accidental exports and settle any
-adapter module or Arrow package changes. After RC, removal or incompatible
+Arrow package changes. Adapter modules are already isolated from the root
+module graph and use the same release version with path-prefixed Git tags.
+After RC, removal or incompatible
 signature changes require an explicit exception for a security or correctness
 defect. The v1 policy will replace this prerelease policy before a stable tag.

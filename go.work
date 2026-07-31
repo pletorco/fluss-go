@@ -1,0 +1,11 @@
+go 1.25.0
+
+toolchain go1.26.5
+
+use (
+	.
+	./adapters/hdfs
+	./adapters/oss
+	./adapters/otel
+	./adapters/s3
+)

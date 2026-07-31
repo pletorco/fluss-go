@@ -13,6 +13,11 @@ breaking changes.
 - Added separately reviewed `fgo`, `fadm`, and generated `fmsg` API baselines
   with a required `apidiff` compatibility gate.
 
+### Changed
+
+- Split S3, OSS, HDFS, and OpenTelemetry adapters into separately versioned Go
+  modules so core-only consumers no longer inherit their optional SDK graphs.
+
 ## [v0.1.0-beta.6] - 2026-07-31
 
 ### Added

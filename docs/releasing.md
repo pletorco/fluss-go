@@ -58,6 +58,28 @@ test "$(git rev-parse v0.1.0-beta.6^{})" = "$(git rev-parse origin/main)"
 gh release view v0.1.0-beta.6 --repo pletorco/fluss-go
 ```
 
+### Adapter module tags
+
+Beginning with `v0.1.0-beta.7`, each adapter is a nested module. Publish the
+root tag first, wait until the public Go proxy resolves it, and then publish
+path-prefixed adapter tags on the same reviewed commit:
+
+```sh
+git tag -a adapters/hdfs/v0.1.0-beta.7 -m "fluss-go HDFS adapter v0.1.0-beta.7"
+git tag -a adapters/oss/v0.1.0-beta.7 -m "fluss-go OSS adapter v0.1.0-beta.7"
+git tag -a adapters/otel/v0.1.0-beta.7 -m "fluss-go OpenTelemetry adapter v0.1.0-beta.7"
+git tag -a adapters/s3/v0.1.0-beta.7 -m "fluss-go S3 adapter v0.1.0-beta.7"
+git push origin adapters/hdfs/v0.1.0-beta.7 adapters/oss/v0.1.0-beta.7 \
+  adapters/otel/v0.1.0-beta.7 adapters/s3/v0.1.0-beta.7
+```
+
+The adapter `go.mod` files use a repository-local `replace` for development.
+Go ignores dependency-module replacements for downstream applications; the
+versioned root requirement is authoritative after publication. Before tagging,
+verify that every adapter requires an already published root version and that
+all modules pass with the checked-in workspace. Never publish an adapter tag
+before its required root module is available from the public proxy.
+
 ## Module and documentation discovery
 
 Ask the public Go module proxy for the exact version; do not validate through a
@@ -71,6 +93,13 @@ GOPROXY=https://proxy.golang.org GONOSUMDB= \
 Confirm that the returned `Version` is `v0.1.0-beta.6` and that its origin hash
 matches the released commit. The proxy may need a short propagation interval,
 but a failed lookup must not be hidden by `GOPROXY=direct`.
+
+For beta.7 and later, repeat the proxy check for every published adapter:
+
+```sh
+GOPROXY=https://proxy.golang.org GONOSUMDB= \
+  go list -m -json github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.7
+```
 
 Open the version-pinned online references and verify their package manuals,
 exported contracts, and examples:

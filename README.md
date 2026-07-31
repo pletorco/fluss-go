@@ -23,6 +23,15 @@ go get github.com/pletorco/fluss-go@latest
 The API is experimental before v1. Pin a release in production rather than
 tracking a branch or an unversioned revision.
 
+Remote-storage and observability adapters are separately versioned Go modules.
+Importing only `pkg/fgo`, `pkg/fadm`, or `pkg/fmsg` does not add cloud or
+OpenTelemetry SDKs to the root module graph. Install an adapter at the same
+release version when it is needed, for example:
+
+```sh
+go get github.com/pletorco/fluss-go/adapters/s3@latest
+```
+
 ## Quick Start
 
 Open one shared client and close it after all writers, scanners, lookup clients,
@@ -96,6 +105,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
   [fadm](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm)
 - [Public architecture and ownership](docs/architecture/v0.1.md)
 - [Public API stability and compatibility checks](docs/public-api-stability.md)
+- [Go module and optional dependency layout](docs/module-layout.md)
 - [Request coalescing and cancellation](docs/architecture/request-coalescing.md)
 - [Build-vs-buy decisions](docs/build-vs-buy.md)
 - [TLS and SASL secure connections](docs/authentication.md)
@@ -121,6 +131,10 @@ This project uses Task v3.51.1 as its command entry point. Run task --list to
 see available checks; task verify runs formatting, generation verification,
 static analysis, unit and golden tests, bounded fuzz smoke tests, race tests,
 per-file coverage checks, and security gates.
+
+The checked-in `go.work` joins the root module and the four adapter modules for
+repository development. Published applications should select only the modules
+they import; the workspace file is not part of module resolution for users.
 
 Documentation changes use `task docs:check`. Edit compile-checked snippet
 sources under `internal/docexamples` and run `task docs:snippets:sync` to update
