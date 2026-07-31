@@ -259,6 +259,23 @@ func lookupInsert(ctx context.Context, client *fgo.Client, table fgo.Table) erro
 	return err
 }
 
+func lookupScheduling(ctx context.Context, client *fgo.Client, table fgo.Table) error {
+	// doc:snippet lookupScheduling
+	lookup, err := client.NewLookupClient(
+		ctx,
+		table,
+		fgo.WithLookupBatch(256, 8),
+		fgo.WithLookupQueue(4_096, time.Millisecond),
+		fgo.WithLookupTimeout(5*time.Second),
+		fgo.WithLookupRetryPolicy(fgo.RetryPolicy{MaxAttempts: 3}),
+	)
+	// doc:snippet-end lookupScheduling
+	if err == nil {
+		err = lookup.Close()
+	}
+	return err
+}
+
 func batchScan(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	// doc:snippet batchScan
 	buckets, err := client.ResolveTableBuckets(ctx, fgo.PhysicalTablePath{

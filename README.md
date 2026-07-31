@@ -78,7 +78,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Log scanners | Supported | `LogScanner` provides explicit/earliest/latest/timestamp subscriptions, schema-aware projection, row limits, exclusive stopping offsets, remote-log merging, `Wakeup`, partial bucket errors, and row or Arrow polling. |
 | Current-state and snapshot batch scans | Supported | `ResolveTableBuckets`, `NewBatchScanner`, and `NewSnapshotBatchScanner` provide bounded current-state and pluggable immutable snapshot reads with projection and explicit result ownership. |
 | Primary-key writers | Supported | `KVWriter` provides full and projected upsert, delete, Fluss hash routing, merge-engine or overwrite modes, idempotent per-bucket sequences, bounded batching and per-bucket concurrency, partial results, and deterministic lifecycle operations. |
-| Point and prefix lookups | Supported | `LookupClient` validates and batches keys by bucket, preserves input association, resolves compatible historical schemas, distinguishes not-found results, bounds concurrency, supports leading-key prefixes, and can atomically insert missing rows. |
+| Point and prefix lookups | Supported | `LookupClient` validates keys, batches compatible concurrent calls by bucket, preserves caller cancellation and input association, bounds queue/delay/concurrency/retries, resolves historical schemas, supports leading-key prefixes, and can atomically insert missing rows without unsafe retries. |
 | Typed data APIs | Supported | Generic wrappers cover log and KV writers, point and prefix lookup, log scans, current-state scans, and snapshot scans through explicit application codecs. |
 | Remote storage adapters | Supported | Pluggable readers compose remote log segments and snapshot files with per-object, aggregate-byte, and file-count limits without mandatory filesystem SDKs; local paths and `file://` URIs are built in. |
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
@@ -106,6 +106,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Documentation validation and snippet workflow](docs/documentation-tooling.md)
 - [Release process](docs/releasing.md)
 - [Write scheduling decision](docs/write-scheduling.md)
+- [Lookup scheduling decision](docs/lookup-scheduling.md)
 - [Initial 0.9.1 delivery record](docs/roadmap-v0.1.md)
 - [Security exception policy](docs/security-exceptions.md)
 

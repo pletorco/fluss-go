@@ -52,7 +52,9 @@ resolution. The initial call counts toward `MaxAttempts`, backoff observes the
 caller context, and cancellation stops further attempts.
 
 Point and prefix lookups, log fetches, and mutations are not retried by this
-client-wide policy. Bucket requests may invalidate stale metadata and
+client-wide policy. `LookupClient` has a separate bounded read-only policy;
+insert-if-not-exists rejects more than one attempt. Bucket requests may
+invalidate stale metadata and
 reroute once after a server metadata error. The metadata response indicates
 that the addressed server could not perform the operation; this is separate
 from retrying an ambiguous transport failure.

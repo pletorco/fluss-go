@@ -33,6 +33,7 @@ const (
 	MetricOperationKVWrite
 	MetricOperationLogScan
 	MetricOperationRemoteRead
+	MetricOperationLookup
 )
 
 // MetricErrorClass is a bounded-cardinality failure classification.

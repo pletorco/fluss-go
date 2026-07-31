@@ -152,6 +152,27 @@ lookup, err := client.NewLookupClient(
 The option is rejected when the schema has required non-key values that Fluss
 cannot synthesize.
 
+Concurrent point and prefix calls share compatible physical-table and bucket
+batches. Queue entries, batch delay, keys per request, active requests, request
+timeout, and read-only retries are independently bounded:
+
+<!-- go-source: internal/docexamples/snippets_test.go lookupScheduling -->
+```go
+lookup, err := client.NewLookupClient(
+	ctx,
+	table,
+	fgo.WithLookupBatch(256, 8),
+	fgo.WithLookupQueue(4_096, time.Millisecond),
+	fgo.WithLookupTimeout(5*time.Second),
+	fgo.WithLookupRetryPolicy(fgo.RetryPolicy{MaxAttempts: 3}),
+)
+```
+
+Canceling one caller does not cancel work still needed by another caller in the
+same protocol request. Close the lookup client to cancel active work and
+complete queued callers. See [lookup scheduling](lookup-scheduling.md) for the
+invariants and benchmark evidence.
+
 ## Current-state and snapshot scans
 
 Resolve a stable, bucket-ID-ordered metadata snapshot before opening one scanner
