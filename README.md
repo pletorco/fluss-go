@@ -101,6 +101,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Typed data API](docs/typed-api.md)
 - [Remote storage and filesystem tokens](docs/remote-storage.md)
 - [Documentation validation and snippet workflow](docs/documentation-tooling.md)
+- [Release process](docs/releasing.md)
 - [Write scheduling decision](docs/write-scheduling.md)
 - [Initial 0.9.1 delivery record](docs/roadmap-v0.1.md)
 - [Security exception policy](docs/security-exceptions.md)
