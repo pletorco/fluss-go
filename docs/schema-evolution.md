@@ -19,6 +19,20 @@ returned as `nil`. A newly required column, a nullable-to-required transition
 containing null, or a physical/logical type change returns `ErrInvalidSchema`.
 The client does not guess defaults or perform numeric or temporal coercion.
 
+## Reader lifecycle
+
+The target result schema is the `fgo.Table.Schema` supplied when a lookup or
+scanner is created. After `ALTER_TABLE`, call `OpenTable` until it returns a
+different schema ID, then create new writers and readers from that refreshed
+`Table`. Existing readers keep their original result shape and do not silently
+change columns while in use.
+
+Historical writer schemas do not require the application to reopen one reader
+per schema ID. The client fetches each unknown ID once for concurrent callers,
+maps every compatible row to the reader's target schema, and keeps up to 256
+resolved schemas across all readers. Applications should still bound the
+lifetime of clients used against catalogs with unusually high schema churn.
+
 Log projection is applied after schema resolution. This deliberately fetches
 the complete batch when historical schemas may be present, so row and Arrow
 results have one stable projected shape across schema versions. Arrow batches
