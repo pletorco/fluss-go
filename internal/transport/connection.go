@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
@@ -106,7 +107,7 @@ func (c *Connection) Request(ctx context.Context, request fmsg.Request) (fmsg.Re
 		return nil, err
 	}
 	defer c.unregister(id)
-	if err := c.writeRequest(id, request, body); err != nil {
+	if err := c.writeRequest(ctx, id, request, body); err != nil {
 		c.fail(err)
 		return nil, err
 	}
@@ -164,7 +165,12 @@ func (c *Connection) unregister(id int32) {
 	c.mu.Unlock()
 }
 
-func (c *Connection) writeRequest(id int32, request fmsg.Request, body []byte) error {
+func (c *Connection) writeRequest(
+	ctx context.Context,
+	id int32,
+	request fmsg.Request,
+	body []byte,
+) (err error) {
 	frame := make([]byte, 4+requestHeaderSize+len(body))
 	binary.BigEndian.PutUint32(frame, uint32(requestHeaderSize+len(body)))
 	binary.BigEndian.PutUint16(frame[4:], uint16(request.APIKey()))
@@ -173,9 +179,36 @@ func (c *Connection) writeRequest(id int32, request fmsg.Request, body []byte) e
 	copy(frame[12:], body)
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := c.conn.SetWriteDeadline(deadline); err != nil {
+			return fmt.Errorf("transport: set write deadline: %w", err)
+		}
+	}
+	interruptDone := make(chan struct{})
+	stopInterrupt := context.AfterFunc(ctx, func() {
+		_ = c.conn.SetWriteDeadline(time.Now())
+		close(interruptDone)
+	})
+	defer func() {
+		if !stopInterrupt() {
+			<-interruptDone
+		}
+		if clearErr := c.conn.SetWriteDeadline(time.Time{}); err == nil && clearErr != nil {
+			err = fmt.Errorf("transport: clear write deadline: %w", clearErr)
+		}
+	}()
 	for len(frame) > 0 {
 		written, err := c.conn.Write(frame)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return fmt.Errorf("transport: write interrupted: %w", ctxErr)
+			}
+			if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+				return fmt.Errorf("transport: write interrupted: %w", context.DeadlineExceeded)
+			}
 			return err
 		}
 		if written == 0 {

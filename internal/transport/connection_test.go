@@ -7,6 +7,8 @@ import (
 	"io"
 	"math"
 	"net"
+	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,6 +52,48 @@ func (writeConn) RemoteAddr() net.Addr              { return testAddr("remote") 
 func (writeConn) SetDeadline(time.Time) error       { return nil }
 func (writeConn) SetReadDeadline(time.Time) error   { return nil }
 func (writeConn) SetWriteDeadline(time.Time) error  { return nil }
+
+type partialBlockingWriteConn struct {
+	partial      chan struct{}
+	interrupted  chan struct{}
+	partialOnce  sync.Once
+	interruptOne sync.Once
+}
+
+func (c *partialBlockingWriteConn) Read([]byte) (int, error) { return 0, io.EOF }
+func (c *partialBlockingWriteConn) Write(value []byte) (int, error) {
+	written := 0
+	c.partialOnce.Do(func() {
+		written = len(value) / 2
+		close(c.partial)
+	})
+	if written != 0 {
+		return written, nil
+	}
+	<-c.interrupted
+	return 0, os.ErrDeadlineExceeded
+}
+func (*partialBlockingWriteConn) Close() error                { return nil }
+func (*partialBlockingWriteConn) LocalAddr() net.Addr         { return testAddr("local") }
+func (*partialBlockingWriteConn) RemoteAddr() net.Addr        { return testAddr("remote") }
+func (*partialBlockingWriteConn) SetDeadline(time.Time) error { return nil }
+func (*partialBlockingWriteConn) SetReadDeadline(time.Time) error {
+	return nil
+}
+func (c *partialBlockingWriteConn) SetWriteDeadline(deadline time.Time) error {
+	if deadline.IsZero() {
+		return nil
+	}
+	interrupt := func() {
+		c.interruptOne.Do(func() { close(c.interrupted) })
+	}
+	if delay := time.Until(deadline); delay > 0 {
+		time.AfterFunc(delay, interrupt)
+	} else {
+		interrupt()
+	}
+	return nil
+}
 
 type testAddr string
 
@@ -157,6 +201,88 @@ func TestRequestReportsWriteAndResponseFailures(t *testing.T) {
 				t.Fatalf("Request() error = %v, want %v", err, test.want)
 			}
 		})
+	}
+}
+
+func TestRequestCancellationInterruptsBlockedWrite(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		context func() (context.Context, context.CancelFunc)
+		want    error
+	}{
+		{
+			name: "cancel",
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want: context.Canceled,
+		},
+		{
+			name: "deadline",
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 20*time.Millisecond)
+			},
+			want: context.DeadlineExceeded,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			conn := &partialBlockingWriteConn{
+				partial: make(chan struct{}), interrupted: make(chan struct{}),
+			}
+			connection := &Connection{
+				conn: conn, maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
+				pending: make(map[int32]chan result), done: make(chan struct{}),
+			}
+			ctx, cancel := test.context()
+			defer cancel()
+			completed := make(chan error, 1)
+			go func() {
+				_, err := connection.Request(ctx, apiVersionsRequest(t))
+				completed <- err
+			}()
+			<-conn.partial
+			if errors.Is(test.want, context.Canceled) {
+				cancel()
+			}
+			select {
+			case err := <-completed:
+				if !errors.Is(err, test.want) {
+					t.Fatalf("Request() error = %v, want %v", err, test.want)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("Request did not stop after context completion")
+			}
+			if _, err := connection.Request(
+				context.Background(), apiVersionsRequest(t),
+			); !errors.Is(err, test.want) {
+				t.Fatalf("request after interrupted frame error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestRequestClearsSuccessfulWriteDeadline(t *testing.T) {
+	client, server := net.Pipe()
+	defer server.Close()
+	connection, err := New(client, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() {
+		for range 2 {
+			id := readRequestID(t, server)
+			body, _ := proto.Marshal(&fmsg.ApiVersionsResponse{})
+			writeResponse(t, server, 0, id, body)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := connection.Request(ctx, apiVersionsRequest(t)); err != nil {
+		t.Fatalf("deadline Request() error = %v", err)
+	}
+	if _, err := connection.Request(context.Background(), apiVersionsRequest(t)); err != nil {
+		t.Fatalf("request after cleared deadline error = %v", err)
 	}
 }
 
