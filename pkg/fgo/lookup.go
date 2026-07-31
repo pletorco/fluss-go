@@ -586,15 +586,20 @@ func (c *LookupClient) enqueueLookup(
 			<-c.slots
 		},
 	}
-	select {
-	case c.queue <- task:
-		return task, nil
-	case <-ctx.Done():
-		task.complete(rawLookupResult{err: ctx.Err()})
-		return nil, ctx.Err()
-	case <-c.life.Done():
+	c.mu.RLock()
+	if c.closed {
+		c.mu.RUnlock()
 		task.complete(rawLookupResult{err: ErrClosed})
 		return nil, ErrClosed
+	}
+	select {
+	case c.queue <- task:
+		c.mu.RUnlock()
+		return task, nil
+	case <-ctx.Done():
+		c.mu.RUnlock()
+		task.complete(rawLookupResult{err: ctx.Err()})
+		return nil, ctx.Err()
 	}
 }
 
