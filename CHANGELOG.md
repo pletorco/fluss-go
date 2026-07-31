@@ -14,6 +14,8 @@ breaking changes.
 
 - Added an optional Alibaba Cloud OSS remote-file adapter based on the official
   OSS SDK for Go v2.
+- Added an HDFS remote-file adapter boundary for application-owned clients with
+  exact range validation, cancellation cleanup, and filesystem-token cloning.
 
 ### Fixed
 

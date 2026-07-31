@@ -140,8 +140,19 @@ bytes are not interpreted as OSS credentials. See the
 [adapter manual](../adapters/oss/README.md) for the reviewed SDK version and
 opt-in service-test variables.
 
-HDFS remains separate adapter work because no maintained Go client currently
-combines context-aware reads, Kerberos, and Hadoop delegation-token injection.
+## HDFS adapter
+
+The optional [`adapters/hdfs`](../adapters/hdfs) package validates `hdfs://`
+locations and ranges around an application-owned HDFS client. Available public
+Go HDFS clients do not currently combine active maintenance, context-aware
+opens, Kerberos, and injection of Fluss-provided Hadoop delegation tokens, so
+fluss-go does not force one into the module graph or implement Hadoop protocols
+itself. Applications provide an `hdfs.OpenFunc` backed by their reviewed client.
+The adapter passes a private token clone, verifies opened-file metadata,
+restricts reads to the requested section, closes blocked reads on cancellation,
+and clears the clone on stream close. See the
+[adapter manual](../adapters/hdfs/README.md) for integration and live-test
+guidance.
 
 Retries are limited to truncated reads and errors whose type explicitly reports
 temporary or timeout behavior. Authentication, permission, not-found,

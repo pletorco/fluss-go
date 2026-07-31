@@ -80,7 +80,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Primary-key writers | Supported | `KVWriter` provides full and projected upsert, delete, Fluss hash routing, merge-engine or overwrite modes, idempotent per-bucket sequences, bounded batching and per-bucket concurrency, partial results, and deterministic lifecycle operations. |
 | Point and prefix lookups | Supported | `LookupClient` validates keys, batches compatible concurrent calls by bucket, preserves caller cancellation and input association, bounds queue/delay/concurrency/retries, resolves historical schemas, supports leading-key prefixes, and can atomically insert missing rows without unsafe retries. |
 | Typed data APIs | Supported | Generic wrappers cover log and KV writers, point and prefix lookup, log scans, current-state scans, and snapshot scans through explicit application codecs. |
-| Remote storage adapters | Supported | Pluggable complete-object or streaming range readers compose remote logs and snapshots with bounded retries, object/aggregate/active byte limits, ordered prefetch, and cancellation cleanup. Local files are built in; `adapters/s3` and `adapters/oss` provide optional official SDK implementations. |
+| Remote storage adapters | Supported | Pluggable complete-object or streaming range readers compose remote logs and snapshots with bounded retries, object/aggregate/active byte limits, ordered prefetch, and cancellation cleanup. Local files are built in; optional adapters cover S3, OSS, and application-owned HDFS clients. |
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
 | Core `fadm` catalog client | Supported | `pkg/fadm` shares the `fgo` connection pool and implements database, table, schema, alter, partition, and per-bucket offset operations. |
 | Advanced `fadm` operations | Supported | ACL, cluster config, server discovery and tags, rebalance, producer-offset, KV snapshot acquire/renew/release, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
@@ -105,6 +105,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Remote storage and filesystem tokens](docs/remote-storage.md)
 - [Optional AWS SDK v2 S3 adapter](adapters/s3/README.md)
 - [Optional Alibaba Cloud OSS SDK v2 adapter](adapters/oss/README.md)
+- [Optional HDFS client adapter](adapters/hdfs/README.md)
 - [Observability and optional OpenTelemetry adapter](docs/observability.md)
 - [Documentation validation and snippet workflow](docs/documentation-tooling.md)
 - [Release process](docs/releasing.md)
