@@ -40,17 +40,24 @@ authentication, failover, and retry behavior remain owned by an external HDFS
 implementation, while this package owns Fluss range, size, cancellation,
 resource, and token-lifetime rules.
 
-## Live test
+## Service tests
 
-`task test:hdfs` reads a file from an existing HDFS filesystem mounted on the
-test host. The test is skipped unless these variables are configured:
+`task test:hdfs` starts the official Apache Hadoop 3.4.3 image pinned by digest
+with one NameNode and one DataNode. A test-only `OpenFunc` delegates HDFS access
+to the official `hdfs dfs` CLI, then verifies exact ranges, advertised-size
+rejection, cancellation, close behavior, error classification, and token
+redaction. It neither imports an unmaintained Go HDFS client nor implements an
+HDFS protocol. Containers and tmpfs-backed state are removed after the run.
+
+`task test:hdfs:mounted` reads a file from an existing HDFS filesystem mounted
+on the test host. The test is skipped unless these variables are configured:
 
 ```sh
 export FLUSS_HDFS_LIVE=1
 export FLUSS_HDFS_URI=hdfs://nameservice/path/to/object
 export FLUSS_HDFS_MOUNT_FILE=/mnt/hdfs/path/to/object
 export FLUSS_HDFS_EXPECTED_SHA256=<lowercase-hex-digest>
-task test:hdfs
+task test:hdfs:mounted
 ```
 
 The test never writes or deletes data. Cluster provisioning, mount security,

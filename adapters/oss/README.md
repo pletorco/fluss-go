@@ -24,7 +24,13 @@ errors, and closes invalid response bodies. Applications own SDK credential,
 endpoint, retry, and client lifecycle configuration. Fluss filesystem-token
 bytes are deliberately not interpreted as OSS credentials.
 
-## Live test
+## Managed-service test
+
+There is no project-approved OSS emulator. S3-compatible services do not
+implement Alibaba Cloud OSS V4 signing or response behavior and therefore
+cannot be presented as OSS evidence. The scheduled storage workflow records
+this boundary and tests S3 and HDFS locally; OSS remains an explicit
+managed-service job started with the `run_managed_oss` workflow input.
 
 The opt-in test reads an existing object and never writes or deletes data.
 Provide SDK credentials through the environment variables documented by the
@@ -42,4 +48,7 @@ task test:oss
 ```
 
 The expected value is base64 encoded so binary fixtures are supported without
-placing object data or credentials on a command line.
+placing object data or credentials on a command line. The test verifies an
+exact range, metadata mismatch rejection, cancellation, close behavior, and
+credential redaction. Repository secrets are unavailable to pull requests and
+the scheduled credential-free job.

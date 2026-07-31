@@ -90,6 +90,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Point and prefix lookups | Supported | `LookupClient` validates keys, batches compatible concurrent calls by bucket, preserves caller cancellation and input association, bounds queue/delay/concurrency/retries, resolves historical schemas, supports leading-key prefixes, and can atomically insert missing rows without unsafe retries. |
 | Typed data APIs | Supported | Generic wrappers cover log and KV writers, point and prefix lookup, log scans, current-state scans, and snapshot scans through explicit application codecs. |
 | Remote storage adapters | Supported | Pluggable complete-object or streaming range readers compose remote logs and snapshots with bounded retries, object/aggregate/active byte limits, ordered prefetch, and cancellation cleanup. Local files are built in; optional adapters cover S3, OSS, and application-owned HDFS clients. |
+| Native lake formats | Not bundled | `fadm.LakeSnapshot` exposes the Fluss 0.9.1 snapshot ID and bucket offsets, but Iceberg, Lance, and Paimon planning and decoding remain application-owned. The reviewed no-implementation decision prevents local format, filesystem, or credential reimplementation. |
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
 | Core `fadm` catalog client | Supported | `pkg/fadm` shares the `fgo` connection pool and implements database, table, schema, alter, partition, and per-bucket offset operations. |
 | Advanced `fadm` operations | Supported | ACL, cluster config, server discovery and tags, rebalance, producer-offset, KV snapshot acquire/renew/release, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
@@ -116,6 +117,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Data operations and advanced options](docs/data-operations.md)
 - [Typed data API](docs/typed-api.md)
 - [Remote storage and filesystem tokens](docs/remote-storage.md)
+- [Native Iceberg, Lance, and Paimon decision](docs/lake-formats.md)
 - [Optional AWS SDK v2 S3 adapter](adapters/s3/README.md)
 - [Optional Alibaba Cloud OSS SDK v2 adapter](adapters/oss/README.md)
 - [Optional HDFS client adapter](adapters/hdfs/README.md)

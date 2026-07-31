@@ -24,11 +24,17 @@ breaking changes.
 - Added repeatable log, KV, lookup, scan, mixed, soak, and fault-injection
   profiles with deterministic bounds, final data and resource leak gates,
   scheduled runs, and credential-free retained reports.
+- Added scheduled, credential-free S3 and HDFS adapter integration against
+  digest-pinned MinIO and Apache Hadoop services, plus an explicit read-only
+  managed OSS workflow.
 
 ### Changed
 
 - Split S3, OSS, HDFS, and OpenTelemetry adapters into separately versioned Go
   modules so core-only consumers no longer inherit their optional SDK graphs.
+- Recorded the Fluss 0.9.1 native lake-format contract and an explicit
+  no-implementation decision for Iceberg, Lance, and Paimon until a maintained
+  Go engine passes dependency, license, and lake-enabled integration gates.
 
 ## [v0.1.0-beta.6] - 2026-07-31
 

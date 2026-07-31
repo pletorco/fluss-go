@@ -166,6 +166,15 @@ The integration contract is covered by
 0.9.1 suite. A filesystem adapter should additionally run those tests against
 its lake-enabled environment.
 
+## Native lake formats
+
+Remote transport, Fluss KV snapshot orchestration, and native lake-format
+support are separate boundaries. A byte reader does not provide catalog
+discovery, manifest planning, delete semantics, or data-file decoding, and
+`RemoteSnapshotBatchProvider` does not turn those bytes into Iceberg, Lance, or
+Paimon support. The current candidate evidence and explicit no-implementation
+decision are recorded in [native lake formats](lake-formats.md).
+
 ## Prefetch measurement
 
 Run the in-memory and slow-stream comparisons with:

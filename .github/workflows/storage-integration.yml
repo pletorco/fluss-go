@@ -1,0 +1,64 @@
+name: Remote storage integration
+
+on:
+  schedule:
+    - cron: '17 3 * * 6'
+  workflow_dispatch:
+    inputs:
+      run_managed_oss:
+        description: Run the read-only Alibaba Cloud OSS test with repository secrets
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: remote-storage-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reproducible:
+    name: MinIO and Apache Hadoop
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.x
+          check-latest: true
+      - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+        with:
+          version: 3.51.1
+      - run: task test:storage
+
+  managed-oss:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_managed_oss
+    name: Managed Alibaba Cloud OSS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FLUSS_OSS_LIVE: '1'
+      FLUSS_OSS_REGION: ${{ vars.FLUSS_OSS_REGION }}
+      FLUSS_OSS_BUCKET: ${{ vars.FLUSS_OSS_BUCKET }}
+      FLUSS_OSS_OBJECT: ${{ vars.FLUSS_OSS_OBJECT }}
+      FLUSS_OSS_EXPECTED_BASE64: ${{ secrets.FLUSS_OSS_EXPECTED_BASE64 }}
+      OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+      OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.x
+          check-latest: true
+      - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+        with:
+          version: 3.51.1
+      - name: Require managed-service configuration
+        run: >-
+          test -n "$FLUSS_OSS_REGION" && test -n "$FLUSS_OSS_BUCKET" &&
+          test -n "$FLUSS_OSS_OBJECT" && test -n "$FLUSS_OSS_EXPECTED_BASE64" &&
+          test -n "$OSS_ACCESS_KEY_ID" && test -n "$OSS_ACCESS_KEY_SECRET"
+      - run: task test:oss

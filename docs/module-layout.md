@@ -12,6 +12,10 @@ graph of applications that use only the Fluss client.
 | `adapters/hdfs` | `github.com/pletorco/fluss-go/adapters/hdfs` | Application-owned HDFS client boundary; no selected HDFS SDK. |
 | `adapters/otel` | `github.com/pletorco/fluss-go/adapters/otel` | Stable OpenTelemetry metrics API. |
 
+No native Iceberg, Lance, or Paimon module is published. The format-engine
+review and conditions for adding a separately versioned optional module are
+recorded in [native lake formats](lake-formats.md).
+
 The checked-in `go.work` is for repository development. Each module has its
 own `go.mod`, `go.sum`, Dependabot entry, vulnerability scan, tests, race run,
 coverage profile, API baseline, and prefixed release tag. Root patterns such as

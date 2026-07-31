@@ -33,7 +33,7 @@ golden coverage remains required even when live evidence exists.
 | Current-state batch scanner | Covered | Row and typed scanners cover every resolved bucket and projections. |
 | Typed log and KV writers, log scanner, lookup, batch scanner | Covered | Explicit codecs round-trip application structs through the real row protocol. |
 | Snapshot batch scanner and typed snapshot scanner | Provider-only | Fluss returns snapshot object metadata, but decoding RocksDB snapshot objects requires an application-selected storage reader and decoder. Their orchestration and ownership are unit tested; the stock suite has no portable decoder to substitute safely. |
-| Remote log and snapshot readers | Adapter/service-specific | Core scheduling is unit, race, and benchmark tested. S3, OSS, and HDFS adapters have separate opt-in service tasks because the Fluss image does not provide those external services. |
+| Remote log and snapshot readers | Adapter/service-specific | Core scheduling is unit, race, and benchmark tested. A scheduled/manual workflow runs S3 against digest-pinned MinIO and the application-owned HDFS boundary against digest-pinned Apache Hadoop. Managed S3, mounted HDFS, and Alibaba Cloud OSS remain explicit read-only opt-ins; credentials are unavailable to pull requests. |
 
 ## Administration APIs
 
@@ -50,7 +50,7 @@ golden coverage remains required even when live evidence exists.
 | Latest KV snapshots and metadata | Covered | The suite enables one-second snapshots and verifies availability, IDs, log offsets, and immutable file metadata for buckets containing data. Empty buckets may correctly report no snapshot. |
 | Snapshot lease acquire/renew/release/drop | Covered | A unique lease protects every available snapshot, releases one bucket, and drops the remainder with bounded fallback cleanup. |
 | Filesystem security token | Covered | Direct and managed-refresh paths verify expiry, redaction, replacement, and cleanup without logging token bytes. |
-| Lake snapshot | Expected environment error | The stock image has no configured lake catalog. The request is sent and must return a classified storage or validation error; success would fail the suite. |
+| Lake snapshot | Wire contract covered; stock environment error expected | The response model and omitted-partition sentinel match Java 0.9.1. The stock image has no configured lake catalog, so live requests must return a classified storage or validation error. Native Iceberg, Lance, and Paimon providers are deliberately not bundled; see [native lake formats](lake-formats.md). |
 | Per-bucket table statistics | Covered | Input order, bucket identity, non-negative row counts, and every partial error slot are checked. |
 
 ## Review rule

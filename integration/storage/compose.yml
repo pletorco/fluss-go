@@ -1,0 +1,63 @@
+name: fluss-go-storage-integration
+
+x-hadoop-image: &hadoop-image apache/hadoop@sha256:127774dadab40ce84df7ac668a7a8c99945688b3fe336f1388f4477ca33e1529
+x-hadoop-environment: &hadoop-environment
+  CORE-SITE.XML_fs.defaultFS: hdfs://hdfs-namenode:8020
+  HDFS-SITE.XML_dfs.namenode.rpc-address: hdfs-namenode:8020
+  HDFS-SITE.XML_dfs.replication: "1"
+  HDFS-SITE.XML_dfs.permissions.enabled: "false"
+
+services:
+  minio:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${FLUSS_STORAGE_S3_ACCESS_KEY:?set by integration/storage/run.sh}
+      MINIO_ROOT_PASSWORD: ${FLUSS_STORAGE_S3_SECRET_KEY:?set by integration/storage/run.sh}
+    ports:
+      - "${FLUSS_STORAGE_S3_PORT:-19000}:9000"
+    healthcheck:
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 3s
+      test: ["CMD", "curl", "--fail", "http://localhost:9000/minio/health/live"]
+    tmpfs:
+      - /data
+
+  hdfs-namenode:
+    image: *hadoop-image
+    command: ["hdfs", "namenode"]
+    hostname: hdfs-namenode
+    restart: "no"
+    environment:
+      <<: *hadoop-environment
+      ENSURE_NAMENODE_DIR: /tmp/hadoop-hadoop/dfs/name
+    healthcheck:
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 5s
+      test: ["CMD-SHELL", "hdfs dfsadmin -safemode get >/dev/null 2>&1"]
+    tmpfs:
+      - /tmp/hadoop-hadoop
+
+  hdfs-datanode:
+    image: *hadoop-image
+    command: ["hdfs", "datanode"]
+    hostname: hdfs-datanode
+    restart: "no"
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+    environment:
+      <<: *hadoop-environment
+    healthcheck:
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9864'"]
+    tmpfs:
+      - /tmp/hadoop-hadoop
