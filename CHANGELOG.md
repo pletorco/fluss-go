@@ -10,6 +10,8 @@ breaking changes.
 
 ### Changed
 
+- Added production TLS and SASL PLAIN configuration and authentication-error
+  guidance with compile-checked examples.
 - Expanded pkg.go.dev contracts for typed APIs, extension interfaces,
   configuration, result ownership, partial failures, and pre-v1 stability.
 - Added a CI documentation audit for public packages, declarations, methods,

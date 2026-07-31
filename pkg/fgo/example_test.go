@@ -2,13 +2,68 @@ package fgo_test
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fgo"
 )
+
+func ExampleOpen_tlsAndSASL() {
+	caPEM, err := os.ReadFile(os.Getenv("FLUSS_CA_FILE"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		log.Fatal("Fluss CA file contains no certificates")
+	}
+	serverName := os.Getenv("FLUSS_TLS_SERVER_NAME")
+	username := os.Getenv("FLUSS_SASL_USERNAME")
+	password := os.Getenv("FLUSS_SASL_PASSWORD")
+	if serverName == "" || username == "" || password == "" {
+		log.Fatal("Fluss TLS and SASL configuration is incomplete")
+	}
+
+	client, err := fgo.Open(
+		context.Background(),
+		fgo.WithSeedBrokers("coordinator.example:9123"),
+		fgo.WithTLSConfig(&tls.Config{
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
+			ServerName: serverName,
+		}),
+		fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("close Fluss client: %v", err)
+		}
+	}()
+}
+
+func ExampleAuthenticationError() {
+	err := &fgo.AuthenticationError{
+		Err:       errors.New("server rejected authentication"),
+		Retriable: true,
+	}
+	var authentication *fgo.AuthenticationError
+	fmt.Println(errors.Is(err, fgo.ErrAuthentication))
+	fmt.Println(errors.As(err, &authentication), authentication.Retriable)
+	fmt.Println(err)
+	// Output:
+	// true
+	// true true
+	// fgo: authentication failed (retriable)
+}
 
 func ExampleOpen() {
 	ctx := context.Background()
