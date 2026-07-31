@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -537,6 +538,12 @@ func kvIDForBucket(t *testing.T, schema Schema, bucket int32) int32 {
 }
 
 func BenchmarkWriterScheduling(b *testing.B) {
+	b.Run("single_writer_single_bucket_saturation", func(b *testing.B) {
+		benchmarkParallelWriters(b, 1, 1, 100*time.Microsecond)
+	})
+	b.Run("single_writer_8_buckets_saturation", func(b *testing.B) {
+		benchmarkParallelWriters(b, 1, 8, 100*time.Microsecond)
+	})
 	b.Run("16_writers_8_buckets", func(b *testing.B) {
 		benchmarkParallelWriters(b, 16, 8, 0)
 	})
@@ -561,6 +568,71 @@ func BenchmarkWriterScheduling(b *testing.B) {
 			}
 		}
 	})
+	b.Run("64_writer_lifecycle", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			backend := newSchedulingLogBackend(8)
+			writers := make([]*LogWriter, 64)
+			for index := range writers {
+				writers[index] = newSchedulingLogWriter(
+					b, backend, 8, WithLogLinger(0), WithLogBuffer(64),
+				)
+			}
+			for _, writer := range writers {
+				if err := writer.Close(context.Background()); err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkWriterBatching(b *testing.B) {
+	for _, records := range []int{1, 16, 64} {
+		b.Run(fmt.Sprintf("%d_records", records), func(b *testing.B) {
+			benchmarkWriterBatchSize(b, records)
+		})
+	}
+}
+
+func benchmarkWriterBatchSize(b *testing.B, records int) {
+	backend := newSchedulingLogBackend(1)
+	writer := newSchedulingLogWriter(
+		b, backend, 1,
+		WithLogBatchLimits(1<<20, records),
+		WithLogBuffer(records),
+		WithLogLinger(time.Hour),
+	)
+	b.Cleanup(func() {
+		if err := writer.Close(context.Background()); err != nil {
+			b.Error(err)
+		}
+	})
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len("value")))
+	b.ResetTimer()
+	for written := 0; written < b.N; {
+		count := records
+		if remaining := b.N - written; remaining < count {
+			count = remaining
+		}
+		futures := make([]*WriteFuture, count)
+		for index := range count {
+			futures[index] = writer.Append(
+				context.Background(), Row{int32(written + index), "value"},
+			)
+		}
+		if err := writer.Flush(context.Background()); err != nil {
+			b.Fatal(err)
+		}
+		for _, future := range futures {
+			if result := future.Await(context.Background()); result.Err != nil {
+				b.Fatal(result.Err)
+			}
+		}
+		written += count
+	}
 }
 
 func benchmarkParallelWriters(

@@ -10,8 +10,8 @@ The client shares one negotiated connection per server identity through
 - each writer has one bounded FIFO command queue with `MaxBuffered` capacity;
 - each writer has one scheduler and at most `MaxConcurrentRequests` active
   server calls for distinct buckets;
-- pending batches are bounded per bucket by `MaxBatchRecords` and
-  `MaxBatchBytes`;
+- pending batches fill dynamically until linger expires or the fixed
+  `MaxBatchRecords` or `MaxBatchBytes` cap is reached;
 - `Flush` and `Close` are barriers in that writer's queue;
 - an ambiguous write failure poisons only that writer's affected bucket.
 
@@ -35,9 +35,10 @@ budget that sum rather than treating `MaxBuffered` as a client-global limit.
   cannot prevent another writer from enqueueing, flushing, or closing. The
   remote server and TCP connection may still affect request latency; strict
   cross-writer fairness is not promised.
-- **Failure:** Fluss 0.9.1 writes are not automatically retried after an
-  ambiguous response. Bucket poisoning remains writer-local, so one writer's
-  uncertain state is not inherited by another.
+- **Failure:** explicitly enabled idempotent retries preserve the writer ID,
+  bucket sequence, and encoded bytes. An unrecoverable ambiguous response
+  poisons only that bucket, so one writer's uncertain state is not inherited
+  by another.
 - **Shutdown:** `Close` drains commands accepted by that writer and stops its
   worker. Writers should be closed before the parent client. Closing one writer
   neither flushes nor closes another writer. The context passed to `Close`
@@ -67,14 +68,56 @@ additive queue memory are a material cost. Any replacement must preserve the
 invariants above and add an explicit client-wide byte budget rather than an
 unbounded shared queue.
 
+Configurable same-bucket in-flight requests are also not introduced. The
+transport can multiplex requests, and the saturation benchmark shows the
+throughput available when eight independent buckets can make progress. Doing
+the same for one bucket would require allocating sequences before completion,
+committing responses in sequence order, retaining later successful responses
+behind a failed earlier request, and implementing the Fluss 0.9.1 writer-ID
+reset rules. The synthetic upper bound does not justify that state machine for
+the initial Go client. One active request per bucket remains the explicit
+ordering and idempotence boundary.
+
+Adaptive batch limits are not introduced. The existing writer already fills
+each batch according to arrival rate and linger while fixed record and byte
+caps provide predictable request sizes. Measurements show that configuring
+those caps for the workload captures the material allocation and throughput
+benefit without an adaptive controller.
+
+A page allocator or additional byte admission pool is rejected for now. Rows
+are bounded to 16 MiB, accepted records are bounded by `MaxBuffered`, and
+encoded batches are bounded by `MaxBatchBytes`, so memory has finite limits.
+Charging retained Go values accurately before encoding would require copying
+caller-owned strings, byte slices, and Arrow buffers at admission, changing
+ownership and allocation behavior. Applications should set `MaxBuffered` and
+`MaxBatchBytes` from their maximum row size. A future byte pool must account
+for retained and encoded storage separately and demonstrate a lower peak heap
+on a representative workload before replacing these bounds.
+
 ## Reproduce measurements
 
 ```sh
-go test -run '^$' -bench BenchmarkWriterScheduling -benchmem ./pkg/fgo
+go test -run '^$' -bench 'BenchmarkWriter(Scheduling|Batching)$' -benchmem ./pkg/fgo
 ```
 
-The benchmark covers 16 writers over 8 buckets with an immediate server, the
-same topology with a 100 microsecond server delay, and repeated writer
-lifecycles against a failing server. Reference measurements and environment are
-recorded in GitHub issue 43 because benchmark numbers vary by machine and Go
-version.
+The benchmark covers single-bucket saturation, independent-bucket concurrency,
+16 writers, slow and failing servers, 64-writer lifecycle cost, and fixed batch
+sizes. A short comparison run on Linux/amd64, Go 1.26.5, AMD Ryzen 7 7735HS
+with `-benchtime=200ms` produced:
+
+| Case | ns/op | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| One writer, one slow bucket | 939,303 | 3,964 | 34 |
+| One writer, eight slow buckets | 213,772 | 3,934 | 36 |
+| 16 writers, eight buckets | 1,870 | 3,553 | 33 |
+| 16 writers, slow server | 51,809 | 3,918 | 36 |
+| 64-writer lifecycle | 300,382 | 325,472 | 1,680 |
+| One-record batches | 7,376 | 3,679 | 34 |
+| 16-record batches | 3,202 | 3,196 | 23 |
+| 64-record batches | 2,626 | 3,174 | 22 |
+
+The eight-bucket case establishes the concurrency ceiling but does not model
+same-bucket response reordering. Moving from one to 64 records per batch cut
+time per record by about 64% and allocations by about 35%, supporting
+configurable fixed caps. Benchmark values are comparative rather than release
+guarantees and vary by machine and Go version.
