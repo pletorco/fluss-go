@@ -10,6 +10,7 @@ set:
 vars:
   FLUSS_VERSION: 0.9.1-incubating
   FLUSS_COMMIT: 6bf969f71af8d6f9cc37383ab89ae46a58b0e227
+  FUZZ_ITERATIONS: 1000
   FUZZ_PARALLELISM: 1
   GO_PACKAGES:
     sh: go list ./... 2>/dev/null || true
@@ -113,15 +114,15 @@ tasks:
   test:fuzz:
     desc: Run bounded parser and codec fuzz smoke tests
     cmds:
-      - go test -run '^$' -fuzz '^FuzzHandleFrame$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./internal/transport
-      - go test -run '^$' -fuzz '^FuzzResponseUnmarshal$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fmsg
-      - go test -run '^$' -fuzz '^FuzzParseLogicalTypeJSON$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
-      - go test -run '^$' -fuzz '^FuzzDecodeCompactedRow$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
-      - go test -run '^$' -fuzz '^FuzzDecodeIndexedRow$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
-      - go test -run '^$' -fuzz '^FuzzLookupKeyEncoding$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
-      - go test -run '^$' -fuzz '^FuzzDecodeKVBatch$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
-      - go test -run '^$' -fuzz '^FuzzDecodeLogBatchRows$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
-      - go test -run '^$' -fuzz '^FuzzDecodeArrowLogBatch$' -fuzztime=1s -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzHandleFrame$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./internal/transport
+      - go test -run '^$' -fuzz '^FuzzResponseUnmarshal$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fmsg
+      - go test -run '^$' -fuzz '^FuzzParseLogicalTypeJSON$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeCompactedRow$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeIndexedRow$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzLookupKeyEncoding$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeKVBatch$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeLogBatchRows$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
+      - go test -run '^$' -fuzz '^FuzzDecodeArrowLogBatch$' -fuzztime={{.FUZZ_ITERATIONS}}x -parallel={{.FUZZ_PARALLELISM}} ./pkg/fgo
 
   coverage:
     desc: Verify 80 percent coverage for every hand-written Go source file

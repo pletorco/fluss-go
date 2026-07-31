@@ -8,6 +8,11 @@ breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Made bounded fuzz smoke tests deterministic across supported Go versions by
+  using fixed iteration budgets instead of wall-clock deadlines.
+
 ## [v0.1.0-beta.3] - 2026-07-31
 
 ### Changed
