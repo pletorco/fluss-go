@@ -52,24 +52,39 @@ const (
 // MetricEvent contains bounded-cardinality measurements and never includes request payloads,
 // addresses, table paths, bucket IDs, credentials, or server error messages.
 type MetricEvent struct {
-	Kind       MetricKind
-	Operation  MetricOperation
-	APIKey     fmsg.APIKey
+	// Kind identifies the event category.
+	Kind MetricKind
+	// Operation identifies the bounded high-level operation.
+	Operation MetricOperation
+	// APIKey is set for RPC events and zero otherwise.
+	APIKey fmsg.APIKey
+	// ServerRole is set for server-bound events.
 	ServerRole ServerRole
-	Duration   time.Duration
-	QueueTime  time.Duration
-	Attempt    int
-	QueueSize  int
-	Records    int64
-	Bytes      int64
-	Lag        int64
-	Failed     bool
+	// Duration is the completed operation duration.
+	Duration time.Duration
+	// QueueTime is time spent waiting before execution.
+	QueueTime time.Duration
+	// Attempt starts at one and is set for request and retry events.
+	Attempt int
+	// QueueSize is the observed bounded queue depth.
+	QueueSize int
+	// Records is the event record count.
+	Records int64
+	// Bytes is the encoded or transferred byte count.
+	Bytes int64
+	// Lag is a non-negative offset lag when available.
+	Lag int64
+	// Failed reports whether the observed operation failed.
+	Failed bool
+	// ErrorClass classifies failures without exposing error text.
 	ErrorClass MetricErrorClass
 }
 
 // MetricsObserver receives synchronous client events.
 // Implementations should return quickly and must not retain sensitive data.
 type MetricsObserver interface {
+	// ObserveMetric receives an event synchronously and should return quickly.
+	// Panics are recovered and ignored by the client.
 	ObserveMetric(MetricEvent)
 }
 

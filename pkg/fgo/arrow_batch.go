@@ -27,16 +27,26 @@ const (
 // Record for the duration of the call. DecodeArrowLogBatch returns an owned Record that remains
 // valid until Release is called.
 type ArrowLogBatch struct {
-	Magic         byte
-	BaseOffset    int64
-	CommitTime    int64
-	LeaderEpoch   int32
-	SchemaID      int16
-	AppendOnly    bool
-	WriterID      int64
+	// Magic selects the Fluss v0 or v1 batch header.
+	Magic byte
+	// BaseOffset is the first row offset.
+	BaseOffset int64
+	// CommitTime is the server commit time in Unix milliseconds.
+	CommitTime int64
+	// LeaderEpoch is present only for magic 1.
+	LeaderEpoch int32
+	// SchemaID identifies the Arrow schema.
+	SchemaID int16
+	// AppendOnly omits per-row change bytes when true.
+	AppendOnly bool
+	// WriterID identifies the idempotent writer session.
+	WriterID int64
+	// BatchSequence is monotonic within WriterID and bucket.
 	BatchSequence int32
-	Record        arrow.RecordBatch
-	Changes       []ChangeType
+	// Record is borrowed during encoding and owned after decoding.
+	Record arrow.RecordBatch
+	// Changes has one entry per row unless AppendOnly is true.
+	Changes []ChangeType
 
 	owned   bool
 	release *sync.Once

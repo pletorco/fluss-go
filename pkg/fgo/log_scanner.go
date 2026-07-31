@@ -29,8 +29,11 @@ const (
 
 // ScanOffset describes an explicit, symbolic, or timestamp-based start.
 type ScanOffset struct {
-	Kind      ScanOffsetKind
-	Offset    int64
+	// Kind selects which of Offset or Timestamp is meaningful.
+	Kind ScanOffsetKind
+	// Offset is an inclusive non-negative start for [ScanFromOffset].
+	Offset int64
+	// Timestamp is used only for [ScanFromTimestamp].
 	Timestamp time.Time
 }
 
@@ -72,13 +75,21 @@ func (s ScanOffset) Validate() error {
 // LogScannerConfig controls projection, partition selection, fetch limits, and
 // optional completion bounds.
 type LogScannerConfig struct {
-	Projection      []string
-	Partition       string
-	MaxBytes        int32
-	MaxBucketBytes  int32
-	MinBytes        int32
-	MaxWait         time.Duration
-	RowLimit        int64
+	// Projection lists returned columns in result order; nil selects all.
+	Projection []string
+	// Partition selects one named physical partition; empty selects the table.
+	Partition string
+	// MaxBytes bounds aggregate encoded bytes per fetch.
+	MaxBytes int32
+	// MaxBucketBytes bounds encoded bytes per bucket per fetch.
+	MaxBucketBytes int32
+	// MinBytes is the aggregate byte threshold before a fetch may return.
+	MinBytes int32
+	// MaxWait bounds server waiting when MinBytes is not reached.
+	MaxWait time.Duration
+	// RowLimit is the total delivered row bound; zero is unbounded.
+	RowLimit int64
+	// StoppingOffsets maps every initial bucket to an exclusive end offset.
 	StoppingOffsets map[int32]int64
 }
 
@@ -165,30 +176,41 @@ var ErrWakeup = errors.New("fgo: log scanner wakeup")
 
 // ScanRecord associates one decoded row record with its source bucket.
 type ScanRecord struct {
+	// Bucket identifies the source table bucket.
 	Bucket int32
+	// Record contains the decoded row and log metadata.
 	Record Record
 }
 
 // ScanArrowBatch associates one owned Arrow batch with its source bucket.
 type ScanArrowBatch struct {
+	// Bucket identifies the source table bucket.
 	Bucket int32
-	Batch  ArrowLogBatch
+	// Batch is owned by the enclosing [ScanResult].
+	Batch ArrowLogBatch
 }
 
 // BucketScanError reports a bucket-local failure in a partial scan result.
 type BucketScanError struct {
+	// Bucket identifies the failed table bucket.
 	Bucket int32
-	Err    error
+	// Err is the bucket-local fetch or decode failure.
+	Err error
 }
 
 // ScanResult contains rows, owned Arrow batches, and per-bucket outcomes from
 // one poll.
 type ScanResult struct {
-	Records       []ScanRecord
-	ArrowBatches  []ScanArrowBatch
-	BucketErrors  []BucketScanError
+	// Records contains successfully decoded row records.
+	Records []ScanRecord
+	// ArrowBatches contains owned batches released by [ScanResult.Release].
+	ArrowBatches []ScanArrowBatch
+	// BucketErrors contains failures that did not invalidate other buckets.
+	BucketErrors []BucketScanError
+	// HighWatermark maps bucket IDs to the observed log end offset.
 	HighWatermark map[int32]int64
-	Done          bool
+	// Done reports that configured row or stopping-offset bounds were reached.
+	Done bool
 }
 
 // Release frees Arrow records owned by the result.

@@ -88,8 +88,10 @@ func (s Schema) PartitionNames(specs ...PartitionSpec) ([]string, error) {
 
 // DynamicPartitionCreationConfig controls opt-in creation of missing writer partitions.
 type DynamicPartitionCreationConfig struct {
+	// MetadataAttempts bounds refreshes after a partition is created.
 	MetadataAttempts int
-	RetryBackoff     time.Duration
+	// RetryBackoff is the delay between metadata refresh attempts.
+	RetryBackoff time.Duration
 }
 
 // WithDynamicPartitionCreation enables automatic creation for partitioned log and KV writers.

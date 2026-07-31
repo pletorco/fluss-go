@@ -8,6 +8,11 @@ breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Expanded pkg.go.dev contracts for typed APIs, extension interfaces,
+  configuration, result ownership, partial failures, and pre-v1 stability.
+
 ## [v0.1.0-beta.2] - 2026-07-31
 
 ### Added

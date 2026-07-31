@@ -20,16 +20,22 @@ var ErrMalformedRecordBatch = errors.New("fgo: malformed record batch")
 // KVRecord is one raw primary-key record. A nil Value represents a delete. Buffers returned by a
 // decoder are owned by the caller.
 type KVRecord struct {
-	Key   []byte
+	// Key contains an encoded non-empty primary key.
+	Key []byte
+	// Value contains an encoded row; nil represents a delete.
 	Value []byte
 }
 
 // KVBatch carries the writer state required for idempotent KV writes.
 type KVBatch struct {
-	SchemaID      int16
-	WriterID      int64
+	// SchemaID identifies the row schema used by Records.
+	SchemaID int16
+	// WriterID identifies the idempotent writer session.
+	WriterID int64
+	// BatchSequence is monotonic within WriterID and bucket.
 	BatchSequence int32
-	Records       []KVRecord
+	// Records are encoded in request order.
+	Records []KVRecord
 }
 
 // Encode serializes the KV batch using the Apache Fluss 0.9.1 layout.
@@ -116,15 +122,24 @@ func decodeKVRecord(encoded []byte, position int) (KVRecord, int, error) {
 
 // LogBatch encodes compacted or indexed row records. Magic 0 and 1 use the Fluss 0.9.1 layouts.
 type LogBatch struct {
-	Magic         byte
-	BaseOffset    int64
-	CommitTime    int64
-	LeaderEpoch   int32
-	SchemaID      int16
-	AppendOnly    bool
-	WriterID      int64
+	// Magic selects the Fluss v0 or v1 batch header.
+	Magic byte
+	// BaseOffset is the first record offset.
+	BaseOffset int64
+	// CommitTime is the server commit time in Unix milliseconds.
+	CommitTime int64
+	// LeaderEpoch is present only for magic 1.
+	LeaderEpoch int32
+	// SchemaID identifies the row schema used by Records.
+	SchemaID int16
+	// AppendOnly omits per-record change bytes when true.
+	AppendOnly bool
+	// WriterID identifies the idempotent writer session.
+	WriterID int64
+	// BatchSequence is monotonic within WriterID and bucket.
 	BatchSequence int32
-	Records       []Record
+	// Records are ordered by offset.
+	Records []Record
 }
 
 // EncodeRows serializes row records using compacted or indexed encoding.
