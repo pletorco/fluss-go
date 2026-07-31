@@ -163,45 +163,15 @@ func markdownFiles(repository string, paths []string) ([]string, int, error) {
 	seen := make(map[string]struct{})
 	skipped := 0
 	for _, input := range paths {
-		path := input
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(repository, path)
+		path, err := markdownInputPath(repository, input)
+		if err != nil {
+			return nil, 0, err
 		}
-		err := filepath.WalkDir(path, func(current string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			relative, err := filepath.Rel(repository, current)
-			if err != nil {
-				return err
-			}
-			if outsideRepository(relative) {
-				return fmt.Errorf("%s is outside repository root", input)
-			}
-			if entry.IsDir() {
-				if current != path && excludedDirectory(entry.Name()) {
-					skipped++
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !strings.EqualFold(filepath.Ext(current), ".md") {
-				return nil
-			}
-			source, err := os.ReadFile(current)
-			if err != nil {
-				return err
-			}
-			if generatedMarkdown(source) {
-				skipped++
-				return nil
-			}
-			seen[filepath.Clean(current)] = struct{}{}
-			return nil
-		})
+		inputSkipped, err := scanMarkdownPath(path, seen)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan %s: %w", input, err)
 		}
+		skipped += inputSkipped
 	}
 	files := make([]string, 0, len(seen))
 	for path := range seen {
@@ -209,6 +179,52 @@ func markdownFiles(repository string, paths []string) ([]string, int, error) {
 	}
 	sort.Strings(files)
 	return files, skipped, nil
+}
+
+func markdownInputPath(repository, input string) (string, error) {
+	path := input
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(repository, path)
+	}
+	path = filepath.Clean(path)
+	relative, err := filepath.Rel(repository, path)
+	if err != nil {
+		return "", err
+	}
+	if outsideRepository(relative) {
+		return "", fmt.Errorf("%s is outside repository root", input)
+	}
+	return path, nil
+}
+
+func scanMarkdownPath(path string, seen map[string]struct{}) (int, error) {
+	skipped := 0
+	err := filepath.WalkDir(path, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if current != path && excludedDirectory(entry.Name()) {
+				skipped++
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(current), ".md") {
+			return nil
+		}
+		source, err := os.ReadFile(current)
+		if err != nil {
+			return err
+		}
+		if generatedMarkdown(source) {
+			skipped++
+			return nil
+		}
+		seen[filepath.Clean(current)] = struct{}{}
+		return nil
+	})
+	return skipped, err
 }
 
 func excludedDirectory(name string) bool {
@@ -311,33 +327,54 @@ func (c *checker) checkLink(doc *document, node ast.Node, destination string) {
 		return
 	}
 	c.report.localLinks++
-	decodedPath, err := url.PathUnescape(parsed.Path)
+	target, ok := c.resolveLinkTarget(doc, line, destination, parsed.Path)
+	if !ok {
+		return
+	}
+	c.checkLinkAnchor(doc, line, destination, target, parsed.Fragment)
+}
+
+func (c *checker) resolveLinkTarget(
+	doc *document,
+	line int,
+	destination, linkPath string,
+) (string, bool) {
+	target := doc.path
+	if linkPath == "" {
+		return target, true
+	}
+	decodedPath, err := url.PathUnescape(linkPath)
 	if err != nil {
 		c.addFinding(doc.path, line, fmt.Sprintf("invalid escaped link path %q", destination))
+		return "", false
+	}
+	if filepath.IsAbs(decodedPath) {
+		target = filepath.Join(c.repository, filepath.FromSlash(strings.TrimPrefix(decodedPath, "/")))
+	} else {
+		target = filepath.Join(filepath.Dir(doc.path), filepath.FromSlash(decodedPath))
+	}
+	target = filepath.Clean(target)
+	relative, err := filepath.Rel(c.repository, target)
+	if err != nil || outsideRepository(relative) {
+		c.addFinding(doc.path, line, fmt.Sprintf("link escapes repository: %q", destination))
+		return "", false
+	}
+	if _, err := os.Stat(target); err != nil {
+		c.addFinding(doc.path, line, fmt.Sprintf("link target does not exist: %q", destination))
+		return "", false
+	}
+	return target, true
+}
+
+func (c *checker) checkLinkAnchor(
+	doc *document,
+	line int,
+	destination, target, encodedFragment string,
+) {
+	if encodedFragment == "" {
 		return
 	}
-	target := doc.path
-	if decodedPath != "" {
-		if filepath.IsAbs(decodedPath) {
-			target = filepath.Join(c.repository, filepath.FromSlash(strings.TrimPrefix(decodedPath, "/")))
-		} else {
-			target = filepath.Join(filepath.Dir(doc.path), filepath.FromSlash(decodedPath))
-		}
-		target = filepath.Clean(target)
-		relative, relErr := filepath.Rel(c.repository, target)
-		if relErr != nil || outsideRepository(relative) {
-			c.addFinding(doc.path, line, fmt.Sprintf("link escapes repository: %q", destination))
-			return
-		}
-		if _, statErr := os.Stat(target); statErr != nil {
-			c.addFinding(doc.path, line, fmt.Sprintf("link target does not exist: %q", destination))
-			return
-		}
-	}
-	if parsed.Fragment == "" {
-		return
-	}
-	fragment, err := url.PathUnescape(parsed.Fragment)
+	fragment, err := url.PathUnescape(encodedFragment)
 	if err != nil {
 		c.addFinding(doc.path, line, fmt.Sprintf("invalid escaped anchor %q", destination))
 		return

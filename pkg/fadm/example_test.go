@@ -353,17 +353,7 @@ func ExampleClient_AcquireKVSnapshotLease() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	requested := make([]fadm.SnapshotLease, 0, len(latest.Snapshots))
-	for _, snapshot := range latest.Snapshots {
-		if snapshot.Available {
-			requested = append(requested, fadm.SnapshotLease{
-				TableID:     latest.TableID,
-				PartitionID: latest.PartitionID,
-				Bucket:      snapshot.Bucket,
-				SnapshotID:  snapshot.SnapshotID,
-			})
-		}
-	}
+	requested := exampleSnapshotLeases(latest)
 	if len(requested) == 0 {
 		log.Print("no snapshots are currently available")
 		return
@@ -374,40 +364,56 @@ func ExampleClient_AcquireKVSnapshotLease() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancelCleanup()
-		if err := admin.DropKVSnapshotLease(cleanupCtx, leaseID); err != nil {
-			log.Printf("drop snapshot lease %s: %v", leaseID, err)
-		}
-	}()
+	defer exampleDropSnapshotLease(admin, leaseID)
 
-	isUnavailable := func(candidate fadm.SnapshotLease) bool {
-		for _, failed := range unavailable {
-			if failed == candidate {
-				return true
-			}
-		}
-		return false
+	unavailableSet := make(map[fadm.SnapshotLease]struct{}, len(unavailable))
+	for _, snapshot := range unavailable {
+		unavailableSet[snapshot] = struct{}{}
 	}
 	for _, leased := range requested {
-		if isUnavailable(leased) {
+		if _, failed := unavailableSet[leased]; failed {
 			log.Printf("snapshot for bucket %d was not leased", leased.Bucket)
 			continue
 		}
-		metadata, err := admin.KVSnapshotMetadata(
-			ctx,
-			leased.TableID,
-			leased.PartitionID,
-			leased.Bucket,
-			leased.SnapshotID,
-		)
-		if err != nil {
-			log.Printf("bucket %d metadata: %v", leased.Bucket, err)
+		exampleLogSnapshotMetadata(ctx, admin, leased)
+	}
+}
+
+func exampleSnapshotLeases(latest fadm.LatestKVSnapshot) []fadm.SnapshotLease {
+	requested := make([]fadm.SnapshotLease, 0, len(latest.Snapshots))
+	for _, snapshot := range latest.Snapshots {
+		if !snapshot.Available {
 			continue
 		}
-		log.Printf("bucket %d has %d snapshot files", leased.Bucket, len(metadata.Files))
+		requested = append(requested, fadm.SnapshotLease{
+			TableID: latest.TableID, PartitionID: latest.PartitionID,
+			Bucket: snapshot.Bucket, SnapshotID: snapshot.SnapshotID,
+		})
 	}
+	return requested
+}
+
+func exampleDropSnapshotLease(admin *fadm.Client, leaseID string) {
+	cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelCleanup()
+	if err := admin.DropKVSnapshotLease(cleanupCtx, leaseID); err != nil {
+		log.Printf("drop snapshot lease %s: %v", leaseID, err)
+	}
+}
+
+func exampleLogSnapshotMetadata(ctx context.Context, admin *fadm.Client, leased fadm.SnapshotLease) {
+	metadata, err := admin.KVSnapshotMetadata(
+		ctx,
+		leased.TableID,
+		leased.PartitionID,
+		leased.Bucket,
+		leased.SnapshotID,
+	)
+	if err != nil {
+		log.Printf("bucket %d metadata: %v", leased.Bucket, err)
+		return
+	}
+	log.Printf("bucket %d has %d snapshot files", leased.Bucket, len(metadata.Files))
 }
 
 func ExampleClient_TableStats() {

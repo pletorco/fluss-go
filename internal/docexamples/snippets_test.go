@@ -88,11 +88,11 @@ func classifyAuthentication(err error) {
 		var authentication *fgo.AuthenticationError
 		switch {
 		case errors.As(err, &authentication) && authentication.Retriable:
-			// Retry through the application's bounded connection policy.
+			log.Printf("retry authentication through the bounded connection policy: %v", authentication)
 		case errors.Is(err, fgo.ErrAuthentication):
-			// Reject the configuration without logging credentials.
+			log.Printf("reject authentication configuration: %v", err)
 		default:
-			// Handle a non-authentication connection failure.
+			log.Printf("non-authentication connection failure: %v", err)
 		}
 	}
 	// doc:snippet-end classifyAuthentication
