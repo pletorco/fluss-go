@@ -396,6 +396,96 @@ func TestConnectionManagerRedialsDisconnectedServer(t *testing.T) {
 	<-secondDone
 }
 
+func TestConnectionManagerCancellationDoesNotPoisonEstablishedConnection(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	done := serveVersionThenRequest(t, serverConn, Coordinator, fmsg.APIKeyApiVersions)
+	dials := 0
+	client, err := Open(
+		context.Background(),
+		WithSeedBrokers("coordinator:9123"),
+		WithDialContext(func(context.Context, string, string) (net.Conn, error) {
+			dials++
+			return clientConn, nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request, _ := apiVersionsRequest()
+	if _, err := client.Request(ctx, request); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled request error = %v", err)
+	}
+	request, _ = apiVersionsRequest()
+	if _, err := client.Request(context.Background(), request); err != nil {
+		t.Fatalf("request after cancellation error = %v", err)
+	}
+	if dials != 1 {
+		t.Fatalf("dials = %d, want established connection reuse", dials)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+}
+
+func TestConnectionManagerEvictsConnectionAfterPartialCanceledWrite(t *testing.T) {
+	firstClient, firstServer := net.Pipe()
+	partial := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := serveVersionThenPartialRequest(
+		t, firstServer, Coordinator, partial, releaseFirst,
+	)
+	secondClient, secondServer := net.Pipe()
+	secondDone := serveVersionThenRequest(
+		t, secondServer, Coordinator, fmsg.APIKeyApiVersions,
+	)
+	dials := 0
+	client, err := Open(
+		context.Background(),
+		WithSeedBrokers("coordinator:9123"),
+		WithDialContext(func(context.Context, string, string) (net.Conn, error) {
+			dials++
+			if dials == 1 {
+				return firstClient, nil
+			}
+			return secondClient, nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	canceled := make(chan error, 1)
+	go func() {
+		request, _ := apiVersionsRequest()
+		_, requestErr := client.Request(ctx, request)
+		canceled <- requestErr
+	}()
+	<-partial
+	cancel()
+	if err := <-canceled; !errors.Is(err, context.Canceled) {
+		t.Fatalf("partially written canceled request error = %v", err)
+	}
+	close(releaseFirst)
+	<-firstDone
+
+	request, _ := apiVersionsRequest()
+	if _, err := client.Request(context.Background(), request); err != nil {
+		t.Fatalf("request after partial canceled write error = %v", err)
+	}
+	if dials != 2 {
+		t.Fatalf("dials = %d, want replacement connection", dials)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-secondDone
+}
+
 func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
 	firstClient, firstServer := net.Pipe()
 	firstDone := serveVersionThenRemoteError(t, firstServer, TabletServer, fmsg.ErrorCodeNotLeaderOrFollower)
@@ -508,6 +598,50 @@ func serveVersionThenRequest(t *testing.T, conn net.Conn, role ServerRole, expec
 		}
 		writeTransportResponse(t, conn, id, body)
 		_, _ = io.Copy(io.Discard, conn)
+	}()
+	return done
+}
+
+func serveVersionThenPartialRequest(
+	t *testing.T,
+	conn net.Conn,
+	role ServerRole,
+	partial chan<- struct{},
+	release <-chan struct{},
+) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer conn.Close()
+		id, key, _ := readTransportRequest(t, conn)
+		if key != fmsg.APIKeyApiVersions {
+			t.Errorf("API key = %d, want API_VERSIONS", key)
+			return
+		}
+		body, err := versionResponse(role)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		writeTransportResponse(t, conn, id, body)
+
+		var header [4]byte
+		if _, err := io.ReadFull(conn, header[:]); err != nil {
+			t.Errorf("read partial request header: %v", err)
+			return
+		}
+		if size := binary.BigEndian.Uint32(header[:]); size == 0 {
+			t.Error("partial request has empty body")
+			return
+		}
+		var firstBodyByte [1]byte
+		if _, err := io.ReadFull(conn, firstBodyByte[:]); err != nil {
+			t.Errorf("read partial request body: %v", err)
+			return
+		}
+		close(partial)
+		<-release
 	}()
 	return done
 }

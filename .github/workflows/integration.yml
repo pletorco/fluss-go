@@ -1,15 +1,21 @@
 name: Fluss 0.9.1 Integration
 
 on:
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: '31 2 * * 3'
+
+concurrency:
+  group: fluss-0.9.1-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   live:
+    name: Fluss 0.9.1 live
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

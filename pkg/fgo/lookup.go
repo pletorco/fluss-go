@@ -22,11 +22,18 @@ type LookupConfig struct {
 	MaxBatchKeys int
 	// MaxConcurrent bounds in-flight lookup requests.
 	MaxConcurrent int
+	// MaxQueuedKeys bounds accepted keys awaiting completion across callers.
+	MaxQueuedKeys int
+	// BatchDelay is the maximum time a partial cross-call batch waits.
+	BatchDelay time.Duration
+	// Retry controls safe read-only lookup retries. Insert-if-not-exists
+	// clients require one attempt.
+	Retry RetryPolicy
 	// Partition selects one named physical partition; empty selects the table.
 	Partition string
 	// InsertIfNotExists enables atomic insertion for missing full keys.
 	InsertIfNotExists bool
-	// Timeout is the server timeout used only by insertion.
+	// Timeout bounds each lookup request and is sent to insertion requests.
 	Timeout time.Duration
 	// Acks is the insertion acknowledgement mode.
 	Acks int32
@@ -42,6 +49,41 @@ func WithLookupBatch(keys, concurrent int) LookupOption {
 			return fmt.Errorf("%w: lookup limits must be positive", ErrInvalidConfig)
 		}
 		config.MaxBatchKeys, config.MaxConcurrent = keys, concurrent
+		return nil
+	}
+}
+
+// WithLookupQueue sets the accepted-key limit and partial-batch delay used to
+// combine compatible concurrent calls.
+func WithLookupQueue(keys int, delay time.Duration) LookupOption {
+	return func(config *LookupConfig) error {
+		if keys <= 0 || delay < 0 {
+			return fmt.Errorf("%w: invalid lookup queue settings", ErrInvalidConfig)
+		}
+		config.MaxQueuedKeys, config.BatchDelay = keys, delay
+		return nil
+	}
+}
+
+// WithLookupRetryPolicy configures bounded retries for read-only point and
+// prefix lookups. Insert-if-not-exists clients cannot enable retries.
+func WithLookupRetryPolicy(policy RetryPolicy) LookupOption {
+	return func(config *LookupConfig) error {
+		if policy.MaxAttempts < 1 || policy.MaxAttempts > maxWriterAttempts {
+			return fmt.Errorf("%w: lookup retry attempts must be in [1, %d]", ErrInvalidConfig, maxWriterAttempts)
+		}
+		config.Retry = policy
+		return nil
+	}
+}
+
+// WithLookupTimeout sets the client-side timeout for each lookup request.
+func WithLookupTimeout(timeout time.Duration) LookupOption {
+	return func(config *LookupConfig) error {
+		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 {
+			return fmt.Errorf("%w: invalid lookup timeout", ErrInvalidConfig)
+		}
+		config.Timeout = timeout
 		return nil
 	}
 }
@@ -243,16 +285,25 @@ type LookupClient struct {
 	partitionID int64
 	buckets     []int32
 	resolver    schemaResolver
+	observer    MetricsObserver
 
 	mu     sync.RWMutex
 	closed bool
 	life   context.Context
 	cancel context.CancelFunc
+	queue  chan *lookupTask
+	jobs   chan lookupBatch
+	slots  chan struct{}
+	done   chan struct{}
 }
 
 // NewLookupClient creates a point and prefix lookup client for table.
 func (c *Client) NewLookupClient(ctx context.Context, table Table, options ...LookupOption) (*LookupClient, error) {
-	return newLookupClient(ctx, clientLookupBackend{client: c}, table, options...)
+	lookup, err := newLookupClient(ctx, clientLookupBackend{client: c}, table, options...)
+	if err == nil {
+		lookup.observer = c.observer
+	}
+	return lookup, err
 }
 
 func newLookupClient(ctx context.Context, backend lookupBackend, table Table, options ...LookupOption) (*LookupClient, error) {
@@ -284,17 +335,24 @@ func newLookupClient(ctx context.Context, backend lookupBackend, table Table, op
 	client := &LookupClient{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, buckets: buckets, resolver: resolverFor(backend, table),
+		queue: make(chan *lookupTask, config.MaxQueuedKeys),
+		jobs:  make(chan lookupBatch, config.MaxConcurrent),
+		slots: make(chan struct{}, config.MaxQueuedKeys),
+		done:  make(chan struct{}),
 	}
 	if path.Partition != "" {
 		client.partitionID = physicalID
 	}
 	client.life, client.cancel = context.WithCancel(context.Background())
+	go client.runScheduler()
 	return client, nil
 }
 
 func lookupConfig(options []LookupOption) (LookupConfig, error) {
 	config := LookupConfig{
 		MaxBatchKeys: 1000, MaxConcurrent: 8,
+		MaxQueuedKeys: 10_000, BatchDelay: time.Millisecond,
+		Retry:   RetryPolicy{MaxAttempts: 1},
 		Timeout: 30 * time.Second, Acks: -1,
 	}
 	for _, option := range options {
@@ -304,6 +362,12 @@ func lookupConfig(options []LookupOption) (LookupConfig, error) {
 		if err := option(&config); err != nil {
 			return LookupConfig{}, err
 		}
+	}
+	if config.InsertIfNotExists && config.Retry.MaxAttempts > 1 {
+		return LookupConfig{}, fmt.Errorf(
+			"%w: insert-if-not-exists lookup retries are unsafe",
+			ErrInvalidConfig,
+		)
 	}
 	return config, nil
 }
@@ -324,10 +388,54 @@ func validateLookupInsertSchema(schema Schema, config LookupConfig) error {
 	return nil
 }
 
-type lookupInput struct {
-	index   int
+type lookupMode uint8
+
+const (
+	pointLookupMode lookupMode = iota
+	prefixLookupMode
+)
+
+type lookupTask struct {
+	ctx     context.Context
+	mode    lookupMode
 	bucket  int32
 	encoded []byte
+	result  chan rawLookupResult
+	release func()
+	once    sync.Once
+}
+
+type rawLookupResult struct {
+	value []byte
+	rows  [][]byte
+	err   error
+}
+
+func (t *lookupTask) complete(result rawLookupResult) {
+	t.once.Do(func() {
+		t.result <- result
+		if t.release != nil {
+			t.release()
+		}
+	})
+}
+
+type lookupGroup struct {
+	mode   lookupMode
+	bucket int32
+}
+
+type lookupBatch struct {
+	group lookupGroup
+	tasks []*lookupTask
+}
+
+type lookupScheduler struct {
+	client  *LookupClient
+	groups  map[lookupGroup][]*lookupTask
+	timer   *time.Timer
+	timerC  <-chan time.Time
+	workers sync.WaitGroup
 }
 
 // Lookup returns one result for each input key in input order.
@@ -336,15 +444,13 @@ func (c *LookupClient) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupR
 	if len(keys) == 0 {
 		return results
 	}
-	requestCtx, cancel, err := c.requestContext(ctx)
-	if err != nil {
+	if err := c.lookupContextError(ctx); err != nil {
 		for index, key := range keys {
 			results[index] = LookupResult{Key: key, Err: err}
 		}
 		return results
 	}
-	defer cancel()
-	groups := make(map[int32][]lookupInput)
+	tasks := make([]*lookupTask, len(keys))
 	for index, key := range keys {
 		results[index].Key = key
 		encoded, bucket, err := c.encodePoint(key)
@@ -353,9 +459,28 @@ func (c *LookupClient) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupR
 			continue
 		}
 		results[index].Bucket = bucket
-		groups[bucket] = append(groups[bucket], lookupInput{index: index, bucket: bucket, encoded: encoded})
+		tasks[index], results[index].Err = c.enqueueLookup(ctx, pointLookupMode, bucket, encoded)
 	}
-	c.runPointLookups(requestCtx, groups, results)
+	for index, task := range tasks {
+		if task == nil {
+			continue
+		}
+		select {
+		case raw := <-task.result:
+			if raw.err != nil {
+				results[index].Err = raw.err
+			} else if raw.value == nil {
+				results[index].Err = ErrNotFound
+			} else {
+				results[index].Row, results[index].Err = decodeLookupValueWithResolver(
+					ctx, c.resolver, c.table, raw.value,
+				)
+				results[index].Found = results[index].Err == nil
+			}
+		case <-ctx.Done():
+			results[index].Err = ctx.Err()
+		}
+	}
 	return results
 }
 
@@ -375,15 +500,13 @@ func (c *LookupClient) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey)
 		}
 		return results
 	}
-	requestCtx, cancel, err := c.requestContext(ctx)
-	if err != nil {
+	if err := c.lookupContextError(ctx); err != nil {
 		for index, prefix := range prefixes {
 			results[index] = PrefixLookupResult{Prefix: prefix, Err: err}
 		}
 		return results
 	}
-	defer cancel()
-	groups := make(map[int32][]lookupInput)
+	tasks := make([]*lookupTask, len(prefixes))
 	for index, prefix := range prefixes {
 		results[index].Prefix = prefix
 		encoded, bucket, err := c.encodePrefix(prefix)
@@ -392,29 +515,87 @@ func (c *LookupClient) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey)
 			continue
 		}
 		results[index].Bucket = bucket
-		groups[bucket] = append(groups[bucket], lookupInput{index: index, bucket: bucket, encoded: encoded})
+		tasks[index], results[index].Err = c.enqueueLookup(ctx, prefixLookupMode, bucket, encoded)
 	}
-	c.runPrefixLookups(requestCtx, groups, results)
+	for index, task := range tasks {
+		if task == nil {
+			continue
+		}
+		c.awaitPrefixLookup(ctx, task, &results[index])
+	}
 	return results
 }
 
-func (c *LookupClient) requestContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
+func (c *LookupClient) awaitPrefixLookup(
+	ctx context.Context,
+	task *lookupTask,
+	result *PrefixLookupResult,
+) {
+	select {
+	case raw := <-task.result:
+		if raw.err != nil {
+			result.Err = raw.err
+			return
+		}
+		for _, value := range raw.rows {
+			row, err := decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
+			if err != nil {
+				result.Err = err
+				return
+			}
+			result.Rows = append(result.Rows, row)
+		}
+	case <-ctx.Done():
+		result.Err = ctx.Err()
+	}
+}
+
+func (c *LookupClient) lookupContextError(ctx context.Context) error {
 	if ctx == nil {
-		return nil, nil, fmt.Errorf("%w: nil context", ErrInvalidConfig)
+		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
 	}
 	c.mu.RLock()
 	closed := c.closed
-	life := c.life
 	c.mu.RUnlock()
 	if closed {
-		return nil, nil, ErrClosed
+		return ErrClosed
 	}
-	requestCtx, cancel := context.WithCancel(ctx)
-	stop := context.AfterFunc(life, cancel)
-	return requestCtx, func() {
-		stop()
-		cancel()
-	}, nil
+	return ctx.Err()
+}
+
+func (c *LookupClient) enqueueLookup(
+	ctx context.Context,
+	mode lookupMode,
+	bucket int32,
+	encoded []byte,
+) (*lookupTask, error) {
+	if err := c.lookupContextError(ctx); err != nil {
+		return nil, err
+	}
+	select {
+	case c.slots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.life.Done():
+		return nil, ErrClosed
+	}
+	task := &lookupTask{
+		ctx: ctx, mode: mode, bucket: bucket, encoded: encoded,
+		result: make(chan rawLookupResult, 1),
+		release: func() {
+			<-c.slots
+		},
+	}
+	select {
+	case c.queue <- task:
+		return task, nil
+	case <-ctx.Done():
+		task.complete(rawLookupResult{err: ctx.Err()})
+		return nil, ctx.Err()
+	case <-c.life.Done():
+		task.complete(rawLookupResult{err: ErrClosed})
+		return nil, ErrClosed
+	}
 }
 
 func (c *LookupClient) encodePoint(key PrimaryKey) ([]byte, int32, error) {
@@ -475,127 +656,245 @@ func (c *LookupClient) bucketForValues(values map[string]any) (int32, error) {
 	return c.buckets[int(bucket)], nil
 }
 
-func (c *LookupClient) runPointLookups(ctx context.Context, groups map[int32][]lookupInput, results []LookupResult) {
-	var wait sync.WaitGroup
-	sem := make(chan struct{}, c.config.MaxConcurrent)
-	for bucket, inputs := range groups {
-		for start := 0; start < len(inputs); start += c.config.MaxBatchKeys {
-			chunk := lookupChunk(inputs, start, c.config.MaxBatchKeys)
-			wait.Add(1)
-			go func(bucket int32) {
-				defer wait.Done()
-				c.runPointChunk(ctx, sem, bucket, chunk, results)
-			}(bucket)
-		}
+func (c *LookupClient) runScheduler() {
+	scheduler := &lookupScheduler{
+		client: c, groups: make(map[lookupGroup][]*lookupTask),
+		timer: time.NewTimer(time.Hour),
 	}
-	wait.Wait()
+	if !scheduler.timer.Stop() {
+		<-scheduler.timer.C
+	}
+	for range c.config.MaxConcurrent {
+		scheduler.workers.Add(1)
+		go func() {
+			defer scheduler.workers.Done()
+			c.runLookupWorker()
+		}()
+	}
+	scheduler.run()
 }
 
-func (c *LookupClient) runPointChunk(
-	ctx context.Context,
-	sem chan struct{},
-	bucket int32,
-	chunk []lookupInput,
-	results []LookupResult,
-) {
-	if !acquireLookupSlot(ctx, sem) {
-		setPointErrors(chunk, results, ctx.Err())
-		return
+func (s *lookupScheduler) run() {
+	for {
+		select {
+		case task := <-s.client.queue:
+			if err := task.ctx.Err(); err != nil {
+				task.complete(rawLookupResult{err: err})
+				continue
+			}
+			group := lookupGroup{mode: task.mode, bucket: task.bucket}
+			s.groups[group] = append(s.groups[group], task)
+			if len(s.groups[group]) >= s.client.config.MaxBatchKeys ||
+				s.client.config.BatchDelay == 0 {
+				if !s.dispatchGroup(group) {
+					s.shutdown()
+					return
+				}
+			} else {
+				s.armTimer()
+			}
+		case <-s.timerC:
+			s.timerC = nil
+			for group := range s.groups {
+				if !s.dispatchGroup(group) {
+					s.shutdown()
+					return
+				}
+			}
+		case <-s.client.life.Done():
+			s.shutdown()
+			return
+		}
 	}
-	defer func() { <-sem }()
-	values, err := c.backend.lookup(ctx, lookupRequest{
-		path: c.path, bucket: bucket, tableID: c.tableID, partitionID: c.partitionID,
-		keys: encodedLookupInputs(chunk), insertIfNotExist: c.config.InsertIfNotExists,
-		timeout: c.config.Timeout, acks: c.config.Acks,
-	})
-	if err != nil {
-		setPointErrors(chunk, results, err)
-		return
+}
+
+func (s *lookupScheduler) armTimer() {
+	if s.timerC == nil {
+		s.timer.Reset(s.client.config.BatchDelay)
+		s.timerC = s.timer.C
 	}
-	for index, value := range values {
-		result := &results[chunk[index].index]
-		if value == nil {
-			result.Err = ErrNotFound
+}
+
+func (s *lookupScheduler) stopTimer() {
+	if s.timerC != nil && !s.timer.Stop() {
+		select {
+		case <-s.timer.C:
+		default:
+		}
+	}
+	s.timerC = nil
+}
+
+func (s *lookupScheduler) dispatchGroup(group lookupGroup) bool {
+	tasks := s.groups[group]
+	for len(tasks) != 0 {
+		count := s.client.config.MaxBatchKeys
+		if len(tasks) < count {
+			count = len(tasks)
+		}
+		batchTasks := append([]*lookupTask(nil), tasks[:count]...)
+		select {
+		case s.client.jobs <- lookupBatch{group: group, tasks: batchTasks}:
+			tasks = tasks[count:]
+		case <-s.client.life.Done():
+			completeLookupTasks(batchTasks, rawLookupResult{err: ErrClosed})
+			return false
+		}
+	}
+	delete(s.groups, group)
+	return true
+}
+
+func (s *lookupScheduler) shutdown() {
+	s.stopTimer()
+	for _, tasks := range s.groups {
+		completeLookupTasks(tasks, rawLookupResult{err: ErrClosed})
+	}
+	for {
+		select {
+		case task := <-s.client.queue:
+			task.complete(rawLookupResult{err: ErrClosed})
+		default:
+			close(s.client.jobs)
+			s.workers.Wait()
+			close(s.client.done)
+			return
+		}
+	}
+}
+
+func (c *LookupClient) runLookupWorker() {
+	for batch := range c.jobs {
+		active := batch.tasks[:0]
+		for _, task := range batch.tasks {
+			if err := task.ctx.Err(); err != nil {
+				task.complete(rawLookupResult{err: err})
+			} else {
+				active = append(active, task)
+			}
+		}
+		if len(active) == 0 {
 			continue
 		}
-		result.Row, result.Err = decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
-		result.Found = result.Err == nil
-	}
-}
-
-func (c *LookupClient) runPrefixLookups(
-	ctx context.Context,
-	groups map[int32][]lookupInput,
-	results []PrefixLookupResult,
-) {
-	var wait sync.WaitGroup
-	sem := make(chan struct{}, c.config.MaxConcurrent)
-	for bucket, inputs := range groups {
-		for start := 0; start < len(inputs); start += c.config.MaxBatchKeys {
-			chunk := lookupChunk(inputs, start, c.config.MaxBatchKeys)
-			wait.Add(1)
-			go func(bucket int32) {
-				defer wait.Done()
-				c.runPrefixChunk(ctx, sem, bucket, chunk, results)
-			}(bucket)
+		requestCtx, cancel := context.WithTimeout(c.life, c.config.Timeout)
+		if batch.group.mode == pointLookupMode {
+			values, err := c.runPointAttempts(requestCtx, batch.group.bucket, active)
+			completePointLookupBatch(active, values, err)
+		} else {
+			values, err := c.runPrefixAttempts(requestCtx, batch.group.bucket, active)
+			completePrefixLookupBatch(active, values, err)
 		}
+		cancel()
 	}
-	wait.Wait()
 }
 
-func (c *LookupClient) runPrefixChunk(
+func (c *LookupClient) runPointAttempts(
 	ctx context.Context,
-	sem chan struct{},
 	bucket int32,
-	chunk []lookupInput,
-	results []PrefixLookupResult,
-) {
-	if !acquireLookupSlot(ctx, sem) {
-		setPrefixErrors(chunk, results, ctx.Err())
-		return
-	}
-	defer func() { <-sem }()
-	values, err := c.backend.prefixLookup(ctx, c.path, bucket, c.tableID, c.partitionID, encodedLookupInputs(chunk))
-	if err != nil {
-		setPrefixErrors(chunk, results, err)
-		return
-	}
-	for index, rows := range values {
-		result := &results[chunk[index].index]
-		for _, value := range rows {
-			row, err := decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
-			if err != nil {
-				result.Err = err
-				break
-			}
-			result.Rows = append(result.Rows, row)
+	tasks []*lookupTask,
+) ([][]byte, error) {
+	return retryLookup(ctx, c.config.Retry, c.observer, c.config.InsertIfNotExists, func() ([][]byte, error) {
+		return c.backend.lookup(ctx, lookupRequest{
+			path: c.path, bucket: bucket, tableID: c.tableID, partitionID: c.partitionID,
+			keys: encodedLookupTasks(tasks), insertIfNotExist: c.config.InsertIfNotExists,
+			timeout: c.config.Timeout, acks: c.config.Acks,
+		})
+	})
+}
+
+func (c *LookupClient) runPrefixAttempts(
+	ctx context.Context,
+	bucket int32,
+	tasks []*lookupTask,
+) ([][][]byte, error) {
+	return retryLookup(ctx, c.config.Retry, c.observer, false, func() ([][][]byte, error) {
+		return c.backend.prefixLookup(
+			ctx, c.path, bucket, c.tableID, c.partitionID, encodedLookupTasks(tasks),
+		)
+	})
+}
+
+func retryLookup[T any](
+	ctx context.Context,
+	policy RetryPolicy,
+	observer MetricsObserver,
+	mutation bool,
+	call func() (T, error),
+) (T, error) {
+	var zero T
+	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
+		value, err := call()
+		if err == nil {
+			return value, nil
+		}
+		if mutation || attempt == policy.MaxAttempts || !writerRetryable(err) || ctx.Err() != nil {
+			return zero, err
+		}
+		observeMetric(observer, MetricEvent{
+			Kind: MetricRetry, Operation: MetricOperationLookup, Attempt: attempt + 1,
+			Failed: true, ErrorClass: metricErrorClass(err),
+		})
+		delay := time.Duration(0)
+		if policy.Backoff != nil {
+			delay = policy.Backoff(attempt + 1)
+		}
+		if err := waitContext(ctx, delay); err != nil {
+			return zero, err
 		}
 	}
+	return zero, fmt.Errorf("%w: unreachable lookup retry loop", ErrValidation)
 }
 
-func lookupChunk(inputs []lookupInput, start, maximum int) []lookupInput {
-	end := start + maximum
-	if end > len(inputs) {
-		end = len(inputs)
-	}
-	return append([]lookupInput(nil), inputs[start:end]...)
-}
-
-func acquireLookupSlot(ctx context.Context, sem chan struct{}) bool {
-	select {
-	case sem <- struct{}{}:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}
-
-func encodedLookupInputs(inputs []lookupInput) [][]byte {
-	encoded := make([][]byte, len(inputs))
-	for index := range inputs {
-		encoded[index] = inputs[index].encoded
+func encodedLookupTasks(tasks []*lookupTask) [][]byte {
+	encoded := make([][]byte, len(tasks))
+	for index, task := range tasks {
+		encoded[index] = task.encoded
 	}
 	return encoded
+}
+
+func completeLookupTasks(tasks []*lookupTask, result rawLookupResult) {
+	for _, task := range tasks {
+		task.complete(result)
+	}
+}
+
+func completePointLookupBatch(tasks []*lookupTask, values [][]byte, err error) {
+	if err != nil {
+		completeLookupTasks(tasks, rawLookupResult{err: err})
+		return
+	}
+	if len(values) != len(tasks) {
+		completeLookupTasks(tasks, rawLookupResult{
+			err: fmt.Errorf(
+				"%w: lookup returned %d values for %d keys",
+				ErrValidation, len(values), len(tasks),
+			),
+		})
+		return
+	}
+	for index, task := range tasks {
+		task.complete(rawLookupResult{value: values[index]})
+	}
+}
+
+func completePrefixLookupBatch(tasks []*lookupTask, values [][][]byte, err error) {
+	if err != nil {
+		completeLookupTasks(tasks, rawLookupResult{err: err})
+		return
+	}
+	if len(values) != len(tasks) {
+		completeLookupTasks(tasks, rawLookupResult{
+			err: fmt.Errorf(
+				"%w: prefix lookup returned %d lists for %d keys",
+				ErrValidation, len(values), len(tasks),
+			),
+		})
+		return
+	}
+	for index, task := range tasks {
+		task.complete(rawLookupResult{rows: values[index]})
+	}
 }
 
 func decodeLookupValue(table Table, value []byte) (Row, error) {
@@ -628,18 +927,6 @@ func decodeLookupValueWithResolver(
 	return evolveRow(schema, table.Schema, row)
 }
 
-func setPointErrors(inputs []lookupInput, results []LookupResult, err error) {
-	for _, input := range inputs {
-		results[input.index].Err = err
-	}
-}
-
-func setPrefixErrors(inputs []lookupInput, results []PrefixLookupResult, err error) {
-	for _, input := range inputs {
-		results[input.index].Err = err
-	}
-}
-
 // Close cancels active requests and rejects new lookups.
 // Close is idempotent.
 func (c *LookupClient) Close() error {
@@ -649,5 +936,6 @@ func (c *LookupClient) Close() error {
 		c.cancel()
 	}
 	c.mu.Unlock()
+	<-c.done
 	return nil
 }

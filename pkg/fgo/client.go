@@ -582,11 +582,14 @@ func min(left, right int32) int32 {
 }
 
 func shouldReplaceConnection(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if err == nil {
 		return false
 	}
 	if errors.Is(err, ErrClosed) || errors.Is(err, transport.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
 		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
 	}
 	var networkError net.Error
 	return errors.As(err, &networkError)

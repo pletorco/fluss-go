@@ -1,8 +1,11 @@
 package fgo
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,6 +19,140 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type controlledRemoteStreamReader struct {
+	mu        sync.Mutex
+	objects   map[string][]byte
+	releases  map[string]<-chan struct{}
+	entered   map[string]chan struct{}
+	completed map[string]chan struct{}
+	requests  []RemoteFileRequest
+	active    int
+	maxActive int
+	closed    int
+}
+
+func (r *controlledRemoteStreamReader) ReadRemoteFile(
+	context.Context,
+	RemoteFileRequest,
+) ([]byte, error) {
+	return nil, errors.New("complete-object path used")
+}
+
+func (r *controlledRemoteStreamReader) OpenRemoteFile(
+	ctx context.Context,
+	request RemoteFileRequest,
+) (io.ReadCloser, error) {
+	r.mu.Lock()
+	object, ok := r.objects[request.Path]
+	if !ok {
+		r.mu.Unlock()
+		return nil, os.ErrNotExist
+	}
+	end := request.Offset + request.Length
+	if request.Offset < 0 || request.Length < 0 || end > int64(len(object)) {
+		r.mu.Unlock()
+		return nil, fmt.Errorf("%w: test range", ErrValidation)
+	}
+	data := append([]byte(nil), object[request.Offset:end]...)
+	r.requests = append(r.requests, request)
+	r.active++
+	if r.active > r.maxActive {
+		r.maxActive = r.active
+	}
+	release := r.releases[request.Path]
+	entered := r.entered[request.Path]
+	completed := r.completed[request.Path]
+	r.mu.Unlock()
+	if entered != nil {
+		close(entered)
+	}
+	return &controlledReadCloser{
+		ctx: ctx, reader: bytes.NewReader(data), release: release,
+		close: func() {
+			r.mu.Lock()
+			r.active--
+			r.closed++
+			r.mu.Unlock()
+			if completed != nil {
+				close(completed)
+			}
+		},
+	}, nil
+}
+
+type controlledReadCloser struct {
+	ctx     context.Context
+	reader  *bytes.Reader
+	release <-chan struct{}
+	close   func()
+	once    sync.Once
+	waited  bool
+}
+
+type benchmarkRemoteStreamReader struct {
+	objects map[string][]byte
+	delay   time.Duration
+}
+
+func (benchmarkRemoteStreamReader) ReadRemoteFile(
+	context.Context,
+	RemoteFileRequest,
+) ([]byte, error) {
+	return nil, errors.New("complete-object path used")
+}
+
+func (r benchmarkRemoteStreamReader) OpenRemoteFile(
+	ctx context.Context,
+	request RemoteFileRequest,
+) (io.ReadCloser, error) {
+	object := r.objects[request.Path]
+	end := request.Offset + request.Length
+	return &delayedReadCloser{
+		ctx:  ctx,
+		data: bytes.NewReader(object[request.Offset:end]), delay: r.delay,
+	}, nil
+}
+
+type delayedReadCloser struct {
+	ctx     context.Context
+	data    *bytes.Reader
+	delay   time.Duration
+	delayed bool
+}
+
+func (r *delayedReadCloser) Read(destination []byte) (int, error) {
+	if !r.delayed && r.delay > 0 {
+		r.delayed = true
+		timer := time.NewTimer(r.delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-r.ctx.Done():
+			return 0, r.ctx.Err()
+		}
+	}
+	return r.data.Read(destination)
+}
+
+func (*delayedReadCloser) Close() error { return nil }
+
+func (r *controlledReadCloser) Read(destination []byte) (int, error) {
+	if !r.waited && r.release != nil {
+		r.waited = true
+		select {
+		case <-r.release:
+		case <-r.ctx.Done():
+			return 0, r.ctx.Err()
+		}
+	}
+	return r.reader.Read(destination)
+}
+
+func (r *controlledReadCloser) Close() error {
+	r.once.Do(r.close)
+	return nil
+}
+
 func TestLocalRemoteFileReader(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "segment.log")
 	if err := os.WriteFile(path, []byte("segment"), 0o600); err != nil {
@@ -23,7 +160,9 @@ func TestLocalRemoteFileReader(t *testing.T) {
 	}
 	reader := LocalRemoteFileReader{}
 	for _, remotePath := range []string{path, "file://" + path} {
-		data, err := reader.ReadRemoteFile(context.Background(), RemoteFileRequest{Path: remotePath})
+		data, err := reader.ReadRemoteFile(context.Background(), RemoteFileRequest{
+			Path: remotePath, ExpectedSize: 7, MaxBytes: 7,
+		})
 		if err != nil || string(data) != "segment" {
 			t.Fatalf("ReadRemoteFile(%q) = %q, %v", remotePath, data, err)
 		}
@@ -43,6 +182,46 @@ func TestLocalRemoteFileReader(t *testing.T) {
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("remote file host error = %v", err)
 	}
+	for _, request := range []RemoteFileRequest{
+		{Path: "relative.log"},
+		{Path: "file:relative.log"},
+		{Path: "file://" + path + "?query=1"},
+		{Path: path, ExpectedSize: 8, MaxBytes: 8},
+		{Path: path, ExpectedSize: 7, MaxBytes: 6},
+		{Path: path, ExpectedSize: -1},
+	} {
+		if _, err := reader.ReadRemoteFile(
+			context.Background(), request,
+		); !errors.Is(err, ErrInvalidConfig) && !errors.Is(err, ErrValidation) {
+			t.Fatalf("ReadRemoteFile(%#v) error = %v", request, err)
+		}
+	}
+	if _, err := reader.ReadRemoteFile(
+		context.Background(), RemoteFileRequest{Path: path, MaxBytes: 6},
+	); !errors.Is(err, ErrValidation) {
+		t.Fatalf("oversized read error = %v", err)
+	}
+}
+
+func TestLocalRemoteFileReaderStreamsExactRange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "range.bin")
+	if err := os.WriteFile(path, []byte("0123456789"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := (LocalRemoteFileReader{}).OpenRemoteFile(
+		context.Background(),
+		RemoteFileRequest{
+			Path: path, ExpectedSize: 10, MaxBytes: 4, Offset: 3, Length: 4,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(stream)
+	closeErr := stream.Close()
+	if err != nil || closeErr != nil || string(data) != "3456" {
+		t.Fatalf("streamed range = %q, %v, close=%v", data, err, closeErr)
+	}
 }
 
 func TestRemoteFileSettingsValidation(t *testing.T) {
@@ -57,7 +236,9 @@ func TestRemoteFileSettingsValidation(t *testing.T) {
 		config.remoteFiles.config.RetryBackoff != 50*time.Millisecond ||
 		config.remoteFiles.config.MaxFileBytes != 256<<20 ||
 		config.remoteFiles.config.MaxTotalBytes != 512<<20 ||
-		config.remoteFiles.config.MaxFiles != 4096 {
+		config.remoteFiles.config.MaxFiles != 4096 ||
+		config.remoteFiles.config.MaxConcurrentReads != 4 ||
+		config.remoteFiles.config.MaxConcurrentBytes != 256<<20 {
 		t.Fatalf("defaults = %#v", config.remoteFiles.config)
 	}
 	for _, settings := range []RemoteFileReadConfig{
@@ -68,6 +249,9 @@ func TestRemoteFileSettingsValidation(t *testing.T) {
 		{MaxAttempts: 1, MaxTotalBytes: -1},
 		{MaxAttempts: 1, MaxFiles: -1},
 		{MaxAttempts: 1, MaxFiles: 1_000_001},
+		{MaxAttempts: 1, MaxConcurrentReads: -1},
+		{MaxAttempts: 1, MaxConcurrentReads: 1025},
+		{MaxAttempts: 1, MaxConcurrentBytes: -1},
 	} {
 		if err := WithRemoteFileReader(reader, settings)(&config); !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("settings %#v error = %v", settings, err)
@@ -178,13 +362,198 @@ func TestReadRemoteLogSegmentsOrdersSlicesAndRetries(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(paths) != 3 || !strings.Contains(paths[0], "first/00000000000000000000.log") ||
-		!strings.Contains(paths[2], "second/00000000000000000010.log") {
+	firstCalls, secondCalls := countRemoteLogPaths(paths)
+	if len(paths) != 3 || firstCalls == 0 || secondCalls == 0 {
 		t.Fatalf("paths = %#v", paths)
 	}
-	if events := observer.snapshot(); len(events) != 3 ||
-		events[0].Kind != MetricRemoteIO || !events[0].Failed || events[2].Bytes != 6 {
+	events := observer.snapshot()
+	failures, bytesRead := summarizeRemoteMetrics(events)
+	if len(events) != 3 || failures != 1 || bytesRead != 11 {
 		t.Fatalf("remote metrics = %#v", events)
+	}
+}
+
+func countRemoteLogPaths(paths []string) (int, int) {
+	first, second := 0, 0
+	for _, path := range paths {
+		if strings.Contains(path, "first/00000000000000000000.log") {
+			first++
+		}
+		if strings.Contains(path, "second/00000000000000000010.log") {
+			second++
+		}
+	}
+	return first, second
+}
+
+func summarizeRemoteMetrics(events []MetricEvent) (int, int64) {
+	failures, bytesRead := 0, int64(0)
+	for _, event := range events {
+		if event.Failed {
+			failures++
+			continue
+		}
+		bytesRead += event.Bytes
+	}
+	return failures, bytesRead
+}
+
+func TestReadRemoteLogSegmentsPrefetchesRangesAndPreservesOrder(t *testing.T) {
+	firstPath := "/remote/first/00000000000000000000.log"
+	secondPath := "/remote/second/00000000000000000001.log"
+	firstRelease, secondRelease := make(chan struct{}), make(chan struct{})
+	reader := &controlledRemoteStreamReader{
+		objects: map[string][]byte{
+			firstPath:  []byte("xxAAAA"),
+			secondPath: []byte("BBBB"),
+		},
+		releases: map[string]<-chan struct{}{
+			firstPath: firstRelease, secondPath: secondRelease,
+		},
+		entered: map[string]chan struct{}{
+			firstPath: make(chan struct{}), secondPath: make(chan struct{}),
+		},
+		completed: map[string]chan struct{}{
+			firstPath: make(chan struct{}), secondPath: make(chan struct{}),
+		},
+	}
+	info := RemoteLogFetchInfo{
+		TabletDirectory: "/remote", FirstStartPosition: 2,
+		Segments: []RemoteLogSegment{
+			{ID: "first", StartOffset: 0, EndOffset: 1, SizeBytes: 6},
+			{ID: "second", StartOffset: 1, EndOffset: 2, SizeBytes: 4},
+		},
+	}
+	result := make(chan struct {
+		data []byte
+		err  error
+	}, 1)
+	go func() {
+		data, err := readRemoteLogSegments(
+			context.Background(),
+			remoteFileSettings{
+				reader: reader,
+				config: RemoteFileReadConfig{
+					MaxAttempts: 1, MaxFileBytes: 6, MaxTotalBytes: 8,
+					MaxFiles: 2, MaxConcurrentReads: 2, MaxConcurrentBytes: 8,
+				},
+			},
+			info, nil, nil,
+		)
+		result <- struct {
+			data []byte
+			err  error
+		}{data, err}
+	}()
+	<-reader.entered[firstPath]
+	<-reader.entered[secondPath]
+	close(secondRelease)
+	<-reader.completed[secondPath]
+	select {
+	case <-result:
+		t.Fatal("ordered result completed before first range")
+	default:
+	}
+	close(firstRelease)
+	got := <-result
+	if got.err != nil || string(got.data) != "AAAABBBB" {
+		t.Fatalf("prefetched log = %q, %v", got.data, got.err)
+	}
+	reader.mu.Lock()
+	defer reader.mu.Unlock()
+	requests := make(map[string]RemoteFileRequest, len(reader.requests))
+	for _, request := range reader.requests {
+		requests[request.Path] = request
+	}
+	if reader.maxActive != 2 || reader.closed != 2 ||
+		len(reader.requests) != 2 ||
+		requests[firstPath].Offset != 2 || requests[firstPath].Length != 4 ||
+		requests[secondPath].Offset != 0 || requests[secondPath].Length != 4 {
+		t.Fatalf(
+			"stream state: active=%d closed=%d requests=%#v",
+			reader.maxActive, reader.closed, reader.requests,
+		)
+	}
+}
+
+func TestRemotePrefetchCancellationClosesStreams(t *testing.T) {
+	paths := []string{
+		"/remote/first/00000000000000000000.log",
+		"/remote/second/00000000000000000001.log",
+	}
+	reader := &controlledRemoteStreamReader{
+		objects: map[string][]byte{paths[0]: []byte("AAAA"), paths[1]: []byte("BBBB")},
+		releases: map[string]<-chan struct{}{
+			paths[0]: make(chan struct{}), paths[1]: make(chan struct{}),
+		},
+		entered: map[string]chan struct{}{
+			paths[0]: make(chan struct{}), paths[1]: make(chan struct{}),
+		},
+		completed: map[string]chan struct{}{
+			paths[0]: make(chan struct{}), paths[1]: make(chan struct{}),
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := readRemoteLogSegments(
+			ctx,
+			remoteFileSettings{
+				reader: reader,
+				config: RemoteFileReadConfig{
+					MaxAttempts: 1, MaxFileBytes: 4, MaxTotalBytes: 8,
+					MaxFiles: 2, MaxConcurrentReads: 2, MaxConcurrentBytes: 8,
+				},
+			},
+			RemoteLogFetchInfo{
+				TabletDirectory: "/remote",
+				Segments: []RemoteLogSegment{
+					{ID: "first", StartOffset: 0, EndOffset: 1, SizeBytes: 4},
+					{ID: "second", StartOffset: 1, EndOffset: 2, SizeBytes: 4},
+				},
+			},
+			nil, nil,
+		)
+		done <- err
+	}()
+	<-reader.entered[paths[0]]
+	<-reader.entered[paths[1]]
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled prefetch error = %v", err)
+	}
+	reader.mu.Lock()
+	defer reader.mu.Unlock()
+	if reader.active != 0 || reader.closed != 2 {
+		t.Fatalf("stream cleanup: active=%d closed=%d", reader.active, reader.closed)
+	}
+}
+
+func TestRemotePrefetchRejectsConcurrentByteLimitBeforeReading(t *testing.T) {
+	var calls atomic.Int32
+	reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+		calls.Add(1)
+		return []byte("data"), nil
+	})
+	_, err := readRemoteLogSegments(
+		context.Background(),
+		remoteFileSettings{
+			reader: reader,
+			config: RemoteFileReadConfig{
+				MaxAttempts: 1, MaxFileBytes: 4, MaxTotalBytes: 4,
+				MaxFiles: 1, MaxConcurrentReads: 1, MaxConcurrentBytes: 3,
+			},
+		},
+		RemoteLogFetchInfo{
+			TabletDirectory: "/remote",
+			Segments: []RemoteLogSegment{{
+				ID: "one", StartOffset: 0, EndOffset: 1, SizeBytes: 4,
+			}},
+		},
+		nil, nil,
+	)
+	if !errors.Is(err, ErrValidation) || calls.Load() != 0 {
+		t.Fatalf("concurrent byte limit = %v, calls=%d", err, calls.Load())
 	}
 }
 
@@ -374,6 +743,71 @@ func TestRemoteSnapshotBatchProviderDownloadsAndDecodes(t *testing.T) {
 	}
 }
 
+func TestRemoteSnapshotProviderPrefetchesAndPreservesFileOrder(t *testing.T) {
+	oneRelease, twoRelease := make(chan struct{}), make(chan struct{})
+	reader := &controlledRemoteStreamReader{
+		objects: map[string][]byte{"one": []byte("111"), "two": []byte("222")},
+		releases: map[string]<-chan struct{}{
+			"one": oneRelease, "two": twoRelease,
+		},
+		entered: map[string]chan struct{}{
+			"one": make(chan struct{}), "two": make(chan struct{}),
+		},
+		completed: map[string]chan struct{}{
+			"one": make(chan struct{}), "two": make(chan struct{}),
+		},
+	}
+	resolver := RemoteSnapshotResolverFunc(func(
+		context.Context,
+		SnapshotBatchRequest,
+	) ([]RemoteSnapshotFile, error) {
+		return []RemoteSnapshotFile{{Path: "one", Size: 3}, {Path: "two", Size: 3}}, nil
+	})
+	decoded := make(chan []string, 1)
+	decoder := RemoteSnapshotDecoderFunc(func(
+		_ context.Context,
+		_ SnapshotBatchRequest,
+		files []RemoteSnapshotFile,
+	) (SnapshotBatchReader, error) {
+		decoded <- []string{string(files[0].Data), string(files[1].Data)}
+		return &fakeSnapshotBatchReader{}, nil
+	})
+	provider, err := NewRemoteSnapshotBatchProvider(
+		reader,
+		RemoteFileReadConfig{
+			MaxAttempts: 1, MaxFileBytes: 3, MaxTotalBytes: 6,
+			MaxFiles: 2, MaxConcurrentReads: 2, MaxConcurrentBytes: 6,
+		},
+		resolver, decoder, nil, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := provider.OpenSnapshot(
+			context.Background(), SnapshotBatchRequest{SnapshotID: 1},
+		)
+		done <- err
+	}()
+	<-reader.entered["one"]
+	<-reader.entered["two"]
+	close(twoRelease)
+	<-reader.completed["two"]
+	close(oneRelease)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if files := <-decoded; files[0] != "111" || files[1] != "222" {
+		t.Fatalf("decoded file order = %#v", files)
+	}
+	reader.mu.Lock()
+	defer reader.mu.Unlock()
+	if reader.maxActive != 2 || reader.closed != 2 {
+		t.Fatalf("snapshot streams: max=%d closed=%d", reader.maxActive, reader.closed)
+	}
+}
+
 func TestRemoteSnapshotBatchProviderValidation(t *testing.T) {
 	reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
 		return []byte{1}, nil
@@ -482,7 +916,10 @@ func TestRemoteReadRetriesOnlyTemporaryFailures(t *testing.T) {
 	})
 	t.Run("temporary", func(t *testing.T) {
 		var calls atomic.Int32
-		reader := RemoteFileReaderFunc(func(context.Context, RemoteFileRequest) ([]byte, error) {
+		reader := RemoteFileReaderFunc(func(_ context.Context, request RemoteFileRequest) ([]byte, error) {
+			if request.MaxBytes != settings.MaxFileBytes {
+				t.Fatalf("request MaxBytes = %d", request.MaxBytes)
+			}
 			if calls.Add(1) < 3 {
 				return nil, temporaryRemoteError{temporary: true}
 			}
@@ -525,5 +962,44 @@ func BenchmarkReadRemoteLogSegments(b *testing.B) {
 		); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func BenchmarkReadRemoteLogStreaming(b *testing.B) {
+	const segmentSize = 1024
+	segments := make([]RemoteLogSegment, 8)
+	objects := make(map[string][]byte, len(segments))
+	for index := range segments {
+		segments[index] = RemoteLogSegment{
+			ID: string(rune('a' + index)), StartOffset: int64(index),
+			EndOffset: int64(index + 1), SizeBytes: segmentSize,
+		}
+		path := remoteLogSegmentPath("/remote", segments[index])
+		objects[path] = make([]byte, segmentSize)
+	}
+	info := RemoteLogFetchInfo{TabletDirectory: "/remote", Segments: segments}
+	for _, concurrency := range []int{1, 4} {
+		b.Run(fmt.Sprintf("prefetch_%d", concurrency), func(b *testing.B) {
+			reader := benchmarkRemoteStreamReader{
+				objects: objects, delay: 100 * time.Microsecond,
+			}
+			settings := remoteFileSettings{
+				reader: reader,
+				config: RemoteFileReadConfig{
+					MaxAttempts: 1, MaxFileBytes: segmentSize,
+					MaxTotalBytes: segmentSize * int64(len(segments)),
+					MaxFiles:      len(segments), MaxConcurrentReads: concurrency,
+					MaxConcurrentBytes: segmentSize * int64(concurrency),
+				},
+			}
+			b.ReportAllocs()
+			for range b.N {
+				if _, err := readRemoteLogSegments(
+					context.Background(), settings, info, nil, nil,
+				); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

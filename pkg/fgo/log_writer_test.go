@@ -1,6 +1,7 @@
 package fgo
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math"
@@ -36,6 +37,7 @@ type fakeLogWriterBackend struct {
 	metadataErr error
 	initErr     error
 	produceErr  error
+	produceErrs []error
 	block       <-chan struct{}
 	calls       []producedLog
 }
@@ -65,6 +67,13 @@ func (b *fakeLogWriterBackend) produce(
 		path: input.path, bucket: input.bucket, tableID: input.tableID, partitionID: input.partitionID,
 		records: append([]byte(nil), input.records...), timeout: input.timeout, acks: input.acks,
 	})
+	if len(b.produceErrs) != 0 {
+		err := b.produceErrs[0]
+		b.produceErrs = b.produceErrs[1:]
+		if err != nil {
+			return 0, err
+		}
+	}
 	if b.produceErr != nil {
 		return 0, b.produceErr
 	}
@@ -269,6 +278,39 @@ func TestLogWriterFailurePoisonsOnlyBucket(t *testing.T) {
 	_ = writer.Close(context.Background())
 	if calls := backend.produced(); len(calls) != 1 {
 		t.Fatalf("produce calls = %d, want 1", len(calls))
+	}
+}
+
+func TestLogWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
+	backend := logBackend(0)
+	backend.produceErrs = []error{
+		responseServerError(
+			int32(fmsg.ErrorCodeNetworkException), "retry", fmsg.APIKeyProduceLog,
+		),
+		nil,
+	}
+	writer, err := newLogWriter(
+		context.Background(), backend, logWriterTable(), WithLogLinger(0),
+		WithLogRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := writer.Append(context.Background(), Row{int32(1), "one"}).
+		Await(context.Background())
+	if result.Err != nil || !result.OffsetKnown {
+		t.Fatalf("retried append = %#v", result)
+	}
+	calls := backend.produced()
+	if len(calls) != 2 || !bytes.Equal(calls[0].records, calls[1].records) {
+		t.Fatalf("produce attempts = %#v", calls)
+	}
+	first, err := DecodeLogBatchRows(logWriterTable().Schema, calls[0].records, true)
+	if err != nil || first.WriterID != 42 || first.BatchSequence != 0 {
+		t.Fatalf("retried batch = %#v, %v", first, err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

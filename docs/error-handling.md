@@ -51,16 +51,28 @@ and schema metadata, partition listing, table statistics, and offset
 resolution. The initial call counts toward `MaxAttempts`, backoff observes the
 caller context, and cancellation stops further attempts.
 
-Point and prefix lookups, log fetches, and all mutations are not automatically
-retried by this policy. Bucket requests may invalidate stale metadata and
+Point and prefix lookups, log fetches, and mutations are not retried by this
+client-wide policy. `LookupClient` has a separate bounded read-only policy;
+insert-if-not-exists rejects more than one attempt. Bucket requests may
+invalidate stale metadata and
 reroute once after a server metadata error. The metadata response indicates
 that the addressed server could not perform the operation; this is separate
 from retrying an ambiguous transport failure.
 
-Do not wrap a mutation in a generic retry loop merely because its
-`ServerError` is marked retriable. Use a server-provided idempotency contract,
-an application idempotency key, or explicit reconciliation before repeating
-it.
+Log and KV writers have a separate, default-disabled retry policy configured
+with `WithLogRetryPolicy` or `WithKVRetryPolicy`. More than one attempt requires
+`acks=-1`. A retry reuses the exact encoded bytes, writer ID, and per-bucket
+sequence, is bounded by the original request timeout, and occurs only for
+typed retriable server errors or connection failures. A duplicate-sequence
+response proves that the batch was already accepted and completes the future
+successfully; `WriteResult.OffsetKnown` is false when that response omitted the
+assigned offset.
+
+Out-of-order sequence and unknown-writer errors are not replayed. The affected
+bucket is poisoned because allocating a new writer ID while other buckets are
+active cannot safely preserve their sequence state. Reconcile the failed
+records and create a new writer. Do not add a generic mutation retry loop
+around this behavior.
 
 ## Writer failures and uncertain outcomes
 
@@ -69,7 +81,7 @@ it.
 mutation that the writer may already have sent. Await the same future again
 with a live context when the application can continue waiting.
 
-When a batch fails, its futures receive the original error and the writer
+When a non-recoverable batch fails, its futures receive the original error and the writer
 conservatively poisons that bucket. Later mutations routed to the same bucket
 match `ErrWriterState`; other buckets in the same writer remain independent.
 Do not automatically replay the uncertain records:

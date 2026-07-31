@@ -276,6 +276,8 @@ type fakeSnapshotBatchReader struct {
 	batches     [][]Row
 	eofWithLast bool
 	block       bool
+	entered     chan struct{}
+	enterOnce   sync.Once
 	closed      atomic.Int32
 	readErr     error
 	closeErr    error
@@ -283,6 +285,9 @@ type fakeSnapshotBatchReader struct {
 
 func (r *fakeSnapshotBatchReader) ReadBatch(ctx context.Context, _ int) ([]Row, error) {
 	if r.block {
+		if r.entered != nil {
+			r.enterOnce.Do(func() { close(r.entered) })
+		}
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
@@ -420,7 +425,8 @@ func assertSnapshotEOFCase(t *testing.T, table Table, test snapshotEOFCase) {
 
 func TestSnapshotBatchScannerCloseUnblocksPoll(t *testing.T) {
 	table := kvWriterTable()
-	reader := &fakeSnapshotBatchReader{block: true}
+	entered := make(chan struct{})
+	reader := &fakeSnapshotBatchReader{block: true, entered: entered}
 	scanner, err := newBatchScanner(
 		context.Background(), nil, reader, table, testTableBucket(table),
 	)
@@ -432,7 +438,7 @@ func TestSnapshotBatchScannerCloseUnblocksPoll(t *testing.T) {
 		_, err := scanner.Poll(context.Background())
 		polled <- err
 	}()
-	time.Sleep(10 * time.Millisecond)
+	<-entered
 	if err := scanner.Close(); err != nil {
 		t.Fatal(err)
 	}

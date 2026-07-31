@@ -901,6 +901,27 @@ func (c *Client) AcquireKVSnapshotLease(
 	return leasesFromMessage(acquired.GetUnavailableSnapshots()), nil
 }
 
+// RenewKVSnapshotLease extends an existing lease for duration. Fluss identifies
+// the lease by leaseID; no snapshot identities are required for renewal.
+func (c *Client) RenewKVSnapshotLease(
+	ctx context.Context,
+	leaseID string,
+	duration time.Duration,
+) error {
+	if leaseID == "" || duration <= 0 {
+		return fmt.Errorf("%w: lease ID and positive duration are required", fgo.ErrInvalidConfig)
+	}
+	request, err := fmsg.NewRequest(fmsg.APIKeyAcquireKvSnapshotLease, 0)
+	if err != nil {
+		return err
+	}
+	message := request.Message().(*fmsg.AcquireKvSnapshotLeaseRequest)
+	message.LeaseId = proto.String(leaseID)
+	message.LeaseDurationMs = proto.Int64(duration.Milliseconds())
+	_, err = c.requester.RequestCoordinator(ctx, request)
+	return err
+}
+
 // ReleaseKVSnapshotLease releases selected buckets from leaseID.
 func (c *Client) ReleaseKVSnapshotLease(ctx context.Context, leaseID string, buckets []fgo.TableBucket) error {
 	if leaseID == "" || len(buckets) == 0 {

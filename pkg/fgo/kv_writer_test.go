@@ -1,6 +1,7 @@
 package fgo
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -31,6 +32,7 @@ type fakeKVWriterBackend struct {
 	metadataErr error
 	initErr     error
 	putErr      error
+	putErrs     []error
 	block       <-chan struct{}
 	calls       []putKVCall
 }
@@ -61,6 +63,13 @@ func (b *fakeKVWriterBackend) put(
 		targets: append([]int32(nil), input.targets...), records: append([]byte(nil), input.records...),
 		timeout: input.timeout, acks: input.acks, mergeMode: input.mergeMode,
 	})
+	if len(b.putErrs) != 0 {
+		err := b.putErrs[0]
+		b.putErrs = b.putErrs[1:]
+		if err != nil {
+			return 0, err
+		}
+	}
 	if b.putErr != nil {
 		return 0, b.putErr
 	}
@@ -126,6 +135,39 @@ func TestKVWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
 	row, err := DecodeCompactedRow(table.Schema, firstBatch.Records[0].Value)
 	if err != nil || row[1] != "one" {
 		t.Fatalf("upsert value = %#v, %v", row, err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKVWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
+	backend := kvBackend(0)
+	backend.putErrs = []error{
+		responseServerError(
+			int32(fmsg.ErrorCodeRequestTimeOut), "retry", fmsg.APIKeyPutKv,
+		),
+		nil,
+	}
+	writer, err := newKVWriter(
+		context.Background(), backend, kvWriterTable(), WithKVLinger(0),
+		WithKVRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := writer.Upsert(context.Background(), Row{int32(1), "one", nil}).
+		Await(context.Background())
+	if result.Err != nil || !result.OffsetKnown {
+		t.Fatalf("retried upsert = %#v", result)
+	}
+	calls := backend.putCalls()
+	if len(calls) != 2 || !bytes.Equal(calls[0].records, calls[1].records) {
+		t.Fatalf("put attempts = %#v", calls)
+	}
+	first, err := DecodeKVBatch(calls[0].records)
+	if err != nil || first.WriterID != 99 || first.BatchSequence != 0 {
+		t.Fatalf("retried batch = %#v, %v", first, err)
 	}
 	if err := writer.Close(context.Background()); err != nil {
 		t.Fatal(err)

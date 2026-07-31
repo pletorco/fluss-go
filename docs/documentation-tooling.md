@@ -2,7 +2,8 @@
 
 `task docs:check` is the repository's deterministic documentation gate. It
 checks public Go declarations, pkg.go.dev examples, repository-local Markdown
-links and anchors, and every user-facing Go code fence.
+links and anchors, documented Task commands, and every user-facing Go code
+fence.
 
 ## Tool selection
 
@@ -31,6 +32,13 @@ release and license, run `go get github.com/yuin/goldmark@<version>` followed by
 `go mod tidy`, then run `task ci` and the security gates. No separate executable
 or checksum is required.
 
+Task names are read structurally from `Taskfile.yml` with `gopkg.in/yaml.v3`
+v3.0.1, which was already present in the module graph before the documentation
+checker imported it directly. The parser is maintained under MIT and
+Apache-2.0 terms, does not execute Task commands, and avoids maintaining a
+partial YAML parser. Trivy and govulncheck inspect it with the rest of the Go
+module graph.
+
 ## Local links
 
 `cmd/mdcheck` parses Markdown with goldmark and validates relative links,
@@ -54,6 +62,15 @@ these reviewed exclusions:
 
 The CI command scans the repository root, so a new handwritten Markdown file is
 included automatically.
+
+## Task commands
+
+Inline code and `sh`, `bash`, `shell`, or `console` fences are checked for
+`task <name>` commands. Each referenced name must be a top-level task in
+`Taskfile.yml`; shell comments are ignored. This catches renamed or removed
+commands without executing documentation. Free prose and non-shell code are
+not interpreted as commands, and Task variables or dynamically included
+Taskfiles are outside the current repository policy.
 
 ## Go snippets
 

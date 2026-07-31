@@ -69,7 +69,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | --- | --- | --- |
 | `fmsg` public API registry and protobuf messages | Implemented | Generated from the pinned Fluss 0.9.1 protocol; includes API/version and server-error registries. |
 | Protocol framing and request correlation | Implemented | [`internal/transport`](internal/transport) has bounded framing, context-aware writes, exactly-once completion, cancellation, and protocol tests. |
-| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, bounds retries to safe reads, and supports bounded-cardinality `MetricsObserver` events. |
+| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, bounds retries to safe reads, and supports bounded-cardinality `MetricsObserver` events with an optional OpenTelemetry API adapter. |
 | Coordinator/tablet metadata and partition routing | Implemented | Metadata refreshes are coalesced, stale leaders are rerouted once, `ResolveTableBuckets` returns stable bucket snapshots, and opt-in dynamic partition creation supports partitioned writers. |
 | Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables, load authoritative schemas through `OpenTable`, and resolve historical record schemas through a bounded client cache. |
 | Arrow schema and record batches | Supported | Full Fluss logical schema conversion plus v0/v1 Arrow log batches with NONE, LZ4, and ZSTD IPC compression; decoded records use explicit `Release` ownership. |
@@ -78,12 +78,12 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Log scanners | Supported | `LogScanner` provides explicit/earliest/latest/timestamp subscriptions, schema-aware projection, row limits, exclusive stopping offsets, remote-log merging, `Wakeup`, partial bucket errors, and row or Arrow polling. |
 | Current-state and snapshot batch scans | Supported | `ResolveTableBuckets`, `NewBatchScanner`, and `NewSnapshotBatchScanner` provide bounded current-state and pluggable immutable snapshot reads with projection and explicit result ownership. |
 | Primary-key writers | Supported | `KVWriter` provides full and projected upsert, delete, Fluss hash routing, merge-engine or overwrite modes, idempotent per-bucket sequences, bounded batching and per-bucket concurrency, partial results, and deterministic lifecycle operations. |
-| Point and prefix lookups | Supported | `LookupClient` validates and batches keys by bucket, preserves input association, resolves compatible historical schemas, distinguishes not-found results, bounds concurrency, supports leading-key prefixes, and can atomically insert missing rows. |
+| Point and prefix lookups | Supported | `LookupClient` validates keys, batches compatible concurrent calls by bucket, preserves caller cancellation and input association, bounds queue/delay/concurrency/retries, resolves historical schemas, supports leading-key prefixes, and can atomically insert missing rows without unsafe retries. |
 | Typed data APIs | Supported | Generic wrappers cover log and KV writers, point and prefix lookup, log scans, current-state scans, and snapshot scans through explicit application codecs. |
-| Remote storage adapters | Supported | Pluggable readers compose remote log segments and snapshot files with per-object, aggregate-byte, and file-count limits without mandatory filesystem SDKs; local paths and `file://` URIs are built in. |
+| Remote storage adapters | Supported | Pluggable complete-object or streaming range readers compose remote logs and snapshots with bounded retries, object/aggregate/active byte limits, ordered prefetch, and cancellation cleanup. Local files are built in; `adapters/s3` provides an optional official AWS SDK v2 implementation. |
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
 | Core `fadm` catalog client | Supported | `pkg/fadm` shares the `fgo` connection pool and implements database, table, schema, alter, partition, and per-bucket offset operations. |
-| Advanced `fadm` operations | Supported | ACL, cluster config, server discovery and tags, rebalance, producer-offset, KV snapshot lease, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
+| Advanced `fadm` operations | Supported | ACL, cluster config, server discovery and tags, rebalance, producer-offset, KV snapshot acquire/renew/release, filesystem token, lake snapshot, and per-bucket table statistics APIs from Fluss 0.9.1. |
 | Live Fluss 0.9.1 compatibility | Verified | `task test:integration` runs Java-compatible golden fixtures and live plaintext, SASL PLAIN, multi-tablet, catalog, log, KV, lookup, prefix-lookup, schema-evolution, and leader-failover checks against the digest-pinned official 0.9.1 image. |
 
 ## Documentation
@@ -103,9 +103,12 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Data operations and advanced options](docs/data-operations.md)
 - [Typed data API](docs/typed-api.md)
 - [Remote storage and filesystem tokens](docs/remote-storage.md)
+- [Optional AWS SDK v2 S3 adapter](adapters/s3/README.md)
+- [Observability and optional OpenTelemetry adapter](docs/observability.md)
 - [Documentation validation and snippet workflow](docs/documentation-tooling.md)
 - [Release process](docs/releasing.md)
 - [Write scheduling decision](docs/write-scheduling.md)
+- [Lookup scheduling decision](docs/lookup-scheduling.md)
 - [Initial 0.9.1 delivery record](docs/roadmap-v0.1.md)
 - [Security exception policy](docs/security-exceptions.md)
 

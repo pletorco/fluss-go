@@ -15,8 +15,10 @@ The current prepared prerelease is `v0.1.0-beta.4`, with release notes in
 ## Before publication
 
 1. Merge the release-preparation PR.
-2. Confirm the required CI, dependency review, and security checks passed for
-   the exact merge commit.
+2. Confirm the required CI, dependency review, `Fluss 0.9.1 live` integration,
+   and security checks passed for the exact merge commit. The integration check
+   is a stable branch-protection context and must not be bypassed for runtime,
+   protocol, fixture, or dependency changes.
 3. Update local refs and verify that the worktree is clean, `HEAD` equals
    `origin/main`, and the current branch is `main`.
 4. Run `task ci` on that commit. Run `task sonar` once and confirm the Sonar

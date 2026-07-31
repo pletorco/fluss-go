@@ -96,6 +96,7 @@ func TestCoalescerCloseRaceAndUnclaimedResultDisposal(t *testing.T) {
 	workStarted := make(chan struct{})
 	workRelease := make(chan struct{})
 	resource := &atomic.Bool{}
+	disposed := make(chan struct{})
 	work := func(context.Context) (*atomic.Bool, error) {
 		close(workStarted)
 		<-workRelease
@@ -106,6 +107,7 @@ func TestCoalescerCloseRaceAndUnclaimedResultDisposal(t *testing.T) {
 	go func() {
 		_, err := group.Do(ctx, "key", work, func(value *atomic.Bool) {
 			value.Store(true)
+			close(disposed)
 		})
 		result <- err
 	}()
@@ -115,12 +117,10 @@ func TestCoalescerCloseRaceAndUnclaimedResultDisposal(t *testing.T) {
 		t.Fatalf("canceled result = %v", err)
 	}
 	close(workRelease)
-	deadline := time.Now().Add(time.Second)
-	for !resource.Load() && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if !resource.Load() {
-		t.Fatal("unclaimed result was not disposed")
+	select {
+	case <-disposed:
+	case <-time.After(time.Second):
+		t.Fatal("unclaimed result disposal blocked")
 	}
 
 	closed := newCoalescer[string, struct{}]()
@@ -166,8 +166,7 @@ func waitForCoalescerWaiters[K comparable, V any](
 	want int,
 ) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for {
+	waitForTestCondition(t, "coalescer waiter count", func() bool {
 		group.mu.Lock()
 		call := group.calls[key]
 		waiters := 0
@@ -175,14 +174,8 @@ func waitForCoalescerWaiters[K comparable, V any](
 			waiters = call.waiters
 		}
 		group.mu.Unlock()
-		if waiters == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("coalescer waiters = %d, want %d", waiters, want)
-		}
-		time.Sleep(time.Millisecond)
-	}
+		return waiters == want
+	})
 }
 
 func TestCoalescerDifferentKeysRunConcurrently(t *testing.T) {
