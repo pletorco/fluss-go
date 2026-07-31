@@ -21,6 +21,9 @@ breaking changes.
 - Added required live coverage for TLS-terminated Fluss 0.9.1 coordinator and
   tablet routes, TLS with SASL PLAIN, certificate failures, protocol
   mismatches, and canceled handshakes using ephemeral PKI material.
+- Added repeatable log, KV, lookup, scan, mixed, soak, and fault-injection
+  profiles with deterministic bounds, final data and resource leak gates,
+  scheduled runs, and credential-free retained reports.
 
 ### Changed
 

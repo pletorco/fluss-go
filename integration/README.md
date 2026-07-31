@@ -30,3 +30,9 @@ Compose, OpenSSL, Go, and Task are required. Ports `19123` through `19126`,
 `19223`, `19224`, `19323` through `19327`, `19423`, `19424`, and `19523` must
 be free. The plaintext and native SASL ports can be overridden with their
 corresponding `FLUSS_*_PORT` variables.
+
+The same plaintext cluster runs the required eight-second reliability smoke
+profile. `task test:reliability` runs one selected longer profile without the
+unrelated functional and TLS phases. Profile bounds, fault semantics, JSON
+artifacts, and the pinned baseline are documented in
+[reliability testing](../docs/reliability-testing.md).

@@ -24,6 +24,8 @@ export FLUSS_TLS_COMPOSE_PROJECT="$TLS_PROJECT"
 export FLUSS_TLS_DIR="$TLS_DIR"
 export FLUSS_TLS_CA_FILE="$TLS_DIR/ca.crt"
 export FLUSS_TLS_SERVER_NAME="fluss.test"
+export FLUSS_RELIABILITY_PROFILE="${FLUSS_RELIABILITY_PROFILE:-smoke}"
+export FLUSS_RELIABILITY_REPORT="${FLUSS_RELIABILITY_REPORT:-$ROOT/.task/reliability/${FLUSS_RELIABILITY_PROFILE}.json}"
 export FLUSS_PLAIN_COORDINATOR_PORT="${FLUSS_PLAIN_COORDINATOR_PORT:-19123}"
 export FLUSS_PLAIN_TABLET_0_PORT="${FLUSS_PLAIN_TABLET_0_PORT:-19124}"
 export FLUSS_PLAIN_TABLET_1_PORT="${FLUSS_PLAIN_TABLET_1_PORT:-19125}"
@@ -83,7 +85,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-generate_tls_material
+if [[ "${FLUSS_RELIABILITY_ONLY:-0}" != "1" ]]; then
+  generate_tls_material
+fi
 
 docker run --rm --entrypoint test "$FLUSS_IMAGE" -f "/opt/fluss/lib/fluss-server-${FLUSS_VERSION}.jar"
 compose up --detach --wait --wait-timeout 180
@@ -100,12 +104,26 @@ done
 cd "$ROOT"
 go test ./pkg/fmsg -run '^TestProtocolGoldenBytes$'
 go test ./pkg/fgo -run '^Test(CompactedPrimaryKeyMatchesJavaFixture|RowsMatchJava091Fixtures|KVAndLogBatchesMatchJava091Fixtures|LogBatchEncodesV0AndV1Headers|ArrowLogBatchDecodesJava091Fixture|FlussBucketMatchesJava091)$'
-selected_tests="$(go test -tags=integration -list '^TestFluss091Integration$' ./integration)"
-if ! grep -qx 'TestFluss091Integration' <<<"$selected_tests"; then
-  printf 'no Fluss 0.9.1 integration test was selected\n' >&2
-  exit 1
+go test -tags=integration -run '^TestReliabilityConfigValidation$' ./integration
+
+if [[ "${FLUSS_RELIABILITY_ONLY:-0}" == "1" ]]; then
+  selected_reliability="$(go test -tags=integration -list '^TestFluss091Reliability$' ./integration)"
+  if ! grep -qx 'TestFluss091Reliability' <<<"$selected_reliability"; then
+    printf 'no Fluss 0.9.1 reliability test was selected\n' >&2
+    exit 1
+  fi
+  go test -tags=integration -count=1 -timeout=35m -v -run '^TestFluss091Reliability$' ./integration
+  exit 0
 fi
-go test -tags=integration -count=1 -timeout=5m -v -run '^TestFluss091Integration$' ./integration
+
+selected_tests="$(go test -tags=integration -list '^TestFluss091(Integration|Reliability)$' ./integration)"
+for test_name in TestFluss091Integration TestFluss091Reliability; do
+  if ! grep -qx "$test_name" <<<"$selected_tests"; then
+    printf 'required Fluss 0.9.1 live test %s was not selected\n' "$test_name" >&2
+    exit 1
+  fi
+done
+go test -tags=integration -count=1 -timeout=7m -v -run '^TestFluss091(Integration|Reliability)$' ./integration
 
 compose down --volumes --remove-orphans >/dev/null
 tls_compose up --detach --wait --wait-timeout 180

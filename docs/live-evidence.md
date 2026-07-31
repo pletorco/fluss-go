@@ -14,6 +14,15 @@ golden coverage remains required even when live evidence exists.
 | TLS-terminated SASL PLAIN | Covered | Authentication, table administration, append, and scan run through TLS termination in front of native Fluss SASL PLAIN listeners. |
 | TLS failures and cancellation | Covered | Ephemeral PKI checks preserve unknown-authority, hostname, expiry, record-header, plaintext-to-TLS, and causal cancellation errors through client wrapping and shutdown. |
 
+## Reliability profiles
+
+| Profile surface | Live evidence | Boundary |
+| --- | --- | --- |
+| PR smoke | Required | Seeded log and KV data plus fairly bounded log, KV, lookup, and scan workers; delayed and truncated bootstrap connections; cancellation bursts; full final correctness; and retained heap/goroutine bounds. |
+| Load and soak | Scheduled/manual | Dedicated log, KV, lookup, scan, mixed, and repeated lifecycle profiles accept explicit duration, seed, operation, and worker bounds. |
+| Fault injection | Scheduled/manual | A mixed workload injects delayed connections, an identity-preserving truncated read, cancellation bursts, and a real tablet restart. Classified transient and ambiguous outcomes are counted while every acknowledged row remains mandatory. |
+| Reports | Covered | Credential-free JSON records operation counts, latency percentiles, throughput, expected errors, final correctness, fault names, and retained resources as Actions artifacts. See [reliability testing](reliability-testing.md). |
+
 ## Data APIs
 
 | Public surface | Live evidence | Boundary |

@@ -106,6 +106,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Public architecture and ownership](docs/architecture/v0.1.md)
 - [Public API stability and compatibility checks](docs/public-api-stability.md)
 - [Fluss 0.9.1 live API evidence](docs/live-evidence.md)
+- [Repeatable load, soak, and fault-injection testing](docs/reliability-testing.md)
 - [Go module and optional dependency layout](docs/module-layout.md)
 - [Request coalescing and cancellation](docs/architecture/request-coalescing.md)
 - [Build-vs-buy decisions](docs/build-vs-buy.md)
@@ -143,8 +144,9 @@ sources under `internal/docexamples` and run `task docs:snippets:sync` to update
 their Markdown fences.
 
 Protocol generation requires protoc v3.21.12. Local security scans require
-Trivy v0.72.0. Integration tests require Docker, Docker Compose, and OpenSSL;
-the task creates and removes isolated clusters. The module recommends Go
+Trivy v0.72.0. Integration and reliability tests require Docker, Docker
+Compose, and OpenSSL; the tasks create and remove isolated clusters. The
+module recommends Go
 1.26.5 so the Go command can automatically avoid known standard-library
 vulnerabilities; set `GOTOOLCHAIN=local` only when intentionally testing
 another supported, patched Go release.

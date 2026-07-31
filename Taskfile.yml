@@ -229,6 +229,20 @@ tasks:
     cmds:
       - ./integration/run.sh
 
+  test:reliability:
+    desc: Run one configurable reliability profile against pinned Fluss 0.9.1
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1
+        msg: Docker is required for the Fluss reliability environment.
+      - sh: docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required for the Fluss reliability environment.
+      - sh: command -v openssl >/dev/null 2>&1
+        msg: OpenSSL is required by the shared live runner.
+    env:
+      FLUSS_RELIABILITY_ONLY: '1'
+    cmds:
+      - ./integration/run.sh
+
   test:s3:
     desc: Run the opt-in official AWS SDK S3 adapter service test
     cmds:
