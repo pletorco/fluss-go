@@ -98,6 +98,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 
 ## Documentation
 
+- [Release changelog](CHANGELOG.md)
 - API reference:
   [fmsg](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg),
   [fgo](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo), and
