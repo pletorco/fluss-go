@@ -25,6 +25,9 @@ The current prepared prerelease is `v0.1.0-beta.6`, with release notes in
    Quality Gate passes.
 5. Confirm that `CHANGELOG.md` records the version and publication date and
    that the prepared release notes match it.
+6. Inspect `task security:licenses` after every dependency change and confirm
+   that any new attribution obligations are reflected in `LICENSE`, `NOTICE`,
+   module documentation, and the release notes.
 
 Do not reuse or move a published version tag. If the intended commit is wrong,
 fix `main` through another reviewed PR and release the corrected commit.

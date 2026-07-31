@@ -20,6 +20,7 @@ vars:
   PROTOC_VERSION: 3.21.12
   PROTOC_GEN_GO_VERSION: v1.36.10
   TRIVY_VERSION: 0.72.0
+  LICENSE_ALLOWLIST: Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,Copyright
   TOOLS_DIR: .tools/bin
 
 tasks:
@@ -295,19 +296,45 @@ tasks:
         dir: '{{.ITEM}}'
 
   security:repo:
-    desc: Scan repository vulnerabilities, configuration, secrets, and licenses
+    desc: Scan repository vulnerabilities, configuration, and secrets
     deps:
       - tools:check
     cmds:
       - trivy fs --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 1 --no-progress .
       - trivy fs --scanners secret --exit-code 1 --no-progress .
-      - trivy fs --scanners license --no-progress .
+
+  security:licenses:
+    desc: Reject dependencies outside the reviewed license allowlist
+    deps:
+      - tools:check
+    cmds:
+      - >-
+        trivy fs --scanners license
+        --ignored-licenses {{.LICENSE_ALLOWLIST}}
+        --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+        --skip-dirs testdata/license-policy-denied
+        --exit-code 1 --no-progress .
+      - task: security:licenses:test-policy
+
+  security:licenses:test-policy:
+    internal: true
+    cmds:
+      - >-
+        if trivy fs --scanners license
+        --ignored-licenses {{.LICENSE_ALLOWLIST}}
+        --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+        --exit-code 1 --no-progress
+        testdata/license-policy-denied >/dev/null 2>&1; then
+          printf 'license policy canary unexpectedly passed\n' >&2;
+          exit 1;
+        fi
 
   security:
     desc: Run all local security gates
     deps:
       - deps:verify
       - security:go
+      - security:licenses
       - security:repo
 
   verify:

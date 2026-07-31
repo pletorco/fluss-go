@@ -12,6 +12,8 @@ breaking changes.
 
 - Added separately reviewed `fgo`, `fadm`, and generated `fmsg` API baselines
   with a required `apidiff` compatibility gate.
+- Added a pinned, fail-closed Trivy dependency-license allowlist with a denied
+  license canary across the root and optional adapter modules.
 
 ### Changed
 
