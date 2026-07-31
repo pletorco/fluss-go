@@ -8,6 +8,15 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.6] - 2026-07-31
+
+### Fixed
+
+- Preserved the reader-side connection failure when a peer closes immediately
+  after receiving a request by avoiding a redundant write-deadline reset.
+- Prevented point and prefix lookup calls racing with `LookupClient.Close` from
+  being stranded after scheduler shutdown.
+
 ## [v0.1.0-beta.5] - 2026-07-31
 
 ### Added
@@ -180,7 +189,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.5...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.6...HEAD
+[v0.1.0-beta.6]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.5...v0.1.0-beta.6
 [v0.1.0-beta.5]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.4...v0.1.0-beta.5
 [v0.1.0-beta.4]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.3...v0.1.0-beta.4
 [v0.1.0-beta.3]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.2...v0.1.0-beta.3
