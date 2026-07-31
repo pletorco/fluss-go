@@ -69,7 +69,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | --- | --- | --- |
 | `fmsg` public API registry and protobuf messages | Implemented | Generated from the pinned Fluss 0.9.1 protocol; includes API/version and server-error registries. |
 | Protocol framing and request correlation | Implemented | [`internal/transport`](internal/transport) has bounded framing, context-aware writes, exactly-once completion, cancellation, and protocol tests. |
-| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, bounds retries to safe reads, and supports bounded-cardinality `MetricsObserver` events. |
+| Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, bounds retries to safe reads, and supports bounded-cardinality `MetricsObserver` events with an optional OpenTelemetry API adapter. |
 | Coordinator/tablet metadata and partition routing | Implemented | Metadata refreshes are coalesced, stale leaders are rerouted once, `ResolveTableBuckets` returns stable bucket snapshots, and opt-in dynamic partition creation supports partitioned writers. |
 | Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables, load authoritative schemas through `OpenTable`, and resolve historical record schemas through a bounded client cache. |
 | Arrow schema and record batches | Supported | Full Fluss logical schema conversion plus v0/v1 Arrow log batches with NONE, LZ4, and ZSTD IPC compression; decoded records use explicit `Release` ownership. |
@@ -104,6 +104,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Typed data API](docs/typed-api.md)
 - [Remote storage and filesystem tokens](docs/remote-storage.md)
 - [Optional AWS SDK v2 S3 adapter](adapters/s3/README.md)
+- [Observability and optional OpenTelemetry adapter](docs/observability.md)
 - [Documentation validation and snippet workflow](docs/documentation-tooling.md)
 - [Release process](docs/releasing.md)
 - [Write scheduling decision](docs/write-scheduling.md)
