@@ -124,7 +124,7 @@ services:
         remote.data.dir: /tmp/fluss/remote-data
         security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
         security.sasl.enabled.mechanisms: PLAIN
-        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}";
+        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}" user_${FLUSS_SASL_ACL_USERNAME}="${FLUSS_SASL_ACL_PASSWORD}";
         authorizer.enabled: true
         super.users: User:${FLUSS_SASL_USERNAME}
     ports:
@@ -152,7 +152,7 @@ services:
         remote.data.dir: /tmp/fluss/remote-data
         security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
         security.sasl.enabled.mechanisms: PLAIN
-        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}";
+        security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_${FLUSS_SASL_USERNAME}="${FLUSS_SASL_PASSWORD}" user_${FLUSS_SASL_ACL_USERNAME}="${FLUSS_SASL_ACL_PASSWORD}";
         authorizer.enabled: true
         super.users: User:${FLUSS_SASL_USERNAME}
     ports:

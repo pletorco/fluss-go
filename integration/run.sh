@@ -23,6 +23,8 @@ export FLUSS_SASL_COORDINATOR_PORT="${FLUSS_SASL_COORDINATOR_PORT:-19223}"
 export FLUSS_SASL_TABLET_PORT="${FLUSS_SASL_TABLET_PORT:-19224}"
 export FLUSS_SASL_USERNAME="${FLUSS_SASL_USERNAME:-integration_admin}"
 export FLUSS_SASL_PASSWORD="${FLUSS_SASL_PASSWORD:-$(openssl rand -hex 24)}"
+export FLUSS_SASL_ACL_USERNAME="${FLUSS_SASL_ACL_USERNAME:-integration_acl_user}"
+export FLUSS_SASL_ACL_PASSWORD="${FLUSS_SASL_ACL_PASSWORD:-$(openssl rand -hex 24)}"
 
 compose() {
   docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" "$@"
@@ -30,7 +32,11 @@ compose() {
 
 diagnostics() {
   compose ps || true
-  compose logs --no-color --tail=200 2>&1 | sed "s/${FLUSS_SASL_PASSWORD}/[REDACTED]/g" || true
+  compose logs --no-color --tail=200 2>&1 |
+    sed \
+      -e "s/${FLUSS_SASL_PASSWORD}/[REDACTED]/g" \
+      -e "s/${FLUSS_SASL_ACL_PASSWORD}/[REDACTED]/g" ||
+    true
 }
 
 cleanup() {

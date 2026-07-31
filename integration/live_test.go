@@ -50,6 +50,10 @@ func TestFluss091Integration(t *testing.T) {
 		testSASLPlain(t, saslAddress)
 	})
 
+	t.Run("ACL authorization", func(t *testing.T) {
+		testACLAuthorization(t, saslAddress)
+	})
+
 	t.Run("filesystem security token refresh", func(t *testing.T) {
 		testManagedFileSystemToken(t, plainAddress)
 	})
@@ -137,6 +141,153 @@ func testSASLPlain(t *testing.T, address string) {
 	)
 	if !errors.Is(err, fgo.ErrAuthentication) || strings.Contains(fmt.Sprint(err), password) {
 		t.Fatalf("invalid credential error = %v", err)
+	}
+}
+
+func testACLAuthorization(t *testing.T, address string) {
+	t.Helper()
+	ctx := context.Background()
+	adminClient, admin := openAuthenticatedAdmin(
+		t,
+		address,
+		os.Getenv("FLUSS_SASL_USERNAME"),
+		os.Getenv("FLUSS_SASL_PASSWORD"),
+	)
+	defer adminClient.Close()
+
+	username := os.Getenv("FLUSS_SASL_ACL_USERNAME")
+	userClient, userAdmin := openAuthenticatedAdmin(
+		t,
+		address,
+		username,
+		os.Getenv("FLUSS_SASL_ACL_PASSWORD"),
+	)
+	defer userClient.Close()
+
+	deniedBefore := fmt.Sprintf("acl_denied_before_%d", time.Now().UnixNano())
+	requireDatabaseCreateAuthorization(t, ctx, userAdmin, deniedBefore, false)
+
+	acl := fadm.ACL{
+		ResourceName:  fadm.ACLClusterResourceName,
+		ResourceType:  fadm.ACLResourceCluster,
+		PrincipalName: username,
+		PrincipalType: fadm.ACLPrincipalUser,
+		Host:          fadm.ACLWildcardHost,
+		Operation:     fadm.ACLOperationCreate,
+		Permission:    fadm.ACLPermissionAllow,
+	}
+	requireCreatedACL(t, ctx, admin, acl)
+
+	resourceName := acl.ResourceName
+	principalName := acl.PrincipalName
+	principalType := acl.PrincipalType
+	host := acl.Host
+	filter := fadm.ACLFilter{
+		ResourceName:  &resourceName,
+		ResourceType:  acl.ResourceType,
+		PrincipalName: &principalName,
+		PrincipalType: &principalType,
+		Host:          &host,
+		Operation:     acl.Operation,
+		Permission:    acl.Permission,
+	}
+	dropped := false
+	defer func() {
+		if dropped {
+			return
+		}
+		if _, err := admin.DropACLs(context.Background(), filter); err != nil {
+			t.Errorf("cleanup ACL: %v", err)
+		}
+	}()
+
+	requireListedACL(t, ctx, admin, filter, acl)
+
+	allowed := fmt.Sprintf("acl_allowed_%d", time.Now().UnixNano())
+	requireDatabaseCreateAuthorization(t, ctx, userAdmin, allowed, true)
+	defer func() {
+		if err := admin.DropDatabase(context.Background(), allowed, true, true); err != nil {
+			t.Errorf("cleanup ACL database: %v", err)
+		}
+	}()
+
+	requireDroppedACL(t, ctx, admin, filter, acl)
+	dropped = true
+
+	deniedAfter := fmt.Sprintf("acl_denied_after_%d", time.Now().UnixNano())
+	requireDatabaseCreateAuthorization(t, ctx, userAdmin, deniedAfter, false)
+}
+
+func openAuthenticatedAdmin(
+	t *testing.T,
+	address, username, password string,
+) (*fgo.Client, *fadm.Client) {
+	t.Helper()
+	client := openClient(
+		t,
+		[]string{address},
+		fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)),
+	)
+	admin, err := fadm.New(client)
+	if err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	return client, admin
+}
+
+func requireDatabaseCreateAuthorization(
+	t *testing.T,
+	ctx context.Context,
+	admin *fadm.Client,
+	name string,
+	allowed bool,
+) {
+	t.Helper()
+	err := admin.CreateDatabase(ctx, name, fadm.DatabaseDefinition{}, false)
+	if allowed && err != nil {
+		t.Fatalf("CreateDatabase(%q) with ACL: %v", name, err)
+	}
+	if !allowed && !errors.Is(err, fgo.ErrAuthorization) {
+		t.Fatalf("CreateDatabase(%q) authorization error = %v", name, err)
+	}
+}
+
+func requireCreatedACL(t *testing.T, ctx context.Context, admin *fadm.Client, acl fadm.ACL) {
+	t.Helper()
+	created, err := admin.CreateACLs(ctx, acl)
+	if err != nil || len(created) != 1 || created[0].Err != nil || created[0].ACL != acl {
+		t.Fatalf("CreateACLs() = %#v, %v", created, err)
+	}
+}
+
+func requireListedACL(
+	t *testing.T,
+	ctx context.Context,
+	admin *fadm.Client,
+	filter fadm.ACLFilter,
+	acl fadm.ACL,
+) {
+	t.Helper()
+	listed, err := admin.ListACLs(ctx, filter)
+	if err != nil || len(listed) != 1 || listed[0] != acl {
+		t.Fatalf("ListACLs() = %#v, %v", listed, err)
+	}
+}
+
+func requireDroppedACL(
+	t *testing.T,
+	ctx context.Context,
+	admin *fadm.Client,
+	filter fadm.ACLFilter,
+	acl fadm.ACL,
+) {
+	t.Helper()
+	results, err := admin.DropACLs(ctx, filter)
+	if err != nil || len(results) != 1 || results[0].Err != nil ||
+		len(results[0].Matches) != 1 || results[0].Matches[0].Err != nil ||
+		results[0].Matches[0].ACL != acl {
+		t.Fatalf("DropACLs() = %#v, %v", results, err)
 	}
 }
 
