@@ -8,6 +8,47 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.5] - 2026-07-31
+
+### Added
+
+- Added bounded, opt-in idempotent retries for log and KV writers. Retries
+  preserve writer IDs, batch sequences, and encoded bytes, recognize an
+  already-committed duplicate sequence as success, and stop on ambiguous or
+  out-of-order sequence failures.
+- Added bounded cross-call point and prefix lookup batching with configurable
+  queue capacity, batch delay, request size, concurrency, timeout, and
+  read-only retry policy.
+- Added streaming range reads and ordered prefetch for remote logs and
+  snapshots. Concurrent object and byte limits bound active downloads while
+  retaining the complete-object reader as a compatibility path.
+- Added an optional Amazon S3 remote-file adapter based on the official AWS SDK
+  for Go v2.
+- Added an optional OpenTelemetry metrics adapter based on the stable official
+  OpenTelemetry Go metrics API.
+- Added `RenewKVSnapshotLease` for extending an existing Fluss KV snapshot
+  lease without reacquiring its snapshots.
+
+### Changed
+
+- Made the Fluss 0.9.1 live integration workflow a required pull-request gate
+  and added cancellation-isolation coverage to the live suite.
+- Rejected relative local paths and validated exact remote ranges, advertised
+  sizes, aggregate limits, and active-stream budgets before unbounded
+  allocation.
+- Replaced scheduler-dependent test sleeps with deterministic synchronization
+  and reduced cognitive complexity without changing public behavior.
+- Expanded the build-versus-buy register and package manuals for writer and
+  lookup scheduling, remote storage, optional adapters, and observability.
+
+### Fixed
+
+- Prevented an already-canceled request from poisoning an established managed
+  connection.
+- Discarded and transparently replaced a connection when cancellation
+  interrupts a partially written frame, while preserving the request-local
+  cancellation error for the original caller.
+
 ## [v0.1.0-beta.4] - 2026-07-31
 
 ### Added
@@ -139,7 +180,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.4...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.5...HEAD
+[v0.1.0-beta.5]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.4...v0.1.0-beta.5
 [v0.1.0-beta.4]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.3...v0.1.0-beta.4
 [v0.1.0-beta.3]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.2...v0.1.0-beta.3
 [v0.1.0-beta.2]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.1...v0.1.0-beta.2
