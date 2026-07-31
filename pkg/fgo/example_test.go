@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fgo"
+	"github.com/pletorco/fluss-go/pkg/fmsg"
 )
 
 func ExampleOpen_tlsAndSASL() {
@@ -63,6 +64,56 @@ func ExampleAuthenticationError() {
 	// true
 	// true true
 	// fgo: authentication failed (retriable)
+}
+
+func ExampleServerError() {
+	err := fgo.ResponseError(
+		int32(fmsg.ErrorCodeRequestTimeOut),
+		"tablet request timed out",
+		fmsg.APIKeyListOffsets,
+	)
+	var server *fgo.ServerError
+	fmt.Println(errors.Is(err, fgo.ErrServerFailure))
+	fmt.Println(errors.Is(err, fgo.ErrTimeout))
+	fmt.Println(errors.As(err, &server), server.Retriable)
+	// Output:
+	// true
+	// true
+	// true true
+}
+
+func ExampleWriteResult() {
+	result := fgo.WriteResult{
+		Bucket: 2,
+		Err:    fmt.Errorf("%w: reconcile the previous batch", fgo.ErrWriterState),
+	}
+	if errors.Is(result.Err, fgo.ErrWriterState) {
+		fmt.Printf("bucket %d requires reconciliation\n", result.Bucket)
+	}
+	// Output:
+	// bucket 2 requires reconciliation
+}
+
+func ExampleLookupResult() {
+	results := []fgo.LookupResult{
+		{Key: fgo.PrimaryKey{int64(41)}, Row: fgo.Row{int64(41), "Ada"}, Found: true},
+		{Key: fgo.PrimaryKey{int64(42)}, Err: fgo.ErrNotFound},
+		{Key: fgo.PrimaryKey{int64(43)}, Err: fgo.ErrTimeout},
+	}
+	for _, result := range results {
+		switch {
+		case errors.Is(result.Err, fgo.ErrNotFound):
+			fmt.Printf("%d missing\n", result.Key[0])
+		case result.Err != nil:
+			fmt.Printf("%d failed\n", result.Key[0])
+		default:
+			fmt.Printf("%d found\n", result.Key[0])
+		}
+	}
+	// Output:
+	// 41 found
+	// 42 missing
+	// 43 failed
 }
 
 func ExampleOpen() {
@@ -331,10 +382,10 @@ func ExampleClient_NewLookupClient() {
 	)
 	for _, result := range results {
 		switch {
+		case errors.Is(result.Err, fgo.ErrNotFound):
+			log.Printf("lookup %v: not found", result.Key)
 		case result.Err != nil:
 			log.Printf("lookup %v: %v", result.Key, result.Err)
-		case !result.Found:
-			log.Printf("lookup %v: not found", result.Key)
 		default:
 			log.Printf("lookup %v: %v", result.Key, result.Row)
 		}

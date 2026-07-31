@@ -26,7 +26,8 @@
 // Blocking operations accept a context. Cancellation stops local waiting but
 // cannot prove that an in-flight mutation was rejected by the server. Writers
 // report ambiguous state through [ErrWriterState]. Multi-bucket reads preserve
-// successful records alongside per-bucket errors.
+// successful records alongside per-bucket errors. The [error handling guide]
+// describes safe retries, writer reconciliation, and partial-result handling.
 //
 // # Arrow ownership
 //
@@ -46,4 +47,5 @@
 // release and review the project changelog before upgrading.
 //
 // [secure connection guide]: https://github.com/pletorco/fluss-go/blob/main/docs/authentication.md
+// [error handling guide]: https://github.com/pletorco/fluss-go/blob/main/docs/error-handling.md
 package fgo
