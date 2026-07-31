@@ -19,7 +19,9 @@ type BatchScannerOption func(*BatchScannerConfig) error
 
 // BatchScannerConfig contains limits and projection for a bounded scan.
 type BatchScannerConfig struct {
-	Limit      int
+	// Limit is the maximum rows requested per poll.
+	Limit int
+	// Projection lists returned columns in result order; nil selects all.
 	Projection []string
 }
 
@@ -47,9 +49,12 @@ func WithBatchProjection(columns ...string) BatchScannerOption {
 
 // BatchResult owns any Arrow batches it contains. Call Release after consuming the result.
 type BatchResult struct {
-	Rows         []Row
+	// Rows contains row-oriented results.
+	Rows []Row
+	// ArrowBatches contains owned Arrow results released by [BatchResult.Release].
 	ArrowBatches []ArrowLogBatch
-	Done         bool
+	// Done reports that no additional rows remain.
+	Done bool
 }
 
 // Release frees Arrow records owned by the result.
@@ -66,21 +71,30 @@ func (r *BatchResult) Release() {
 
 // SnapshotBatchRequest identifies one immutable primary-key snapshot.
 type SnapshotBatchRequest struct {
-	Table      Table
-	Bucket     TableBucket
+	// Table is the authoritative table metadata for the snapshot.
+	Table Table
+	// Bucket identifies the physical bucket being read.
+	Bucket TableBucket
+	// SnapshotID identifies the immutable server snapshot.
 	SnapshotID int64
+	// Projection lists requested columns in result order.
 	Projection []string
-	Limit      int
+	// Limit is the maximum rows requested from one reader call.
+	Limit int
 }
 
 // SnapshotBatchReader streams rows from one immutable snapshot. io.EOF marks completion.
 type SnapshotBatchReader interface {
+	// ReadBatch returns at most limit rows. io.EOF marks completion and may
+	// accompany a final non-empty batch.
 	ReadBatch(context.Context, int) ([]Row, error)
+	// Close releases reader resources and is safe after completion.
 	Close() error
 }
 
 // SnapshotBatchProvider opens readers for implementation-specific Fluss snapshot storage.
 type SnapshotBatchProvider interface {
+	// OpenSnapshot returns a new reader owned by the caller.
 	OpenSnapshot(context.Context, SnapshotBatchRequest) (SnapshotBatchReader, error)
 }
 

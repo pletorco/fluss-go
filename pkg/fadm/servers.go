@@ -11,10 +11,15 @@ import (
 
 // ServerNode describes a coordinator or tablet server advertised by cluster metadata.
 type ServerNode struct {
-	ID   int32
+	// ID is the server node identifier.
+	ID int32
+	// Host is the advertised hostname or address.
 	Host string
+	// Port is the advertised service port.
 	Port int32
+	// Role is the Fluss coordinator or tablet role.
 	Role fgo.ServerRole
+	// Rack is optional placement metadata.
 	Rack string
 }
 

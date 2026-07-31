@@ -17,10 +17,13 @@ var (
 
 // TablePath identifies a logical table by database and table name.
 type TablePath struct {
+	// Database is the logical database name.
 	Database string
-	Table    string
+	// Table is the logical table name.
+	Table string
 }
 
+// String returns the canonical database.table path.
 func (p TablePath) String() string { return p.Database + "." + p.Table }
 
 // Validate checks that both path components are present.
@@ -33,17 +36,25 @@ func (p TablePath) Validate() error {
 
 // Node identifies one coordinator or tablet endpoint.
 type Node struct {
-	ID      int32
+	// ID is the server node identifier.
+	ID int32
+	// Address is the dialable host:port endpoint.
 	Address string
-	Role    ServerRole
+	// Role is the negotiated Fluss server role.
+	Role ServerRole
 }
 
 // TableMetadata contains table IDs, bucket leaders, and named partitions.
 type TableMetadata struct {
-	Path       TablePath
-	ID         int64
-	SchemaID   int32
-	Buckets    map[int32]Node
+	// Path is the logical table path.
+	Path TablePath
+	// ID is the server-assigned table identifier.
+	ID int64
+	// SchemaID identifies the current schema version.
+	SchemaID int32
+	// Buckets maps bucket IDs to current tablet leaders.
+	Buckets map[int32]Node
+	// Partitions maps canonical partition names to physical metadata.
 	Partitions map[string]PartitionMetadata
 
 	coordinator Node
@@ -52,8 +63,11 @@ type TableMetadata struct {
 
 // PartitionMetadata describes a named partition and its tablet leaders.
 type PartitionMetadata struct {
-	Path    PhysicalTablePath
-	ID      int64
+	// Path identifies the logical table and physical partition.
+	Path PhysicalTablePath
+	// ID is the server-assigned partition identifier.
+	ID int64
+	// Buckets maps bucket IDs to current tablet leaders.
 	Buckets map[int32]Node
 
 	coordinator Node
@@ -62,9 +76,12 @@ type PartitionMetadata struct {
 
 // Metadata is an immutable snapshot of coordinator, tablet, and table routing.
 type Metadata struct {
+	// Coordinator is the current coordinator node.
 	Coordinator Node
-	Tablets     map[int32]Node
-	Tables      map[TablePath]TableMetadata
+	// Tablets maps tablet node IDs to endpoints.
+	Tablets map[int32]Node
+	// Tables maps logical paths to current metadata snapshots.
+	Tables map[TablePath]TableMetadata
 }
 
 // MetadataFetcher loads authoritative metadata for one logical table.

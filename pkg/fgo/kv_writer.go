@@ -17,14 +17,22 @@ import (
 // KVWriterConfig controls batching, buffering, acknowledgements, partition
 // routing, and merge behavior for a primary-key writer.
 type KVWriterConfig struct {
-	MaxBatchBytes   int
+	// MaxBatchBytes bounds encoded bytes in one put request.
+	MaxBatchBytes int
+	// MaxBatchRecords bounds mutations in one put request.
 	MaxBatchRecords int
-	MaxBuffered     int
-	Linger          time.Duration
-	Timeout         time.Duration
-	Acks            int32
-	Partition       string
-	MergeMode       MergeMode
+	// MaxBuffered bounds accepted mutations awaiting completion.
+	MaxBuffered int
+	// Linger is the maximum delay used to fill a non-full batch.
+	Linger time.Duration
+	// Timeout is the server-side put timeout.
+	Timeout time.Duration
+	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
+	Acks int32
+	// Partition selects one named physical partition; empty selects the table.
+	Partition string
+	// MergeMode selects merge-engine or overwrite semantics.
+	MergeMode MergeMode
 }
 
 // KVWriterOption configures a [KVWriter].

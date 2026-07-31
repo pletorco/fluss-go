@@ -8,23 +8,36 @@ import (
 // LogicalType is the Fluss 0.9.1 schema JSON type representation. It supports
 // parameterized and nested roots without exposing protobuf implementation details.
 type LogicalType struct {
-	Root      string         `json:"type"`
-	Nullable  bool           `json:"nullable,omitempty"`
-	Length    int            `json:"length,omitempty"`
-	Precision int            `json:"precision,omitempty"`
-	Scale     int            `json:"scale,omitempty"`
-	Element   *LogicalType   `json:"element_type,omitempty"`
-	Key       *LogicalType   `json:"key_type,omitempty"`
-	Value     *LogicalType   `json:"value_type,omitempty"`
-	Fields    []LogicalField `json:"fields,omitempty"`
+	// Root identifies the Fluss logical type.
+	Root string `json:"type"`
+	// Nullable reports whether nil is valid.
+	Nullable bool `json:"nullable,omitempty"`
+	// Length applies to fixed and variable character or binary values.
+	Length int `json:"length,omitempty"`
+	// Precision applies to decimal, time, and timestamp values.
+	Precision int `json:"precision,omitempty"`
+	// Scale applies to decimal values.
+	Scale int `json:"scale,omitempty"`
+	// Element describes array elements.
+	Element *LogicalType `json:"element_type,omitempty"`
+	// Key describes map keys.
+	Key *LogicalType `json:"key_type,omitempty"`
+	// Value describes map values.
+	Value *LogicalType `json:"value_type,omitempty"`
+	// Fields describe nested row columns in encoding order.
+	Fields []LogicalField `json:"fields,omitempty"`
 }
 
 // LogicalField describes one nested field of a ROW logical type.
 type LogicalField struct {
-	Name        string      `json:"name"`
-	Type        LogicalType `json:"field_type"`
-	Description string      `json:"description,omitempty"`
-	ID          int         `json:"field_id"`
+	// Name is unique within the nested row.
+	Name string `json:"name"`
+	// Type describes the nested field value.
+	Type LogicalType `json:"field_type"`
+	// Description is optional user metadata.
+	Description string `json:"description,omitempty"`
+	// ID is the stable Fluss field identifier.
+	ID int `json:"field_id"`
 }
 
 type logicalTypeJSON struct {

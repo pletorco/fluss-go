@@ -18,12 +18,18 @@ var ErrNotFound = fmt.Errorf("fgo: record not found")
 // LookupConfig controls batching, concurrency, partition routing, and optional
 // atomic insertion of missing rows.
 type LookupConfig struct {
-	MaxBatchKeys      int
-	MaxConcurrent     int
-	Partition         string
+	// MaxBatchKeys bounds keys in one lookup request.
+	MaxBatchKeys int
+	// MaxConcurrent bounds in-flight lookup requests.
+	MaxConcurrent int
+	// Partition selects one named physical partition; empty selects the table.
+	Partition string
+	// InsertIfNotExists enables atomic insertion for missing full keys.
 	InsertIfNotExists bool
-	Timeout           time.Duration
-	Acks              int32
+	// Timeout is the server timeout used only by insertion.
+	Timeout time.Duration
+	// Acks is the insertion acknowledgement mode.
+	Acks int32
 }
 
 // LookupOption configures a [LookupClient].
@@ -67,19 +73,28 @@ func WithLookupInsertIfNotExists(timeout time.Duration, acks int32) LookupOption
 
 // LookupResult is the outcome associated with one requested primary key.
 type LookupResult struct {
-	Key    PrimaryKey
-	Row    Row
-	Found  bool
+	// Key is the requested primary key.
+	Key PrimaryKey
+	// Row is valid only when Found is true and Err is nil.
+	Row Row
+	// Found distinguishes a missing row from an empty row.
+	Found bool
+	// Bucket is the routed bucket when routing succeeded.
 	Bucket int32
-	Err    error
+	// Err is a key-local encoding, routing, request, or decoding failure.
+	Err error
 }
 
 // PrefixLookupResult contains rows matching one leading primary-key prefix.
 type PrefixLookupResult struct {
+	// Prefix is the requested leading primary-key prefix.
 	Prefix PrimaryKey
-	Rows   []Row
+	// Rows contains all decoded matches when Err is nil.
+	Rows []Row
+	// Bucket is the routed bucket when routing succeeded.
 	Bucket int32
-	Err    error
+	// Err is a prefix-local encoding, routing, request, or decoding failure.
+	Err error
 }
 
 type lookupBackend interface {

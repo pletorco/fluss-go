@@ -287,6 +287,7 @@ func serverRole(value int32) (ServerRole, error) {
 	return role, nil
 }
 
+// String returns a stable human-readable server role.
 func (r ServerRole) String() string {
 	switch r {
 	case Coordinator:

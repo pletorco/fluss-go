@@ -35,17 +35,25 @@ func newClient(requester requester) *Client { return &Client{requester: requeste
 
 // Database is the server-reported metadata for one database.
 type Database struct {
-	Name       string
-	Comment    string
+	// Name is the logical database name.
+	Name string
+	// Comment is optional user metadata.
+	Comment string
+	// Properties contains custom database properties.
 	Properties map[string]string
-	CreatedAt  time.Time
+	// CreatedAt is the server creation time.
+	CreatedAt time.Time
+	// ModifiedAt is the latest server modification time.
 	ModifiedAt time.Time
+	// TableCount is the server-reported table count.
 	TableCount int32
 }
 
 // DatabaseDefinition contains optional metadata used when creating a database.
 type DatabaseDefinition struct {
-	Comment    string
+	// Comment is optional user metadata.
+	Comment string
+	// Properties contains custom database properties.
 	Properties map[string]string
 }
 
@@ -178,10 +186,15 @@ func (c *Client) DescribeDatabase(ctx context.Context, name string) (Database, e
 
 // TableDefinition contains the schema and properties used to create a table.
 type TableDefinition struct {
-	Schema           fgo.Schema
-	Comment          string
-	BucketCount      int
-	Properties       map[string]string
+	// Schema defines columns, keys, and logical types.
+	Schema fgo.Schema
+	// Comment is optional user metadata.
+	Comment string
+	// BucketCount is the positive logical bucket count.
+	BucketCount int
+	// Properties contains built-in Fluss table properties.
+	Properties map[string]string
+	// CustomProperties contains application-specific properties.
 	CustomProperties map[string]string
 }
 
@@ -341,27 +354,43 @@ const (
 
 // ConfigChange applies one operation to a configuration key.
 type ConfigChange struct {
-	Key   string
+	// Key identifies the table configuration entry.
+	Key string
+	// Value is required except for [ConfigDelete].
 	Value *string
-	Op    ConfigOp
+	// Op selects set, delete, append, or subtract semantics.
+	Op ConfigOp
 }
 
 // AddColumn describes a column appended or inserted by an alter-table request.
 type AddColumn struct {
-	Name        string
-	Type        fgo.LogicalType
+	// Name is the new unique column name.
+	Name string
+	// Type is the complete Fluss logical type.
+	Type fgo.LogicalType
+	// Description is optional column metadata.
 	Description string
-	First       bool
+	// First inserts before existing columns when true.
+	First bool
 }
 
 // RenameColumn maps an existing column name to a new name.
-type RenameColumn struct{ Old, New string }
+type RenameColumn struct {
+	// Old is the existing column name.
+	Old string
+	// New is the replacement column name.
+	New string
+}
 
 // AlterTable groups configuration and schema changes into one request.
 type AlterTable struct {
+	// Config contains configuration operations.
 	Config []ConfigChange
-	Add    []AddColumn
-	Drop   []string
+	// Add contains columns to create.
+	Add []AddColumn
+	// Drop contains existing column names to remove.
+	Drop []string
+	// Rename contains column renames.
 	Rename []RenameColumn
 }
 
@@ -487,7 +516,9 @@ func (p PartitionSpec) proto() *fmsg.PbPartitionSpec {
 
 // Partition is one named physical partition and its server identity.
 type Partition struct {
-	ID   int64
+	// ID is the server-assigned physical partition identifier.
+	ID int64
+	// Spec contains partition-key names and canonical values.
 	Spec PartitionSpec
 }
 
@@ -563,9 +594,12 @@ func (c *Client) ListPartitions(ctx context.Context, path fgo.TablePath, partial
 
 // OffsetResult is the resolved offset or failure for one bucket.
 type OffsetResult struct {
+	// Bucket is the requested bucket ID.
 	Bucket int32
+	// Offset is valid when Err is nil.
 	Offset int64
-	Err    error
+	// Err is the bucket-local resolution failure.
+	Err error
 }
 
 // ListOffsets resolves spec independently for every requested bucket.

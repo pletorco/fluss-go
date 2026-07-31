@@ -33,4 +33,7 @@
 // protocol versions but intentionally supports only Apache Fluss 0.9.1.
 // Later server versions require explicit protocol, fixture, and integration
 // validation before they are supported.
+//
+// The public Go API is experimental before v1. Applications should pin a
+// release and review the project changelog before upgrading.
 package fgo

@@ -16,14 +16,19 @@ import (
 // RemoteFileRequest describes one complete remote object read.
 // Token is a caller-owned clone and may be nil.
 type RemoteFileRequest struct {
-	Path         string
+	// Path is the storage-specific URI or absolute local path.
+	Path string
+	// ExpectedSize is the server-advertised size, or zero when unavailable.
 	ExpectedSize int64
-	Token        *FileSystemSecurityToken
+	// Token is an optional caller-owned credential clone.
+	Token *FileSystemSecurityToken
 }
 
 // RemoteFileReader reads one complete Fluss-managed remote object. Filesystem-specific adapters
 // can use the cloned security token without exposing it through errors or formatting.
 type RemoteFileReader interface {
+	// ReadRemoteFile returns the complete object and honors ctx cancellation.
+	// The returned buffer becomes caller-owned.
 	ReadRemoteFile(context.Context, RemoteFileRequest) ([]byte, error)
 }
 
@@ -77,8 +82,11 @@ func (LocalRemoteFileReader) ReadRemoteFile(
 // RemoteFileReadConfig bounds retries, backoff, and object size.
 // Zero fields use documented defaults.
 type RemoteFileReadConfig struct {
-	MaxAttempts  int
+	// MaxAttempts includes the initial read; zero defaults to 3.
+	MaxAttempts int
+	// RetryBackoff is the delay between attempts; zero defaults to 50ms.
 	RetryBackoff time.Duration
+	// MaxFileBytes bounds allocation per object; zero defaults to 256 MiB.
 	MaxFileBytes int64
 }
 
@@ -121,13 +129,17 @@ type remoteFileSettings struct {
 
 // RemoteSnapshotFile describes a snapshot object before and after download.
 type RemoteSnapshotFile struct {
+	// Path is the storage-specific object location.
 	Path string
+	// Size is the expected object size in bytes.
 	Size int64
+	// Data is populated with caller-owned downloaded bytes before decoding.
 	Data []byte
 }
 
 // RemoteSnapshotResolver discovers immutable objects for one snapshot request.
 type RemoteSnapshotResolver interface {
+	// ResolveSnapshotFiles returns immutable files in decoder input order.
 	ResolveSnapshotFiles(context.Context, SnapshotBatchRequest) ([]RemoteSnapshotFile, error)
 }
 
@@ -148,6 +160,8 @@ func (f RemoteSnapshotResolverFunc) ResolveSnapshotFiles(
 // RemoteSnapshotDecoder opens downloaded snapshot objects in a storage-specific
 // format.
 type RemoteSnapshotDecoder interface {
+	// OpenSnapshotFiles consumes downloaded file descriptors and returns a
+	// reader owned by the caller.
 	OpenSnapshotFiles(context.Context, SnapshotBatchRequest, []RemoteSnapshotFile) (SnapshotBatchReader, error)
 }
 
@@ -243,19 +257,28 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 
 // RemoteLogSegment describes one immutable remote log object and offset range.
 type RemoteLogSegment struct {
-	ID          string
+	// ID identifies the segment in remote storage metadata.
+	ID string
+	// StartOffset is the first log offset in the segment.
 	StartOffset int64
-	EndOffset   int64
-	SizeBytes   int64
-	MaxTime     time.Time
+	// EndOffset is the exclusive segment end offset.
+	EndOffset int64
+	// SizeBytes is the expected encoded object size.
+	SizeBytes int64
+	// MaxTime is the greatest record timestamp in the segment.
+	MaxTime time.Time
 }
 
 // RemoteLogFetchInfo describes remote segments referenced by a fetch response.
 type RemoteLogFetchInfo struct {
-	TabletDirectory    string
-	PartitionName      string
+	// TabletDirectory is the server-advertised remote tablet path.
+	TabletDirectory string
+	// PartitionName is the optional physical partition name.
+	PartitionName string
+	// FirstStartPosition is the byte position in the first segment.
 	FirstStartPosition int
-	Segments           []RemoteLogSegment
+	// Segments are ordered by StartOffset.
+	Segments []RemoteLogSegment
 }
 
 func (c *Client) readRemoteLog(

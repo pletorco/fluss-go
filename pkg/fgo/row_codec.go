@@ -138,6 +138,15 @@ func encodeRow(schema Schema, row Row, encoding rowEncoding) ([]byte, error) {
 	if err := schema.ValidateRow(row, nil); err != nil {
 		return nil, err
 	}
+	// Both layouts start with one null bit per column, rounded up to whole bytes.
+	// Compacted values follow the bitmap directly. Indexed rows reserve a uint32
+	// length slot for every variable-width column; non-null lengths are packed
+	// from the start of that area, leaving any unused reserved bytes as zero.
+	// All values begin after the complete reserved header.
+	//
+	// This layout is pinned to Apache Fluss 0.9.1 commit
+	// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and byte-locked by
+	// TestRowsMatchJava091Fixtures.
 	nullBytes := (len(schema.Columns) + 7) / 8
 	headerBytes := rowHeaderBytes(schema, encoding)
 	encoded := make([]byte, headerBytes)

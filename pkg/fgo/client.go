@@ -29,10 +29,18 @@ type DialContextFunc func(context.Context, string, string) (net.Conn, error)
 // Authenticator performs one Fluss Authenticate challenge exchange. An instance belongs to one
 // server connection and must not be shared by concurrent connections.
 type Authenticator interface {
+	// Protocol returns the SASL mechanism name sent to Fluss.
 	Protocol() string
+	// HasInitialResponse reports whether Authenticate should run before the
+	// first server challenge.
 	HasInitialResponse() bool
+	// Authenticate consumes one challenge and returns the next response.
+	// Implementations must not retain or expose challenge or response bytes.
 	Authenticate(context.Context, []byte) ([]byte, error)
+	// Complete reports whether the exchange has reached a terminal success
+	// state.
 	Complete() bool
+	// Close releases mechanism-specific state and secret material.
 	Close() error
 }
 
@@ -42,10 +50,13 @@ type AuthenticatorFactory func() (Authenticator, error)
 // AuthenticationError reports whether a failed authentication exchange may be retried on a new
 // connection. Its message intentionally never includes authentication tokens or credentials.
 type AuthenticationError struct {
-	Err       error
+	// Err is the underlying mechanism or transport failure.
+	Err error
+	// Retriable reports whether a fresh connection may repeat authentication.
 	Retriable bool
 }
 
+// Error returns a credential-safe authentication summary.
 func (e *AuthenticationError) Error() string {
 	if e != nil && e.Retriable {
 		return ErrAuthentication.Error() + " (retriable)"
@@ -53,6 +64,7 @@ func (e *AuthenticationError) Error() string {
 	return ErrAuthentication.Error()
 }
 
+// Unwrap returns the underlying authentication failure.
 func (e *AuthenticationError) Unwrap() error { return e.Err }
 
 // Is reports whether target is [ErrAuthentication].
@@ -80,8 +92,10 @@ type config struct {
 
 // RetryPolicy bounds automatic retries of safe, read-only requests.
 type RetryPolicy struct {
+	// MaxAttempts includes the initial request and must be positive.
 	MaxAttempts int
-	Backoff     func(attempt int) time.Duration
+	// Backoff returns the delay before the numbered retry attempt.
+	Backoff func(attempt int) time.Duration
 }
 
 // WithSeedBrokers sets coordinator bootstrap addresses.

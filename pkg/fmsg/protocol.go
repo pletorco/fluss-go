@@ -19,23 +19,33 @@ var (
 
 // Request is a transport-independent Fluss request.
 type Request interface {
+	// APIKey identifies the Fluss operation.
 	APIKey() APIKey
+	// Version returns the request wire version.
 	Version() int16
+	// SetVersion validates and selects a supported wire version.
 	SetVersion(int16) error
+	// Marshal validates and serializes the request body.
 	Marshal() ([]byte, error)
+	// NewResponse returns an empty response paired with this key and version.
 	NewResponse() Response
 }
 
 // Response is a transport-independent Fluss response.
 type Response interface {
+	// APIKey identifies the Fluss operation.
 	APIKey() APIKey
+	// Version returns the response wire version.
 	Version() int16
+	// Unmarshal replaces the response message with the decoded body.
 	Unmarshal([]byte) error
+	// Message returns the generated protobuf message owned by the response.
 	Message() proto.Message
 }
 
 // Requester is the minimal contract used by typed protocol helpers and clients.
 type Requester interface {
+	// Request sends request and returns its correlated response.
 	Request(context.Context, Request) (Response, error)
 }
 

@@ -9,6 +9,7 @@ import (
 // PhysicalTablePath identifies a logical table and optional named partition.
 type PhysicalTablePath struct {
 	TablePath
+	// Partition is an optional canonical physical partition name.
 	Partition string
 }
 
@@ -23,6 +24,7 @@ func (p PhysicalTablePath) Validate() error {
 	return nil
 }
 
+// String returns the logical path with an optional partition suffix.
 func (p PhysicalTablePath) String() string {
 	if p.Partition == "" {
 		return p.TablePath.String()
@@ -32,17 +34,24 @@ func (p PhysicalTablePath) String() string {
 
 // TableInfo combines table identity, schema identity, and table metadata.
 type TableInfo struct {
-	ID       int64
-	Table    Table
+	// ID is the server-assigned logical table identifier.
+	ID int64
+	// Table contains authoritative metadata and schema.
+	Table Table
+	// SchemaID identifies the current schema version.
 	SchemaID int64
 }
 
 // TableBucket is a resolved bucket and its current tablet leader.
 type TableBucket struct {
-	TableID     int64
+	// TableID is the server-assigned table identifier.
+	TableID int64
+	// PartitionID is -1 for an unpartitioned table.
 	PartitionID int64
-	BucketID    int32
-	Leader      Node
+	// BucketID identifies the logical table bucket.
+	BucketID int32
+	// Leader is the current tablet server leader.
+	Leader Node
 }
 
 // Validate checks IDs and leader metadata.
@@ -111,11 +120,16 @@ func (c ChangeType) Validate() error {
 
 // Record is one keyed or unkeyed row change and its log metadata.
 type Record struct {
-	Key       PrimaryKey
-	Value     Row
-	Change    ChangeType
+	// Key contains primary-key columns and may be nil for log records.
+	Key PrimaryKey
+	// Value contains schema-ordered columns and may be nil for deletes.
+	Value Row
+	// Change identifies append, upsert, update, or delete semantics.
+	Change ChangeType
+	// Timestamp is the server commit timestamp.
 	Timestamp time.Time
-	Offset    int64
+	// Offset is the bucket-local log offset, or -1 before assignment.
+	Offset int64
 }
 
 // Validate checks the change, offset, key, and value against schema.
@@ -137,7 +151,9 @@ func (r Record) Validate(schema Schema) error {
 
 // OffsetSpec selects an explicit offset or timestamp lookup.
 type OffsetSpec struct {
-	Offset    int64
+	// Offset is non-negative for an explicit lookup and -1 otherwise.
+	Offset int64
+	// Timestamp is set only for timestamp lookup.
 	Timestamp time.Time
 }
 

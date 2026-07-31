@@ -490,3 +490,14 @@ PR에는 최소한 다음 내용을 포함한다.
   `Unreleased` 섹션과 tag 비교 링크를 준비한다.
 - GitHub 자동 릴리스 노트는 기여자와 PR 목록을 제공하는 보조 자료로 사용하며
   `CHANGELOG.md`를 대체하지 않는다.
+
+### 공개 문서 검증 규칙
+
+- `task docs:check`는 생성 코드와 테스트 파일을 제외한 공개 package, 선언, 메서드와
+  interface 메서드의 GoDoc 누락을 검사한다.
+- 공개 struct field는 이름만 반복하는 주석을 강제하지 않는다. 단위, 기본값, sentinel,
+  소유권, 유효 조건, 부분 실패 또는 호환성 의미가 있는 field는 같은 type 또는 field
+  주석으로 계약을 설명하고 review에서 확인한다.
+- 생성 파일 제외는 파일명 패턴이 아니라 표준 `Code generated ... DO NOT EDIT.`
+  marker를 기준으로 결정한다.
+- 문서 검사는 파일, line, symbol과 실패 이유를 출력하여 바로 수정할 수 있어야 한다.

@@ -12,6 +12,15 @@ import (
 const millisPerDay = int64(24 * time.Hour / time.Millisecond)
 
 func appendCompactedValue(dst []byte, logicalType LogicalType, value any) ([]byte, error) {
+	// Compacted values have no per-field padding: fixed primitives are
+	// little-endian, signed integer-like values use unsigned varints over their
+	// two's-complement bits, and variable or nested values use a varint byte
+	// length followed by their payload. The row-level null bitmap is handled by
+	// encodeRow.
+	//
+	// This representation is pinned to Apache Fluss 0.9.1 commit
+	// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and byte-locked by
+	// TestCompactedPrimaryKeyMatchesJavaFixture and TestRowsMatchJava091Fixtures.
 	switch dataTypeForLogicalType(logicalType) {
 	case BoolType:
 		if value.(bool) {
@@ -206,6 +215,10 @@ func readCompactedNested(encoded []byte, position int, logicalType LogicalType) 
 }
 
 func appendIndexedValue(dst []byte, logicalType LogicalType, value any) ([]byte, error) {
+	// Indexed rows use fixed-width little-endian values where the schema
+	// determines a width. Variable values are emitted without a local prefix;
+	// encodeRow stores their uint32 lengths in the row header. CHAR and BINARY
+	// with declared lengths are zero-padded fixed values.
 	kind := dataTypeForLogicalType(logicalType)
 	switch kind {
 	case IntType:
@@ -417,6 +430,9 @@ func temporalTime(kind DataType, value int32) time.Time {
 }
 
 func timestampParts(kind DataType, value time.Time) (int64, int32) {
+	// TIMESTAMP_LTZ stores an instant as Unix milliseconds. TIMESTAMP preserves
+	// local wall-clock fields by mapping them onto UTC epoch days. Precision
+	// above milliseconds is stored separately as 0..999999 nanoseconds.
 	if kind == TimestampLTZType {
 		return value.UnixMilli(), int32(value.Nanosecond() % int(time.Millisecond))
 	}
@@ -442,6 +458,9 @@ func timestampTime(kind DataType, millis int64, nanos int32) time.Time {
 }
 
 func decimalUnscaled(value *big.Rat, logicalType LogicalType) (*big.Int, error) {
+	// Fluss decimals store value*10^scale as an exact integer. Precision <= 18
+	// uses an int64 representation; larger values use minimal big-endian
+	// two's-complement bytes.
 	if logicalType.Precision < 1 || logicalType.Scale < 0 {
 		return nil, fmt.Errorf("%w: decimal precision and scale are required", ErrInvalidSchema)
 	}

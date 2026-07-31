@@ -12,4 +12,7 @@
 // cover keys 1000 through 1059 from Apache Fluss 0.9.1. Unknown protobuf fields
 // are retained when decoding responses, but APIs introduced by later Fluss
 // versions are not supported until the pinned protocol inputs are updated.
+//
+// The public Go API is experimental before v1. Applications should pin a
+// release and review the project changelog before upgrading.
 package fmsg

@@ -14,22 +14,41 @@ const (
 	logBatchV1HeaderSize = 52
 )
 
+// KV batch bytes are [length:4][magic:1][CRC32C:4][schema:2][reserved:1]
+// [writer ID:8][sequence:4][record count:4], followed by length-delimited
+// records. The length excludes its own four bytes and the checksum covers from
+// schema through the final record.
+//
+// Log v0 bytes are [base offset:8][length:4][magic:1][commit time:8]
+// [CRC32C:4] plus the common schema-and-writer tail. Log v1 inserts a four-byte
+// leader epoch before the checksum. Their lengths exclude the first 12 bytes,
+// and checksums cover from schema through the final record. These boundaries
+// are pinned to Apache Fluss 0.9.1 commit
+// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and byte-locked by
+// TestKVAndLogBatchesMatchJava091Fixtures.
+
 // ErrMalformedRecordBatch reports an invalid KV, row, or Arrow batch encoding.
 var ErrMalformedRecordBatch = errors.New("fgo: malformed record batch")
 
 // KVRecord is one raw primary-key record. A nil Value represents a delete. Buffers returned by a
 // decoder are owned by the caller.
 type KVRecord struct {
-	Key   []byte
+	// Key contains an encoded non-empty primary key.
+	Key []byte
+	// Value contains an encoded row; nil represents a delete.
 	Value []byte
 }
 
 // KVBatch carries the writer state required for idempotent KV writes.
 type KVBatch struct {
-	SchemaID      int16
-	WriterID      int64
+	// SchemaID identifies the row schema used by Records.
+	SchemaID int16
+	// WriterID identifies the idempotent writer session.
+	WriterID int64
+	// BatchSequence is monotonic within WriterID and bucket.
 	BatchSequence int32
-	Records       []KVRecord
+	// Records are encoded in request order.
+	Records []KVRecord
 }
 
 // Encode serializes the KV batch using the Apache Fluss 0.9.1 layout.
@@ -116,15 +135,24 @@ func decodeKVRecord(encoded []byte, position int) (KVRecord, int, error) {
 
 // LogBatch encodes compacted or indexed row records. Magic 0 and 1 use the Fluss 0.9.1 layouts.
 type LogBatch struct {
-	Magic         byte
-	BaseOffset    int64
-	CommitTime    int64
-	LeaderEpoch   int32
-	SchemaID      int16
-	AppendOnly    bool
-	WriterID      int64
+	// Magic selects the Fluss v0 or v1 batch header.
+	Magic byte
+	// BaseOffset is the first record offset.
+	BaseOffset int64
+	// CommitTime is the server commit time in Unix milliseconds.
+	CommitTime int64
+	// LeaderEpoch is present only for magic 1.
+	LeaderEpoch int32
+	// SchemaID identifies the row schema used by Records.
+	SchemaID int16
+	// AppendOnly omits per-record change bytes when true.
+	AppendOnly bool
+	// WriterID identifies the idempotent writer session.
+	WriterID int64
+	// BatchSequence is monotonic within WriterID and bucket.
 	BatchSequence int32
-	Records       []Record
+	// Records are ordered by offset.
+	Records []Record
 }
 
 // EncodeRows serializes row records using compacted or indexed encoding.
@@ -149,6 +177,9 @@ func (b LogBatch) EncodeRows(schema Schema, compacted bool) ([]byte, error) {
 	if b.AppendOnly {
 		encoded[schemaOffset+2] = 1
 	}
+	// The common tail is schema ID, attributes, last offset delta, writer ID,
+	// sequence, and record count. schemaOffset moves by four bytes in v1, so
+	// every later boundary remains relative to it.
 	lastOffset := schemaOffset + 3
 	if len(b.Records) > 0 {
 		binary.LittleEndian.PutUint32(encoded[lastOffset:], uint32(len(b.Records)-1))

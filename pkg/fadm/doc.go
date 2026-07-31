@@ -14,4 +14,7 @@
 // multiple buckets return one result per bucket so callers can distinguish
 // partial failure from complete failure. Errors returned by the server retain
 // the classifications defined by package fgo.
+//
+// The public Go API is experimental before v1. Applications should pin a
+// release and review the project changelog before upgrading.
 package fadm

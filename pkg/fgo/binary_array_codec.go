@@ -13,6 +13,15 @@ func encodeBinaryArray(elementType LogicalType, values []any, encoding rowEncodi
 	if len(values) > maxRowBytes/8 {
 		return nil, errors.New("array element count exceeds allocation limit")
 	}
+	// A binary array is [uint32 count][null bitmap][fixed slots][padding]
+	// followed by variable-width values. The bitmap is rounded to 32-bit words,
+	// while the complete fixed region is rounded to an 8-byte boundary. Slot
+	// widths are determined solely by the element type, so nulls still consume
+	// their slot. maxRowBytes bounds every allocation and offset.
+	//
+	// This layout is pinned to Apache Fluss 0.9.1 commit
+	// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and covered by
+	// TestRowsMatchJava091Fixtures and the binary-array malformed-input tests.
 	slotSize := arraySlotSize(elementType)
 	nullBytes := ((len(values) + 31) / 32) * 4
 	fixedBytes := align8(4 + nullBytes + slotSize*len(values))
@@ -81,6 +90,9 @@ func encodeBinaryMap(logicalType LogicalType, value any, encoding rowEncoding) (
 	if !ok {
 		return nil, errors.New("invalid map value")
 	}
+	// Maps are [uint32 key-array byte length][key array][value array]. Encoding
+	// both sides as binary arrays preserves element counts and null semantics;
+	// decoders additionally require equal key and value counts.
 	keys, values := make([]any, len(entries)), make([]any, len(entries))
 	for i, entry := range entries {
 		keys[i], values[i] = entry.Key, entry.Value
@@ -163,6 +175,9 @@ func writeArrayElement(encoded []byte, slot int, logicalType LogicalType, value 
 			binary.LittleEndian.PutUint64(encoded[slot:], uint64(millis))
 			break
 		}
+		// High-precision timestamps reuse the variable slot shape, but its low
+		// 32 bits carry sub-millisecond nanos rather than a payload size. The
+		// upper 32 bits point to the 8-byte millisecond value.
 		offset := len(encoded)
 		encoded = appendLittle(encoded, uint64(millis), 8)
 		putOffsetSize(encoded, slot, offset, int(nanos))
@@ -310,6 +325,9 @@ func arraySlotSize(logicalType LogicalType) int {
 
 func appendPackedArrayBytes(encoded []byte, slot int, value []byte) ([]byte, error) {
 	if len(value) <= 7 {
+		// String and binary values up to seven bytes live directly in the slot.
+		// Bit 63 marks the inline form, bits 56..62 hold the length, and the
+		// low 56 bits hold bytes in little-endian order.
 		var packed uint64 = uint64(len(value)|0x80) << 56
 		for i, part := range value {
 			packed |= uint64(part) << (8 * i)
@@ -357,6 +375,9 @@ func arrayVariable(encoded []byte, slot int) ([]byte, error) {
 }
 
 func putOffsetSize(encoded []byte, slot, offset, size int) {
+	// Variable slots logically pack offset in the upper uint32 and byte size in
+	// the lower uint32. Both components must remain within maxRowBytes, which
+	// also keeps their conversion to uint32 lossless.
 	binary.LittleEndian.PutUint64(encoded[slot:], uint64(uint32(offset))<<32|uint64(uint32(size)))
 }
 

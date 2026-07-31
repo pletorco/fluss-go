@@ -8,16 +8,21 @@ import (
 
 // Codec is the stable, reflection-free mapping between an application type and a Fluss row.
 type Codec[T any] interface {
+	// Encode maps one application value to schema column order.
 	Encode(T) (Row, error)
+	// Decode maps one row to an application value without retaining the row.
 	Decode(Row) (T, error)
 }
 
 // CodecFuncs adapts encode and decode functions to Codec.
 type CodecFuncs[T any] struct {
+	// EncodeFunc implements [Codec.Encode].
 	EncodeFunc func(T) (Row, error)
+	// DecodeFunc implements [Codec.Decode].
 	DecodeFunc func(Row) (T, error)
 }
 
+// Encode calls EncodeFunc and rejects an unset function.
 func (c CodecFuncs[T]) Encode(value T) (Row, error) {
 	if c.EncodeFunc == nil {
 		return nil, fmt.Errorf("%w: typed encoder is nil", ErrInvalidConfig)
@@ -25,6 +30,7 @@ func (c CodecFuncs[T]) Encode(value T) (Row, error) {
 	return c.EncodeFunc(value)
 }
 
+// Decode calls DecodeFunc and rejects an unset function.
 func (c CodecFuncs[T]) Decode(row Row) (T, error) {
 	if c.DecodeFunc == nil {
 		var zero T
@@ -35,12 +41,14 @@ func (c CodecFuncs[T]) Decode(row Row) (T, error) {
 
 // KeyCodec maps an application key to primary-key column order.
 type KeyCodec[K any] interface {
+	// EncodeKey maps one application key to primary-key column order.
 	EncodeKey(K) (PrimaryKey, error)
 }
 
 // KeyCodecFunc adapts a function to KeyCodec.
 type KeyCodecFunc[K any] func(K) (PrimaryKey, error)
 
+// EncodeKey calls f and rejects a nil function.
 func (f KeyCodecFunc[K]) EncodeKey(key K) (PrimaryKey, error) {
 	if f == nil {
 		return nil, fmt.Errorf("%w: typed key encoder is nil", ErrInvalidConfig)
@@ -99,6 +107,8 @@ func wrapTypedLogWriter[T any](writer *LogWriter, codec Codec[T]) (*TypedLogWrit
 	return &TypedLogWriter[T]{writer: writer, codec: codec}, nil
 }
 
+// Append encodes value and queues it using the wrapped writer.
+// Encoding failures are returned through the completed future.
 func (w *TypedLogWriter[T]) Append(ctx context.Context, value T) *WriteFuture {
 	if w == nil || w.writer == nil {
 		return completedWriteError(fmt.Errorf("%w: nil typed log writer", ErrInvalidConfig))
@@ -110,6 +120,7 @@ func (w *TypedLogWriter[T]) Append(ctx context.Context, value T) *WriteFuture {
 	return w.writer.Append(ctx, row)
 }
 
+// Flush waits until all values accepted before the call have completed.
 func (w *TypedLogWriter[T]) Flush(ctx context.Context) error {
 	if w == nil || w.writer == nil {
 		return fmt.Errorf("%w: nil typed log writer", ErrInvalidConfig)
@@ -117,6 +128,7 @@ func (w *TypedLogWriter[T]) Flush(ctx context.Context) error {
 	return w.writer.Flush(ctx)
 }
 
+// Close flushes accepted values and closes the wrapped writer.
 func (w *TypedLogWriter[T]) Close(ctx context.Context) error {
 	if w == nil || w.writer == nil {
 		return nil
@@ -174,6 +186,8 @@ func wrapTypedKVWriter[T, K any](
 	return &TypedKVWriter[T, K]{writer: writer, codec: codec, keyCodec: keyCodec}, nil
 }
 
+// Upsert encodes value and queues a primary-key upsert.
+// Encoding failures are returned through the completed future.
 func (w *TypedKVWriter[T, K]) Upsert(ctx context.Context, value T) *WriteFuture {
 	if w == nil || w.writer == nil {
 		return completedWriteError(fmt.Errorf("%w: nil typed KV writer", ErrInvalidConfig))
@@ -185,6 +199,8 @@ func (w *TypedKVWriter[T, K]) Upsert(ctx context.Context, value T) *WriteFuture 
 	return w.writer.Upsert(ctx, row)
 }
 
+// Delete encodes key and queues a primary-key delete.
+// Encoding failures are returned through the completed future.
 func (w *TypedKVWriter[T, K]) Delete(ctx context.Context, key K) *WriteFuture {
 	if w == nil || w.writer == nil {
 		return completedWriteError(fmt.Errorf("%w: nil typed KV writer", ErrInvalidConfig))
@@ -196,6 +212,7 @@ func (w *TypedKVWriter[T, K]) Delete(ctx context.Context, key K) *WriteFuture {
 	return w.writer.Delete(ctx, primaryKey)
 }
 
+// Flush waits until all mutations accepted before the call have completed.
 func (w *TypedKVWriter[T, K]) Flush(ctx context.Context) error {
 	if w == nil || w.writer == nil {
 		return fmt.Errorf("%w: nil typed KV writer", ErrInvalidConfig)
@@ -203,6 +220,7 @@ func (w *TypedKVWriter[T, K]) Flush(ctx context.Context) error {
 	return w.writer.Flush(ctx)
 }
 
+// Close flushes accepted mutations and closes the wrapped writer.
 func (w *TypedKVWriter[T, K]) Close(ctx context.Context) error {
 	if w == nil || w.writer == nil {
 		return nil
@@ -218,17 +236,24 @@ func completedWriteError(err error) *WriteFuture {
 
 // TypedLookupResult is one decoded point-lookup outcome.
 type TypedLookupResult[K, T any] struct {
-	Key   K
+	// Key is the application key associated with this result.
+	Key K
+	// Found reports whether Value contains a server row.
 	Found bool
+	// Value is valid only when Found is true and Err is nil.
 	Value T
-	Err   error
+	// Err is a key-local encoding, request, or decoding failure.
+	Err error
 }
 
 // TypedPrefixLookupResult contains decoded rows for one requested key prefix.
 type TypedPrefixLookupResult[K, T any] struct {
+	// Prefix is the application prefix associated with this result.
 	Prefix K
+	// Values contains decoded matches when Err is nil.
 	Values []T
-	Err    error
+	// Err is a prefix-local encoding, request, or decoding failure.
+	Err error
 }
 
 // TypedLookupClient encodes application keys and decodes returned rows.
@@ -280,6 +305,8 @@ func wrapTypedLookupClient[T, K any](
 	return &TypedLookupClient[T, K]{lookup: lookup, codec: codec, keyCodec: keyCodec}, nil
 }
 
+// Lookup returns one result per input key in input order.
+// A failure for one key does not discard results for other keys.
 func (c *TypedLookupClient[T, K]) Lookup(ctx context.Context, keys ...K) []TypedLookupResult[K, T] {
 	results := make([]TypedLookupResult[K, T], len(keys))
 	if c == nil || c.lookup == nil {
@@ -313,6 +340,8 @@ func (c *TypedLookupClient[T, K]) Lookup(ctx context.Context, keys ...K) []Typed
 	return results
 }
 
+// PrefixLookup returns one result per input prefix in input order.
+// A failure for one prefix does not discard results for other prefixes.
 func (c *TypedLookupClient[T, K]) PrefixLookup(
 	ctx context.Context,
 	prefixes ...K,
@@ -355,6 +384,7 @@ func (c *TypedLookupClient[T, K]) PrefixLookup(
 	return results
 }
 
+// Close prevents new lookups and releases wrapped client resources.
 func (c *TypedLookupClient[T, K]) Close() error {
 	if c == nil || c.lookup == nil {
 		return nil
@@ -364,19 +394,28 @@ func (c *TypedLookupClient[T, K]) Close() error {
 
 // TypedScanRecord is one decoded log record and its source metadata.
 type TypedScanRecord[T any] struct {
-	Bucket    int32
-	Value     T
-	Change    ChangeType
+	// Bucket identifies the source table bucket.
+	Bucket int32
+	// Value is the decoded row value.
+	Value T
+	// Change identifies the row mutation represented by the record.
+	Change ChangeType
+	// Timestamp is the server commit timestamp.
 	Timestamp time.Time
-	Offset    int64
+	// Offset is the record offset within Bucket.
+	Offset int64
 }
 
 // TypedScanResult is a decoded log poll result.
 type TypedScanResult[T any] struct {
-	Records       []TypedScanRecord[T]
-	BucketErrors  []BucketScanError
+	// Records contains successfully decoded records.
+	Records []TypedScanRecord[T]
+	// BucketErrors contains failures that did not invalidate other buckets.
+	BucketErrors []BucketScanError
+	// HighWatermark maps bucket IDs to the observed log end offset.
 	HighWatermark map[int32]int64
-	Done          bool
+	// Done reports that configured row or stopping-offset bounds were reached.
+	Done bool
 }
 
 // TypedLogScanner decodes row-based log scan results.
@@ -420,6 +459,8 @@ func wrapTypedLogScanner[T any](
 	return &TypedLogScanner[T]{scanner: scanner, codec: codec}, nil
 }
 
+// Poll waits for the next decoded result.
+// A decode failure returns no partial decoded records.
 func (s *TypedLogScanner[T]) Poll(ctx context.Context) (TypedScanResult[T], error) {
 	if s == nil || s.scanner == nil {
 		return TypedScanResult[T]{}, fmt.Errorf("%w: nil typed log scanner", ErrInvalidConfig)
@@ -456,16 +497,19 @@ func (s *TypedLogScanner[T]) Poll(ctx context.Context) (TypedScanResult[T], erro
 	return result, nil
 }
 
+// Done reports whether configured scan bounds have been reached.
 func (s *TypedLogScanner[T]) Done() bool {
 	return s == nil || s.scanner == nil || s.scanner.Done()
 }
 
+// Wakeup interrupts a blocked Poll with [ErrWakeup].
 func (s *TypedLogScanner[T]) Wakeup() {
 	if s != nil && s.scanner != nil {
 		s.scanner.Wakeup()
 	}
 }
 
+// Close interrupts blocked work and releases scanner resources.
 func (s *TypedLogScanner[T]) Close() error {
 	if s == nil || s.scanner == nil {
 		return nil
@@ -475,8 +519,10 @@ func (s *TypedLogScanner[T]) Close() error {
 
 // TypedBatchResult contains decoded values from one bounded poll.
 type TypedBatchResult[T any] struct {
+	// Values contains successfully decoded rows from one poll.
 	Values []T
-	Done   bool
+	// Done reports that the bounded scan has completed.
+	Done bool
 }
 
 // TypedBatchScanner decodes bounded current-state or snapshot scan rows.
@@ -546,6 +592,8 @@ func WrapTypedBatchScanner[T any](
 	return &TypedBatchScanner[T]{scanner: scanner, codec: codec}, nil
 }
 
+// Poll returns the next decoded bounded-scan result.
+// A decode failure returns no partial decoded values.
 func (s *TypedBatchScanner[T]) Poll(ctx context.Context) (TypedBatchResult[T], error) {
 	if s == nil || s.scanner == nil {
 		return TypedBatchResult[T]{}, fmt.Errorf("%w: nil typed batch scanner", ErrInvalidConfig)
@@ -571,10 +619,12 @@ func (s *TypedBatchScanner[T]) Poll(ctx context.Context) (TypedBatchResult[T], e
 	return result, nil
 }
 
+// Done reports whether the bounded scan has completed.
 func (s *TypedBatchScanner[T]) Done() bool {
 	return s == nil || s.scanner == nil || s.scanner.Done()
 }
 
+// Close closes the wrapped scanner or snapshot reader.
 func (s *TypedBatchScanner[T]) Close() error {
 	if s == nil || s.scanner == nil {
 		return nil

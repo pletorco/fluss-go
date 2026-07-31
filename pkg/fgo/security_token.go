@@ -22,11 +22,16 @@ var (
 // FileSystemSecurityToken contains temporary filesystem credentials.
 // String and GoString always redact Token.
 type FileSystemSecurityToken struct {
-	Schema         string
-	Token          []byte
-	ExpiresAt      time.Time
+	// Schema identifies the filesystem credential format.
+	Schema string
+	// Token contains opaque secret bytes and must not be logged.
+	Token []byte
+	// ExpiresAt is the server expiration time.
+	ExpiresAt time.Time
+	// AdditionalInfo contains non-secret provider metadata.
 	AdditionalInfo map[string]string
-	Revoked        bool
+	// Revoked reports that the server invalidated the token.
+	Revoked bool
 }
 
 // Clone returns a deep copy suitable for handing to another component.
@@ -40,6 +45,7 @@ func (t FileSystemSecurityToken) Clone() FileSystemSecurityToken {
 	return cloned
 }
 
+// String returns a representation with token bytes redacted.
 func (t FileSystemSecurityToken) String() string {
 	return fmt.Sprintf(
 		"FileSystemSecurityToken{Schema:%q Token:[REDACTED] ExpiresAt:%s Revoked:%t}",
@@ -52,6 +58,7 @@ func (t FileSystemSecurityToken) GoString() string { return t.String() }
 
 // FileSystemSecurityTokenProvider acquires temporary filesystem credentials.
 type FileSystemSecurityTokenProvider interface {
+	// AcquireFileSystemSecurityToken returns a new caller-owned token.
 	AcquireFileSystemSecurityToken(context.Context) (FileSystemSecurityToken, error)
 }
 
@@ -69,6 +76,8 @@ func (f FileSystemSecurityTokenProviderFunc) AcquireFileSystemSecurityToken(
 // FileSystemSecurityTokenReceiver receives a clone after each successful
 // acquisition.
 type FileSystemSecurityTokenReceiver interface {
+	// ReceiveFileSystemSecurityToken receives a deep clone after acquisition.
+	// Returning an error rejects publication and schedules a bounded retry.
 	ReceiveFileSystemSecurityToken(FileSystemSecurityToken) error
 }
 
@@ -86,11 +95,17 @@ func (f FileSystemSecurityTokenReceiverFunc) ReceiveFileSystemSecurityToken(
 // FileSystemSecurityTokenRefreshConfig controls renewal timing and bounded
 // retry backoff. Zero fields use documented defaults.
 type FileSystemSecurityTokenRefreshConfig struct {
-	RenewalRatio    float64
-	RetryBackoff    time.Duration
+	// RenewalRatio selects the fraction of token lifetime before renewal;
+	// zero defaults to 0.75.
+	RenewalRatio float64
+	// RetryBackoff is the initial acquisition retry delay; zero defaults to 1m.
+	RetryBackoff time.Duration
+	// MaxRetryBackoff bounds exponential retry delay; zero defaults to 1h.
 	MaxRetryBackoff time.Duration
-	ClockSkew       time.Duration
-	Jitter          float64
+	// ClockSkew renews this much earlier than calculated; zero defaults to 30s.
+	ClockSkew time.Duration
+	// Jitter randomizes renewal delay as a fraction in [0, 1].
+	Jitter float64
 
 	clock  securityTokenClock
 	random func() float64

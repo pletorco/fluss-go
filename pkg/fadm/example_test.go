@@ -2,6 +2,8 @@ package fadm_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/pletorco/fluss-go/pkg/fadm"
@@ -14,7 +16,11 @@ func ExampleNew() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("close Fluss client: %v", err)
+		}
+	}()
 
 	admin, err := fadm.New(client)
 	if err != nil {
@@ -35,7 +41,11 @@ func ExampleClient_CreateDatabase() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("close Fluss client: %v", err)
+		}
+	}()
 
 	admin, err := fadm.New(client)
 	if err != nil {
@@ -144,4 +154,97 @@ func ExampleClient_DropACLs() {
 			log.Printf("drop ACLs: %v", result.Err)
 		}
 	}
+}
+
+func ExampleClient_CreateTable() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("close Fluss client: %v", err)
+		}
+	}()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = admin.CreateTable(
+		ctx,
+		fgo.TablePath{Database: "production", Table: "customers"},
+		fadm.TableDefinition{
+			Schema: fgo.Schema{
+				Columns: []fgo.Column{
+					{Name: "customer_id", Type: fgo.BigIntType},
+					{Name: "name", Type: fgo.StringType},
+				},
+				PrimaryKey: []string{"customer_id"},
+			},
+			BucketCount: 3,
+		},
+		true,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleClient_ListOffsets() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("close Fluss client: %v", err)
+		}
+	}()
+
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	table, err := client.OpenTable(
+		ctx,
+		fgo.TablePath{Database: "production", Table: "events"},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	results := admin.ListOffsets(
+		ctx,
+		table,
+		fgo.PhysicalTablePath{TablePath: table.Path},
+		-1,
+		[]int32{0, 1, 2},
+		fgo.Latest(),
+	)
+	for _, result := range results {
+		if result.Err != nil {
+			log.Printf("bucket %d: %v", result.Bucket, result.Err)
+			continue
+		}
+		log.Printf("bucket %d offset %d", result.Bucket, result.Offset)
+	}
+}
+
+func ExampleTableDefinition_JSON() {
+	definition := fadm.TableDefinition{
+		Schema: fgo.Schema{
+			Columns: []fgo.Column{
+				{Name: "customer_id", Type: fgo.BigIntType},
+				{Name: "name", Type: fgo.StringType},
+			},
+			PrimaryKey: []string{"customer_id"},
+		},
+		BucketCount: 3,
+	}
+	encoded, err := definition.JSON()
+	fmt.Println(err == nil, json.Valid(encoded))
+	// Output:
+	// true true
 }

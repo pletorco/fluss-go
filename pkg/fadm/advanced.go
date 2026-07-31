@@ -66,13 +66,20 @@ const (
 
 // ACL describes one Fluss access-control entry.
 type ACL struct {
-	ResourceName  string
-	ResourceType  ACLResourceType
+	// ResourceName is a concrete database, table, or cluster resource.
+	ResourceName string
+	// ResourceType must be a concrete resource type, not [ACLResourceAny].
+	ResourceType ACLResourceType
+	// PrincipalName is a concrete name or [ACLWildcardPrincipalName].
 	PrincipalName string
+	// PrincipalType identifies the principal namespace.
 	PrincipalType ACLPrincipalType
-	Host          string
-	Operation     ACLOperation
-	Permission    ACLPermission
+	// Host is a concrete host or [ACLWildcardHost].
+	Host string
+	// Operation must be a concrete operation, not [ACLOperationAny].
+	Operation ACLOperation
+	// Permission must be [ACLPermissionAllow] for creation.
+	Permission ACLPermission
 }
 
 func (a ACL) validate() error {
@@ -110,13 +117,20 @@ func (a ACL) message() *fmsg.PbAclInfo {
 // Nil optional string fields and explicit Any enum values act as wildcards.
 // PrincipalName and PrincipalType must either both be nil or both be set.
 type ACLFilter struct {
-	ResourceName  *string
-	ResourceType  ACLResourceType
+	// ResourceName is nil to match every resource name.
+	ResourceName *string
+	// ResourceType may be [ACLResourceAny].
+	ResourceType ACLResourceType
+	// PrincipalName is nil only when PrincipalType is also nil.
 	PrincipalName *string
+	// PrincipalType is nil only when PrincipalName is also nil.
 	PrincipalType *ACLPrincipalType
-	Host          *string
-	Operation     ACLOperation
-	Permission    ACLPermission
+	// Host is nil to match every host.
+	Host *string
+	// Operation may be [ACLOperationAny].
+	Operation ACLOperation
+	// Permission may be [ACLPermissionAny].
+	Permission ACLPermission
 }
 
 func (f ACLFilter) validate() error {
@@ -212,7 +226,9 @@ func aclPrincipalTypeString(principalType *ACLPrincipalType) *string {
 
 // ACLResult associates one ACL with its server-side result.
 type ACLResult struct {
+	// ACL is the server-returned access-control entry.
 	ACL ACL
+	// Err is the entry-local server failure.
 	Err error
 }
 
@@ -288,9 +304,12 @@ func (c *Client) ListACLs(ctx context.Context, filter ACLFilter) ([]ACL, error) 
 
 // DropACLResult contains matches and errors for one requested filter.
 type DropACLResult struct {
-	Filter  ACLFilter
+	// Filter is the requested filter associated with this result.
+	Filter ACLFilter
+	// Matches contains independently reported matching ACL outcomes.
 	Matches []ACLResult
-	Err     error
+	// Err is the filter-level server failure.
+	Err error
 }
 
 // DropACLs removes entries and returns one result per input filter.
@@ -359,7 +378,12 @@ func aclFromMessage(message *fmsg.PbAclInfo) (ACL, error) {
 
 // ClusterConfig is one effective cluster configuration value and its source.
 type ClusterConfig struct {
-	Key, Value, Source string
+	// Key is the cluster configuration name.
+	Key string
+	// Value is the effective configuration value.
+	Value string
+	// Source identifies the default or configured value origin.
+	Source string
 }
 
 // DescribeClusterConfigs returns effective cluster configuration values.
@@ -446,25 +470,38 @@ func (c *Client) changeServerTag(ctx context.Context, key fmsg.APIKey, serverIDs
 
 // RebalanceProgress is the current state of one rebalance operation.
 type RebalanceProgress struct {
-	ID     string
+	// ID identifies the asynchronous rebalance.
+	ID string
+	// Status is the Fluss 0.9.1 protocol status code.
 	Status int32
+	// Tables contains physical-table progress.
 	Tables []RebalanceTableProgress
 }
 
 // RebalanceTableProgress groups bucket progress for one physical table.
 type RebalanceTableProgress struct {
+	// TableID is the server-assigned physical table identifier.
 	TableID int64
+	// Buckets contains independent bucket moves.
 	Buckets []RebalanceBucketProgress
 }
 
 // RebalanceBucketProgress describes one bucket move.
 type RebalanceBucketProgress struct {
-	PartitionID               int64
-	Bucket                    int32
-	Status                    int32
-	OriginalLeader, NewLeader int32
-	OriginalReplicas          []int32
-	NewReplicas               []int32
+	// PartitionID is -1 for an unpartitioned table.
+	PartitionID int64
+	// Bucket identifies the logical table bucket.
+	Bucket int32
+	// Status is the Fluss 0.9.1 bucket progress code.
+	Status int32
+	// OriginalLeader is the leader before the rebalance.
+	OriginalLeader int32
+	// NewLeader is the selected leader after the rebalance.
+	NewLeader int32
+	// OriginalReplicas contains node IDs before the rebalance.
+	OriginalReplicas []int32
+	// NewReplicas contains selected node IDs after the rebalance.
+	NewReplicas []int32
 }
 
 // StartRebalance starts an asynchronous rebalance and returns its ID.
@@ -568,22 +605,30 @@ func (c *Client) CancelRebalance(ctx context.Context, id string) error {
 
 // ProducerBucketOffset is one producer offset for a table bucket.
 type ProducerBucketOffset struct {
+	// PartitionID is -1 for an unpartitioned table.
 	PartitionID int64
-	Bucket      int32
-	Offset      int64
+	// Bucket identifies the logical table bucket.
+	Bucket int32
+	// Offset is the registered next-readable log offset.
+	Offset int64
 }
 
 // ProducerTableOffsets groups producer offsets for one physical table.
 type ProducerTableOffsets struct {
+	// TableID is the server-assigned table identifier.
 	TableID int64
+	// Offsets contains independently registered bucket offsets.
 	Offsets []ProducerBucketOffset
 }
 
 // ProducerOffsets contains all registered offsets and their expiration.
 type ProducerOffsets struct {
+	// ProducerID is the application registration key.
 	ProducerID string
-	ExpiresAt  time.Time
-	Tables     []ProducerTableOffsets
+	// ExpiresAt is the server expiration time.
+	ExpiresAt time.Time
+	// Tables contains registered table offsets.
+	Tables []ProducerTableOffsets
 }
 
 // RegisterProducerOffsets creates or replaces offsets for producerID.
@@ -696,16 +741,24 @@ func producerOffsetsFromMessage(tables []*fmsg.PbProducerTableOffsets) []Produce
 
 // KVSnapshot identifies the latest available state for one bucket.
 type KVSnapshot struct {
-	Bucket     int32
+	// Bucket identifies the primary-key table bucket.
+	Bucket int32
+	// SnapshotID is valid only when Available is true.
 	SnapshotID int64
-	LogOffset  int64
-	Available  bool
+	// LogOffset is the snapshot's inclusive state offset.
+	LogOffset int64
+	// Available distinguishes no snapshot from snapshot ID zero.
+	Available bool
 }
 
 // LatestKVSnapshot groups latest snapshot metadata by table partition.
 type LatestKVSnapshot struct {
-	TableID, PartitionID int64
-	Snapshots            []KVSnapshot
+	// TableID is the server-assigned table identifier.
+	TableID int64
+	// PartitionID is -1 for an unpartitioned table.
+	PartitionID int64
+	// Snapshots contains one latest state per bucket.
+	Snapshots []KVSnapshot
 }
 
 // LatestKVSnapshots returns current primary-key snapshot IDs and offsets.
@@ -748,12 +801,19 @@ func (c *Client) LatestKVSnapshots(
 }
 
 // SnapshotFile maps one remote object to its local snapshot name.
-type SnapshotFile struct{ RemotePath, LocalName string }
+type SnapshotFile struct {
+	// RemotePath is the server-managed object location.
+	RemotePath string
+	// LocalName is the relative name expected by the snapshot reader.
+	LocalName string
+}
 
 // KVSnapshotMetadata contains immutable files for one primary-key snapshot.
 type KVSnapshotMetadata struct {
+	// LogOffset is the snapshot's inclusive state offset.
 	LogOffset int64
-	Files     []SnapshotFile
+	// Files contains immutable snapshot objects.
+	Files []SnapshotFile
 }
 
 // KVSnapshotMetadata returns immutable file metadata for one snapshot.
@@ -794,9 +854,14 @@ func (c *Client) KVSnapshotMetadata(
 
 // SnapshotLease identifies one bucket snapshot protected by a lease.
 type SnapshotLease struct {
-	TableID, PartitionID int64
-	Bucket               int32
-	SnapshotID           int64
+	// TableID is the server-assigned table identifier.
+	TableID int64
+	// PartitionID is -1 for an unpartitioned table.
+	PartitionID int64
+	// Bucket identifies the primary-key table bucket.
+	Bucket int32
+	// SnapshotID identifies the protected immutable snapshot.
+	SnapshotID int64
 }
 
 // AcquireKVSnapshotLease acquires a server-managed lease for duration. Fluss
@@ -946,16 +1011,24 @@ func (c *Client) FileSystemSecurityToken(ctx context.Context) (FileSystemSecurit
 
 // LakeBucketSnapshot describes one bucket included in a lake snapshot.
 type LakeBucketSnapshot struct {
-	PartitionID   int64
+	// PartitionID is -1 for an unpartitioned table.
+	PartitionID int64
+	// PartitionName is empty for an unpartitioned table.
 	PartitionName string
-	Bucket        int32
-	LogOffset     int64
+	// Bucket identifies the logical table bucket.
+	Bucket int32
+	// LogOffset is the included state offset.
+	LogOffset int64
 }
 
 // LakeSnapshot contains the server-selected lake snapshot state.
 type LakeSnapshot struct {
-	TableID, SnapshotID int64
-	Buckets             []LakeBucketSnapshot
+	// TableID is the server-assigned table identifier.
+	TableID int64
+	// SnapshotID identifies the lake snapshot.
+	SnapshotID int64
+	// Buckets contains included bucket state.
+	Buckets []LakeBucketSnapshot
 }
 
 // LakeSnapshot returns a requested or latest readable lake snapshot.
@@ -1004,10 +1077,14 @@ func (c *Client) LakeSnapshot(
 
 // TableStats is the table and log size result for one bucket.
 type TableStats struct {
-	Bucket      int32
-	RowCount    int64
+	// Bucket is the requested bucket ID.
+	Bucket int32
+	// RowCount is valid when Err is nil.
+	RowCount int64
+	// PartitionID is -1 for an unpartitioned table.
 	PartitionID int64
-	Err         error
+	// Err is the bucket-local statistics failure.
+	Err error
 }
 
 // TableStats returns one independent result per requested bucket.

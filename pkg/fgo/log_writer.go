@@ -43,15 +43,25 @@ const (
 // LogWriterConfig controls batching, buffering, acknowledgements, routing, and
 // encoding for a log writer.
 type LogWriterConfig struct {
-	MaxBatchBytes    int
-	MaxBatchRecords  int
-	MaxBuffered      int
-	Linger           time.Duration
-	Timeout          time.Duration
-	Acks             int32
-	Assignment       BucketAssignment
-	Partition        string
-	Format           LogWriteFormat
+	// MaxBatchBytes bounds encoded bytes in one produce request.
+	MaxBatchBytes int
+	// MaxBatchRecords bounds records in one produce request.
+	MaxBatchRecords int
+	// MaxBuffered bounds accepted records awaiting completion.
+	MaxBuffered int
+	// Linger is the maximum delay used to fill a non-full batch.
+	Linger time.Duration
+	// Timeout is the server-side produce timeout.
+	Timeout time.Duration
+	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
+	Acks int32
+	// Assignment selects routing for records without a key.
+	Assignment BucketAssignment
+	// Partition selects one named physical partition; empty selects the table.
+	Partition string
+	// Format selects row or Arrow encoding.
+	Format LogWriteFormat
+	// ArrowCompression applies only when Format resolves to Arrow.
 	ArrowCompression ArrowCompression
 
 	arrowCompressionSet bool
@@ -170,10 +180,14 @@ func WithLogArrowCompression(compression ArrowCompression) LogWriterOption {
 
 // WriteResult is the terminal outcome of one queued mutation.
 type WriteResult struct {
-	Bucket     int32
+	// Bucket is the target bucket, or zero when routing did not complete.
+	Bucket int32
+	// BaseOffset is the first assigned offset and is valid when Err is nil.
 	BaseOffset int64
-	Records    int
-	Err        error
+	// Records is the number of records completed by this result.
+	Records int
+	// Err is the terminal mutation error.
+	Err error
 }
 
 // WriteFuture represents one queued mutation.

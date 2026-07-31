@@ -59,21 +59,33 @@ func (t DataType) Validate() error {
 
 // Column describes one ordered field in a table schema.
 type Column struct {
-	Name        string
-	Type        DataType
-	Nullable    bool
+	// Name is unique within the enclosing schema.
+	Name string
+	// Type is the physical Fluss data type.
+	Type DataType
+	// Nullable reports whether nil is a valid column value.
+	Nullable bool
+	// LogicalType carries nested and precision metadata.
 	LogicalType *LogicalType
+	// Description is optional user metadata.
 	Description string
-	ID          int
+	// ID is the stable Fluss field identifier.
+	ID int
 }
 
 // Schema describes ordered columns and table key definitions.
 type Schema struct {
-	Columns        []Column
-	PrimaryKey     []string
-	BucketKey      []string
-	PartitionKey   []string
-	AutoIncrement  []string
+	// Columns are stored in row encoding order.
+	Columns []Column
+	// PrimaryKey lists primary-key column names in key encoding order.
+	PrimaryKey []string
+	// BucketKey lists columns used for bucket hashing.
+	BucketKey []string
+	// PartitionKey lists columns used to name physical partitions.
+	PartitionKey []string
+	// AutoIncrement lists server-generated columns.
+	AutoIncrement []string
+	// HighestFieldID is the greatest assigned stable field identifier.
 	HighestFieldID int
 }
 
@@ -265,7 +277,9 @@ type Row []any
 // MapEntry preserves Fluss map key types and iteration order. Go maps with string keys are also
 // accepted as input, but decoded map values always use Map.
 type MapEntry struct {
-	Key   any
+	// Key is non-nil and conforms to the map key logical type.
+	Key any
+	// Value may be nil only when the map value type is nullable.
 	Value any
 }
 
@@ -468,13 +482,20 @@ const (
 
 // Table is authoritative table metadata and schema loaded by [Client.OpenTable].
 type Table struct {
-	ID          int64
-	SchemaID    int32
-	Path        TablePath
-	Kind        TableKind
-	Schema      Schema
+	// ID is the server-assigned logical table identifier.
+	ID int64
+	// SchemaID identifies the current schema version.
+	SchemaID int32
+	// Path is the logical database and table name.
+	Path TablePath
+	// Kind selects log or primary-key operations.
+	Kind TableKind
+	// Schema is the authoritative current schema.
+	Schema Schema
+	// BucketCount is the logical table bucket count.
 	BucketCount int
-	Properties  map[string]string
+	// Properties contains server-reported table properties.
+	Properties map[string]string
 }
 
 // RequireLog reports an error unless the table supports log operations.

@@ -23,15 +23,22 @@ var (
 // ServerError is a Fluss 0.9.1 server failure with safe request context.
 // Unknown future error codes remain inspectable and are never retriable by default.
 type ServerError struct {
-	Code      fmsg.ErrorCode
-	Name      string
-	Message   string
-	API       fmsg.APIKey
-	Endpoint  string
+	// Code is the numeric Fluss protocol error code.
+	Code fmsg.ErrorCode
+	// Name is the stable Fluss error name when known.
+	Name string
+	// Message is the credential-safe server message.
+	Message string
+	// API identifies the failed operation.
+	API fmsg.APIKey
+	// Endpoint identifies the server when available.
+	Endpoint string
+	// Retriable reports whether the protocol class permits retry.
 	Retriable bool
 	category  error
 }
 
+// Error returns a credential-safe server error summary.
 func (e *ServerError) Error() string {
 	if e == nil {
 		return ErrServerFailure.Error()
