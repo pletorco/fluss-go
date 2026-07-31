@@ -24,6 +24,9 @@ breaking changes.
 - Added repeatable log, KV, lookup, scan, mixed, soak, and fault-injection
   profiles with deterministic bounds, final data and resource leak gates,
   scheduled runs, and credential-free retained reports.
+- Added scheduled, credential-free S3 and HDFS adapter integration against
+  digest-pinned MinIO and Apache Hadoop services, plus an explicit read-only
+  managed OSS workflow.
 
 ### Changed
 

@@ -45,10 +45,19 @@ The SDK is preferred over custom S3 signing, endpoint, retry, checksum, and
 HTTP protocol code. Dependency version, maintenance, license, CVEs, and
 transitive modules must be reviewed on every upgrade.
 
-## Opt-in service test
+## Service tests
 
-`task test:s3` reads an existing object and is skipped unless
+`task test:s3` starts the official MinIO image pinned by digest, creates an
+ephemeral bucket through the official AWS SDK, and verifies exact ranges,
+metadata mismatch rejection, cancellation, close behavior, service-error
+identity, retry classification, and credential redaction. The runner removes
+the bucket, container, network, and tmpfs-backed data after every run. It needs
+Docker and Docker Compose but no cloud credentials.
+
+`task test:s3:managed` reads an existing application-managed object and is
+skipped unless
 `FLUSS_GO_S3_TEST_URI` and `FLUSS_GO_S3_TEST_SIZE` are set. Optional variables
 are `FLUSS_GO_S3_ENDPOINT`, `FLUSS_GO_S3_TEST_SHA256`, `AWS_REGION`,
-`AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`. A custom endpoint uses
-path-style addressing, which supports MinIO and similar test services.
+`AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`. It never writes or deletes
+managed data. Emulator evidence and managed-service evidence are reported
+separately.

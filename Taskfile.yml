@@ -244,7 +244,17 @@ tasks:
       - ./integration/run.sh
 
   test:s3:
-    desc: Run the opt-in official AWS SDK S3 adapter service test
+    desc: Run the AWS SDK adapter against a reproducible MinIO service
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1
+        msg: Docker is required for the S3 service environment.
+      - sh: docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required for the S3 service environment.
+    cmds:
+      - ./integration/storage/run.sh s3
+
+  test:s3:managed:
+    desc: Run the read-only S3 adapter test against an application-managed service
     cmds:
       - go test -v ./adapters/s3 -run '^TestS3AdapterLive$'
 
@@ -254,9 +264,29 @@ tasks:
       - go test -v ./adapters/oss -run '^TestOSSAdapterLive$'
 
   test:hdfs:
-    desc: Run the opt-in HDFS mounted-filesystem adapter service test
+    desc: Run the HDFS adapter boundary against reproducible Apache Hadoop
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1
+        msg: Docker is required for the HDFS service environment.
+      - sh: docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required for the HDFS service environment.
+    cmds:
+      - ./integration/storage/run.sh hdfs
+
+  test:hdfs:mounted:
+    desc: Run the opt-in HDFS adapter test against an application-mounted file
     cmds:
       - go test -v ./adapters/hdfs -run '^TestHDFSAdapterLive$'
+
+  test:storage:
+    desc: Run reproducible S3 and HDFS service integration tests
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1
+        msg: Docker is required for the storage service environment.
+      - sh: docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required for the storage service environment.
+    cmds:
+      - ./integration/storage/run.sh all
 
   sonar:
     desc: Generate coverage and submit a local SonarQube analysis

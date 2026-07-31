@@ -33,7 +33,7 @@ golden coverage remains required even when live evidence exists.
 | Current-state batch scanner | Covered | Row and typed scanners cover every resolved bucket and projections. |
 | Typed log and KV writers, log scanner, lookup, batch scanner | Covered | Explicit codecs round-trip application structs through the real row protocol. |
 | Snapshot batch scanner and typed snapshot scanner | Provider-only | Fluss returns snapshot object metadata, but decoding RocksDB snapshot objects requires an application-selected storage reader and decoder. Their orchestration and ownership are unit tested; the stock suite has no portable decoder to substitute safely. |
-| Remote log and snapshot readers | Adapter/service-specific | Core scheduling is unit, race, and benchmark tested. S3, OSS, and HDFS adapters have separate opt-in service tasks because the Fluss image does not provide those external services. |
+| Remote log and snapshot readers | Adapter/service-specific | Core scheduling is unit, race, and benchmark tested. A scheduled/manual workflow runs S3 against digest-pinned MinIO and the application-owned HDFS boundary against digest-pinned Apache Hadoop. Managed S3, mounted HDFS, and Alibaba Cloud OSS remain explicit read-only opt-ins; credentials are unavailable to pull requests. |
 
 ## Administration APIs
 
