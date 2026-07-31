@@ -120,6 +120,15 @@ func arrowHeaderSize(magic byte) int {
 }
 
 func writeArrowHeader(encoded []byte, batch ArrowLogBatch, count int) (int, int) {
+	// Arrow batches share the row-oriented log v0/v1 header documented in
+	// record_batch.go. The header is followed by one change byte per row for
+	// non-append-only batches and then by the Arrow IPC payload. Batch length
+	// excludes the first 12 bytes; CRC32C starts at schemaOffset and therefore
+	// covers the common tail, changes, and payload.
+	//
+	// The layout is pinned to Apache Fluss 0.9.1 commit
+	// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and byte-locked by
+	// TestArrowLogBatchDecodesJava091Fixture.
 	binary.LittleEndian.PutUint64(encoded, uint64(batch.BaseOffset))
 	encoded[12] = batch.Magic
 	binary.LittleEndian.PutUint64(encoded[13:], uint64(batch.CommitTime))

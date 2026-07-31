@@ -14,6 +14,19 @@ const (
 	logBatchV1HeaderSize = 52
 )
 
+// KV batch bytes are [length:4][magic:1][CRC32C:4][schema:2][reserved:1]
+// [writer ID:8][sequence:4][record count:4], followed by length-delimited
+// records. The length excludes its own four bytes and the checksum covers from
+// schema through the final record.
+//
+// Log v0 bytes are [base offset:8][length:4][magic:1][commit time:8]
+// [CRC32C:4] plus the common schema-and-writer tail. Log v1 inserts a four-byte
+// leader epoch before the checksum. Their lengths exclude the first 12 bytes,
+// and checksums cover from schema through the final record. These boundaries
+// are pinned to Apache Fluss 0.9.1 commit
+// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and byte-locked by
+// TestKVAndLogBatchesMatchJava091Fixtures.
+
 // ErrMalformedRecordBatch reports an invalid KV, row, or Arrow batch encoding.
 var ErrMalformedRecordBatch = errors.New("fgo: malformed record batch")
 
@@ -164,6 +177,9 @@ func (b LogBatch) EncodeRows(schema Schema, compacted bool) ([]byte, error) {
 	if b.AppendOnly {
 		encoded[schemaOffset+2] = 1
 	}
+	// The common tail is schema ID, attributes, last offset delta, writer ID,
+	// sequence, and record count. schemaOffset moves by four bytes in v1, so
+	// every later boundary remains relative to it.
 	lastOffset := schemaOffset + 3
 	if len(b.Records) > 0 {
 		binary.LittleEndian.PutUint32(encoded[lastOffset:], uint32(len(b.Records)-1))

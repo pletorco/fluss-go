@@ -16,6 +16,8 @@ breaking changes.
   and interface contracts in hand-written Go source.
 - Expanded pkg.go.dev examples for KV writes, lookups, bounded scans, table
   creation, partial failures, and deterministic codecs.
+- Documented row, binary array and map, and record-batch wire layouts against
+  the pinned Apache Fluss 0.9.1 compatibility fixtures.
 
 ## [v0.1.0-beta.2] - 2026-07-31
 
