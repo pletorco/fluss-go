@@ -320,8 +320,8 @@ func TestKVWriterFailureCancellationAndClose(t *testing.T) {
 	writer, _ = newKVWriter(context.Background(), backend, table, WithKVLinger(0))
 	first := writer.Upsert(context.Background(), Row{int32(1), nil, nil})
 	ctx, cancel := context.WithCancel(context.Background())
-	second := writer.Upsert(ctx, Row{int32(2), nil, nil})
 	cancel()
+	second := writer.Upsert(ctx, Row{int32(2), nil, nil})
 	flushed := make(chan error, 1)
 	go func() { flushed <- writer.Flush(context.Background()) }()
 	select {
