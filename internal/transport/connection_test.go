@@ -41,7 +41,8 @@ func (r *testResponse) Unmarshal([]byte) error { return r.unmarshalErr }
 func (r *testResponse) Message() proto.Message { return nil }
 
 type writeConn struct {
-	write func([]byte) (int, error)
+	write            func([]byte) (int, error)
+	setWriteDeadline func(time.Time) error
 }
 
 func (c writeConn) Read([]byte) (int, error)        { return 0, io.EOF }
@@ -51,7 +52,12 @@ func (writeConn) LocalAddr() net.Addr               { return testAddr("local") }
 func (writeConn) RemoteAddr() net.Addr              { return testAddr("remote") }
 func (writeConn) SetDeadline(time.Time) error       { return nil }
 func (writeConn) SetReadDeadline(time.Time) error   { return nil }
-func (writeConn) SetWriteDeadline(time.Time) error  { return nil }
+func (c writeConn) SetWriteDeadline(deadline time.Time) error {
+	if c.setWriteDeadline != nil {
+		return c.setWriteDeadline(deadline)
+	}
+	return nil
+}
 
 type partialBlockingWriteConn struct {
 	partial      chan struct{}
@@ -347,6 +353,26 @@ func TestRequestClearsSuccessfulWriteDeadline(t *testing.T) {
 	}
 	if _, err := connection.Request(context.Background(), apiVersionsRequest(t)); err != nil {
 		t.Fatalf("request after cleared deadline error = %v", err)
+	}
+}
+
+func TestPrepareWriteDoesNotClearUnsetDeadline(t *testing.T) {
+	deadlineCalls := 0
+	connection := &Connection{conn: writeConn{
+		setWriteDeadline: func(time.Time) error {
+			deadlineCalls++
+			return nil
+		},
+	}}
+	finish, err := connection.prepareWrite(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := finish(); err != nil {
+		t.Fatal(err)
+	}
+	if deadlineCalls != 0 {
+		t.Fatalf("SetWriteDeadline() calls = %d, want 0", deadlineCalls)
 	}
 }
 

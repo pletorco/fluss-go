@@ -220,10 +220,12 @@ func (c *Connection) writeRequest(
 }
 
 func (c *Connection) prepareWrite(ctx context.Context) (func() error, error) {
+	deadlineSet := false
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := c.conn.SetWriteDeadline(deadline); err != nil {
 			return nil, fmt.Errorf("transport: set write deadline: %w", err)
 		}
+		deadlineSet = true
 	}
 	interruptDone := make(chan struct{})
 	stopInterrupt := context.AfterFunc(ctx, func() {
@@ -231,8 +233,12 @@ func (c *Connection) prepareWrite(ctx context.Context) (func() error, error) {
 		close(interruptDone)
 	})
 	return func() error {
-		if !stopInterrupt() {
+		interrupted := !stopInterrupt()
+		if interrupted {
 			<-interruptDone
+		}
+		if !deadlineSet && !interrupted {
+			return nil
 		}
 		if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 			return fmt.Errorf("transport: clear write deadline: %w", err)
