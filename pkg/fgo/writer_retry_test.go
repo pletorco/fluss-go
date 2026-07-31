@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -30,6 +31,31 @@ func TestWriterRetryPolicyValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDefaultWriterRetryBackoffAndTransportClassification(t *testing.T) {
+	policy := defaultWriterRetryPolicy()
+	if policy.MaxAttempts != 1 ||
+		policy.Backoff(1) != 100*time.Millisecond ||
+		policy.Backoff(4) != 800*time.Millisecond ||
+		policy.Backoff(8) != time.Second {
+		t.Fatalf("defaultWriterRetryPolicy() = %#v", policy)
+	}
+	if !writerRetryable(io.EOF) || writerRetryable(errors.New("application failure")) {
+		t.Fatal("transport retry classification is incorrect")
+	}
+}
+
+func TestExecuteWriterAttemptsRequiresValidatedPolicy(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("zero-attempt policy did not panic")
+		}
+	}()
+	executeWriterAttempts(
+		context.Background(), WriterRetryPolicy{}, nil, MetricOperationLogWrite,
+		func(context.Context) (int64, bool, error) { return 0, false, nil },
+	)
 }
 
 func TestExecuteWriterAttemptsRecoversDuplicateSequence(t *testing.T) {
