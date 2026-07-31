@@ -438,6 +438,107 @@ func TestConnectionErrAndRepeatedFailure(t *testing.T) {
 	}
 }
 
+func TestRequestCompletionOwnershipPreventsBlockingFailure(t *testing.T) {
+	t.Run("response before failure", func(t *testing.T) {
+		connection := newCompletionTestConnection()
+		id, resultCh, err := connection.register()
+		if err != nil {
+			t.Fatal(err)
+		}
+		connection.deliver(id, result{body: []byte("response")})
+		failed := make(chan struct{})
+		go func() {
+			connection.fail(errTestRequest)
+			close(failed)
+		}()
+		select {
+		case <-failed:
+		case <-time.After(time.Second):
+			t.Fatal("failure blocked after response delivery")
+		}
+		outcome := <-resultCh
+		if string(outcome.body) != "response" || outcome.err != nil {
+			t.Fatalf("outcome = %#v", outcome)
+		}
+	})
+
+	t.Run("failure before response", func(t *testing.T) {
+		connection := newCompletionTestConnection()
+		id, resultCh, err := connection.register()
+		if err != nil {
+			t.Fatal(err)
+		}
+		connection.fail(errTestRequest)
+		delivered := make(chan struct{})
+		go func() {
+			connection.deliver(id, result{body: []byte("late")})
+			close(delivered)
+		}()
+		select {
+		case <-delivered:
+		case <-time.After(time.Second):
+			t.Fatal("late delivery blocked after failure")
+		}
+		outcome := <-resultCh
+		if !errors.Is(outcome.err, errTestRequest) || outcome.body != nil {
+			t.Fatalf("outcome = %#v", outcome)
+		}
+	})
+}
+
+func TestRequestCompletionRace(t *testing.T) {
+	for range 1_000 {
+		connection := newCompletionTestConnection()
+		id, resultCh, err := connection.register()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var completed sync.WaitGroup
+		completed.Add(3)
+		go func() {
+			defer completed.Done()
+			connection.deliver(id, result{body: []byte("response")})
+		}()
+		go func() {
+			defer completed.Done()
+			connection.unregister(id)
+		}()
+		go func() {
+			defer completed.Done()
+			connection.fail(errTestRequest)
+		}()
+		done := make(chan struct{})
+		go func() {
+			completed.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("completion race blocked")
+		}
+		select {
+		case <-resultCh:
+			select {
+			case duplicate := <-resultCh:
+				t.Fatalf("duplicate result = %#v", duplicate)
+			default:
+			}
+		default:
+		}
+	}
+}
+
+func newCompletionTestConnection() *Connection {
+	return &Connection{
+		conn: writeConn{write: func(value []byte) (int, error) {
+			return len(value), nil
+		}},
+		pending: make(map[int32]chan result),
+		done:    make(chan struct{}),
+	}
+}
+
 func TestCanceledRequestDoesNotConsumeLateResponse(t *testing.T) {
 	client, server := net.Pipe()
 	defer server.Close()

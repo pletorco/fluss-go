@@ -165,6 +165,14 @@ func (c *Connection) unregister(id int32) {
 	c.mu.Unlock()
 }
 
+func (c *Connection) takePending(id int32) chan result {
+	c.mu.Lock()
+	ch := c.pending[id]
+	delete(c.pending, id)
+	c.mu.Unlock()
+	return ch
+}
+
 func (c *Connection) writeRequest(
 	ctx context.Context,
 	id int32,
@@ -287,11 +295,9 @@ func (c *Connection) handleFrame(frame []byte) error {
 }
 
 func (c *Connection) deliver(id int32, outcome result) {
-	c.mu.Lock()
-	ch := c.pending[id]
-	c.mu.Unlock()
+	ch := c.takePending(id)
 	if ch != nil {
-		ch <- outcome
+		complete(ch, outcome)
 	}
 }
 
@@ -309,7 +315,14 @@ func (c *Connection) fail(err error) {
 	c.mu.Unlock()
 	_ = c.conn.Close()
 	for _, ch := range pending {
-		ch <- result{err: err}
+		complete(ch, result{err: err})
+	}
+}
+
+func complete(ch chan result, outcome result) {
+	select {
+	case ch <- outcome:
+	default:
 	}
 }
 
