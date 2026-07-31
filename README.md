@@ -105,6 +105,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
   [fadm](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm)
 - [Public architecture and ownership](docs/architecture/v0.1.md)
 - [Public API stability and compatibility checks](docs/public-api-stability.md)
+- [Fluss 0.9.1 live API evidence](docs/live-evidence.md)
 - [Go module and optional dependency layout](docs/module-layout.md)
 - [Request coalescing and cancellation](docs/architecture/request-coalescing.md)
 - [Build-vs-buy decisions](docs/build-vs-buy.md)

@@ -263,9 +263,9 @@ func TestKVWriterPartialUpdateUsesTargetColumns(t *testing.T) {
 		t.Fatalf("target column calls = %#v", calls)
 	}
 	batch, _ := DecodeKVBatch(calls[0].records)
-	projected, err := DecodeCompactedProjectedRow(table.Schema, []string{"id", "name"}, batch.Records[0].Value)
-	if err != nil || projected[0] != int32(7) || projected[1] != "new" {
-		t.Fatalf("partial value = %#v, %v", projected, err)
+	partialRow, err := DecodeCompactedRow(table.Schema, batch.Records[0].Value)
+	if err != nil || partialRow[0] != int32(7) || partialRow[1] != "new" || partialRow[2] != nil {
+		t.Fatalf("partial value = %#v, %v", partialRow, err)
 	}
 	_ = writer.Close(context.Background())
 }

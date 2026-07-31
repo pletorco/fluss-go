@@ -34,12 +34,19 @@ See the compile-checked
 
 `ServerNodes` returns the coordinator followed by alive tablet servers.
 `AddServerTag` and `RemoveServerTag` accept server IDs from that current
-snapshot and a non-negative tag.
+snapshot and one of `ServerTagPermanentOffline` or
+`ServerTagTemporaryOffline`. Apache Fluss 0.9.1 rejects every other numeric
+value.
 
 Server membership can change between discovery and mutation. Refresh the node
 list after a metadata or not-found failure. When a tag is temporary, remove it
 with a bounded cleanup context and report cleanup failures; silently leaving a
 placement tag behind can affect later scheduling.
+
+Both supported tags change operational tablet eligibility. The stock live
+suite therefore verifies their protocol and validation without applying them
+to the same three-tablet topology used for deterministic leader failover; see
+the [live evidence matrix](live-evidence.md).
 
 ## Rebalance lifecycle
 

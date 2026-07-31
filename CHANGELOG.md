@@ -16,6 +16,8 @@ breaking changes.
   license canary across the root and optional adapter modules.
 - Added live post-failure append, scan, upsert, lookup, coordinator recovery,
   and cancellation-isolation checks against the three-tablet Fluss cluster.
+- Added live evidence for typed data wrappers, partial upserts, merge modes,
+  snapshots and leases, producer offsets, server tags, and table statistics.
 
 ### Changed
 

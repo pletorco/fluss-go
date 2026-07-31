@@ -16,7 +16,10 @@ request-cancellation isolation, authentication, routing, catalog, log, KV,
 lookup, prefix-lookup, tablet leader-failover data correctness, and coordinator
 restart recovery checks. Failover writes cover every bucket and compare
 acknowledged offsets with a bounded final scan; KV values are verified before
-and after leader movement. Docker, Docker
+and after leader movement. Typed wrappers, partial updates, merge modes,
+producer offsets, snapshot metadata and leases, and safe advanced admin reads
+are also exercised. The complete method matrix and deliberate environment
+limits are recorded in [live evidence](../docs/live-evidence.md). Docker, Docker
 Compose, OpenSSL, Go, and Task are required. Ports `19123` through `19126`,
 `19223`, and `19224` must be free; each can be overridden with its corresponding
 `FLUSS_*_PORT` variable.
