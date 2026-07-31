@@ -5,6 +5,15 @@ pinned Apache Fluss `0.9.1-incubating` image. `task test:integration` creates
 an isolated cluster, bounds every operation, and removes all volumes. Unit and
 golden coverage remains required even when live evidence exists.
 
+## Transport and authentication
+
+| Public surface | Live evidence | Boundary |
+| --- | --- | --- |
+| Plaintext and SASL PLAIN | Covered | Negotiation, credential rejection, ACL enforcement, connection reuse, cancellation isolation, and routed tablet requests run against native Fluss 0.9.1 listeners. |
+| TLS-terminated plaintext | Covered | Digest-pinned HAProxy terminates TLS for the coordinator and all three advertised tablets. Verified admin, append, scan, upsert, and lookup operations prove metadata routing cannot bypass TLS. Fluss 0.9.1 itself has no native TLS listener. |
+| TLS-terminated SASL PLAIN | Covered | Authentication, table administration, append, and scan run through TLS termination in front of native Fluss SASL PLAIN listeners. |
+| TLS failures and cancellation | Covered | Ephemeral PKI checks preserve unknown-authority, hostname, expiry, record-header, plaintext-to-TLS, and causal cancellation errors through client wrapping and shutdown. |
+
 ## Data APIs
 
 | Public surface | Live evidence | Boundary |

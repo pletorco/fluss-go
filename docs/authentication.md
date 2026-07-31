@@ -1,15 +1,18 @@
 # Secure client connections
 
-`fluss-go` can use plaintext, TLS, SASL PLAIN, or TLS and SASL PLAIN
-together. Production credentials should normally use the combined mode so the
-PLAIN exchange is protected in transit.
+Apache Fluss 0.9.1 provides native `PLAINTEXT` and `SASL/PLAIN` client
+listeners, but it does not provide a native TLS listener. `fluss-go` can use
+TLS when every coordinator and tablet endpoint is exposed through an
+application- or infrastructure-owned TLS TCP terminator. Production
+credentials should normally use TLS and SASL PLAIN together so the PLAIN
+exchange is protected in transit.
 
-| Server listener | Client options |
+| Deployment path | Client options |
 | --- | --- |
-| Plaintext | `WithSeedBrokers` |
-| TLS | `WithSeedBrokers`, `WithTLSConfig` |
-| SASL PLAIN | `WithSeedBrokers`, `WithAuthenticator` |
-| TLS and SASL PLAIN | all three options |
+| Native Fluss plaintext | `WithSeedBrokers` |
+| TLS terminator to Fluss plaintext | `WithSeedBrokers`, `WithTLSConfig` |
+| Native Fluss SASL PLAIN | `WithSeedBrokers`, `WithAuthenticator` |
+| TLS terminator to Fluss SASL PLAIN | all three options |
 
 SASL PLAIN without TLS provides authentication but does not encrypt the
 credentials or subsequent traffic. Use that mode only on a transport whose
@@ -50,7 +53,15 @@ client, err := fgo.Open(
 `WithTLSConfig` clones the supplied configuration, and every managed
 coordinator or tablet connection performs its own TLS handshake. Do not set
 `InsecureSkipVerify` in production. The configured roots and `ServerName` must
-validate every advertised server address.
+validate every advertised endpoint. A deployment may use one shared
+`ServerName` only when every terminating endpoint presents a certificate valid
+for that DNS name; otherwise use certificates whose identities match the
+addresses selected by the deployment. fluss-go preserves standard
+`crypto/tls` and `crypto/x509` verification and does not rewrite identities.
+
+Metadata returned by Fluss contains tablet addresses. Every advertised tablet
+address must therefore lead to a TLS terminator as well as the coordinator
+seed; terminating only the seed permits routed data calls to bypass TLS.
 
 `PlainAuthenticator` is a factory rather than a shared mechanism instance.
 Each connection receives separate credential buffers, and closing that
@@ -92,9 +103,11 @@ cancellation wins.
 
 ## Verification
 
-`task test:integration` starts a digest-pinned Apache Fluss 0.9.1 SASL PLAIN
-cluster, generates an ephemeral password, and redacts it from diagnostics. The
-suite verifies successful authentication, credential rejection, ACL
-authorization, connection reuse, and tablet requests. TLS configuration is
-also covered by client and connection-manager unit tests; deployments must
-add certificate-chain tests for their own PKI and advertised server names.
+`task test:integration` starts digest-pinned Apache Fluss 0.9.1 plaintext and
+SASL PLAIN clusters. A digest-pinned HAProxy test dependency terminates TLS for
+the coordinator and every advertised tablet. The task generates an ephemeral
+CA, certificate, and passwords, removes them on exit, and redacts credentials
+from diagnostics. It verifies routed admin and data operations, TLS with SASL,
+unknown authorities, hostname and validity failures, protocol mismatches, and
+canceled handshakes. Deployments must still test their own PKI, terminator, and
+advertised-name configuration.

@@ -18,6 +18,9 @@ breaking changes.
   and cancellation-isolation checks against the three-tablet Fluss cluster.
 - Added live evidence for typed data wrappers, partial upserts, merge modes,
   snapshots and leases, producer offsets, server tags, and table statistics.
+- Added required live coverage for TLS-terminated Fluss 0.9.1 coordinator and
+  tablet routes, TLS with SASL PLAIN, certificate failures, protocol
+  mismatches, and canceled handshakes using ephemeral PKI material.
 
 ### Changed
 

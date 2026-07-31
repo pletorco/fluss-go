@@ -218,7 +218,7 @@ tasks:
         .task/coverage/s3.out > coverage.out
 
   test:integration:
-    desc: Run live tests against pinned plaintext and SASL Fluss 0.9.1 clusters
+    desc: Run live tests against pinned plaintext, SASL, and TLS-terminated Fluss 0.9.1 clusters
     preconditions:
       - sh: command -v docker >/dev/null 2>&1
         msg: Docker is required for the Fluss integration environment.
