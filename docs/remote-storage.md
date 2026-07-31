@@ -19,6 +19,7 @@ defaults: refresh at 75% of token lifetime, retry after one minute with
 exponential backoff capped at one hour, and treat a token as expiring 30
 seconds early.
 
+<!-- go-source: internal/docexamples/snippets_test.go tokenRefresh -->
 ```go
 receiver := fgo.FileSystemSecurityTokenReceiverFunc(
 	func(token fgo.FileSystemSecurityToken) error {
@@ -28,7 +29,7 @@ receiver := fgo.FileSystemSecurityTokenReceiverFunc(
 )
 
 client, err := fgo.Open(
-	ctx,
+	context.Background(),
 	fgo.WithSeedBrokers("coordinator:9123"),
 	fgo.WithFileSystemSecurityTokenRefresh(
 		fgo.FileSystemSecurityTokenRefreshConfig{},
@@ -52,17 +53,18 @@ token remains readable only until it expires.
 
 Snapshot scans compose the transport with metadata and format adapters:
 
+<!-- go-source: internal/docexamples/snippets_test.go snapshotComposition -->
 ```go
 provider, err := fgo.NewRemoteSnapshotBatchProvider(
-    reader,
-    fgo.RemoteFileReadConfig{},
-    snapshotMetadataResolver,
-    snapshotFormatDecoder,
-    currentToken,
-    metrics,
+	reader,
+	fgo.RemoteFileReadConfig{},
+	resolver,
+	decoder,
+	currentToken,
+	metrics,
 )
 if err != nil {
-    return err
+	return err
 }
 
 client, err := fgo.Open(

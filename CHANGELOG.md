@@ -17,6 +17,8 @@ breaking changes.
 - Added advanced administration guidance for cluster settings, server tags,
   rebalances, producer offsets, snapshot leases, filesystem credentials, lake
   snapshots, and per-bucket statistics with compile-checked lifecycle examples.
+- Added deterministic Markdown link and anchor validation plus source-backed,
+  compile-checked Go fences to the documentation CI gate.
 - Expanded pkg.go.dev contracts for typed APIs, extension interfaces,
   configuration, result ownership, partial failures, and pre-v1 stability.
 - Added a CI documentation audit for public packages, declarations, methods,

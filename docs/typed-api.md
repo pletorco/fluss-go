@@ -4,10 +4,11 @@ The `fgo` typed API adds compile-time application types without changing the
 row-oriented Fluss protocol. It targets Apache Fluss `0.9.1-incubating` and
 uses explicit codecs as its stable contract:
 
+<!-- go-source: internal/docexamples/snippets_test.go typedCodec -->
 ```go
 type Codec[T any] interface {
-    Encode(T) (fgo.Row, error)
-    Decode(fgo.Row) (T, error)
+	Encode(T) (fgo.Row, error)
+	Decode(fgo.Row) (T, error)
 }
 ```
 

@@ -28,41 +28,31 @@ tracking a branch or an unversioned revision.
 Open one shared client and close it after all writers, scanners, lookup clients,
 and administrative clients have stopped:
 
+<!-- go-source: internal/docexamples/snippets_test.go quickStart -->
 ```go
-package main
-
-import (
-	"context"
-	"log"
-
-	"github.com/pletorco/fluss-go/pkg/fgo"
+ctx := context.Background()
+client, err := fgo.Open(
+	ctx,
+	fgo.WithSeedBrokers("localhost:9123"),
+	fgo.WithClientIdentity("example", "1.0.0"),
 )
-
-func main() {
-	ctx := context.Background()
-	client, err := fgo.Open(
-		ctx,
-		fgo.WithSeedBrokers("localhost:9123"),
-		fgo.WithClientIdentity("example", "1.0.0"),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func() {
-		if err := client.Close(); err != nil {
-			log.Printf("close Fluss client: %v", err)
-		}
-	}()
-
-	table, err := client.OpenTable(ctx, fgo.TablePath{
-		Database: "fluss",
-		Table:    "events",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("opened table %s with %d buckets", table.Path, table.BucketCount)
+if err != nil {
+	log.Fatal(err)
 }
+defer func() {
+	if err := client.Close(); err != nil {
+		log.Printf("close Fluss client: %v", err)
+	}
+}()
+
+table, err := client.OpenTable(ctx, fgo.TablePath{
+	Database: "fluss",
+	Table:    "events",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("opened table %s with %d buckets", table.Path, table.BucketCount)
 ```
 
 `fgo.Client` owns negotiated coordinator and tablet connections. Create
@@ -110,6 +100,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Data operations and advanced options](docs/data-operations.md)
 - [Typed data API](docs/typed-api.md)
 - [Remote storage and filesystem tokens](docs/remote-storage.md)
+- [Documentation validation and snippet workflow](docs/documentation-tooling.md)
 - [Write scheduling decision](docs/write-scheduling.md)
 - [Initial 0.9.1 delivery record](docs/roadmap-v0.1.md)
 - [Security exception policy](docs/security-exceptions.md)
@@ -120,6 +111,10 @@ This project uses Task v3.51.1 as its command entry point. Run task --list to
 see available checks; task verify runs formatting, generation verification,
 static analysis, unit and golden tests, bounded fuzz smoke tests, race tests,
 per-file coverage checks, and security gates.
+
+Documentation changes use `task docs:check`. Edit compile-checked snippet
+sources under `internal/docexamples` and run `task docs:snippets:sync` to update
+their Markdown fences.
 
 Protocol generation requires protoc v3.21.12. Local security scans require
 Trivy v0.72.0. Integration tests require Docker, Docker Compose, and OpenSSL;

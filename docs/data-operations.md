@@ -10,6 +10,7 @@ Dynamic partition creation is opt-in at client construction. Concurrent writers
 requesting the same missing partition share one creation attempt, and metadata
 refresh is bounded by `MetadataAttempts`.
 
+<!-- go-source: internal/docexamples/snippets_test.go dynamicPartitions -->
 ```go
 client, err := fgo.Open(
 	ctx,
@@ -41,6 +42,7 @@ never create server state.
 Select an explicit format only when it agrees with the table's advertised
 `table.log.format` property. Auto mode derives the compatible format.
 
+<!-- go-source: internal/docexamples/snippets_test.go logFormat -->
 ```go
 writer, err := client.NewLogWriter(
 	ctx,
@@ -52,6 +54,7 @@ writer, err := client.NewLogWriter(
 A log scanner can terminate after a total row limit or at exclusive offsets for
 every initial bucket. Stopping-offset maps must contain exactly those buckets.
 
+<!-- go-source: internal/docexamples/snippets_test.go boundedScan -->
 ```go
 scanner, err := client.NewLogScanner(
 	ctx,
@@ -80,6 +83,7 @@ global success.
 `MergeModeOverwrite` bypasses it and writes the supplied values as replacements.
 One writer uses one mode for every mutation it accepts.
 
+<!-- go-source: internal/docexamples/snippets_test.go kvMerge -->
 ```go
 writer, err := client.NewKVWriter(
 	ctx,
@@ -92,6 +96,7 @@ Lookup clients can request Fluss to atomically insert a missing primary-key row
 before returning it. Fluss fills auto-increment columns and sets nullable
 non-key columns to null.
 
+<!-- go-source: internal/docexamples/snippets_test.go lookupInsert -->
 ```go
 lookup, err := client.NewLookupClient(
 	ctx,
@@ -108,6 +113,7 @@ cannot synthesize.
 Resolve a stable, bucket-ID-ordered metadata snapshot before opening one scanner
 per bucket:
 
+<!-- go-source: internal/docexamples/snippets_test.go batchScan -->
 ```go
 buckets, err := client.ResolveTableBuckets(ctx, fgo.PhysicalTablePath{
 	TablePath: table.Path,
@@ -143,9 +149,10 @@ the client is opened. `BatchResult.Release` releases owned Arrow batches.
 
 Register one observer when opening the client:
 
+<!-- go-source: internal/docexamples/snippets_test.go metricsObserver -->
 ```go
 observer := fgo.MetricsObserverFunc(func(event fgo.MetricEvent) {
-	metrics.Record(event)
+	log.Printf("kind=%d operation=%d duration=%s", event.Kind, event.Operation, event.Duration)
 })
 
 client, err := fgo.Open(
@@ -165,6 +172,7 @@ quickly and move expensive export work to their own bounded queue.
 The administrative client reuses the same connections and returns the current
 coordinator followed by deterministically sorted live tablet servers:
 
+<!-- go-source: internal/docexamples/snippets_test.go serverDiscovery -->
 ```go
 admin, err := fadm.New(client)
 if err != nil {

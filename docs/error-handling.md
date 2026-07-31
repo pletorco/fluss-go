@@ -24,6 +24,7 @@ Every known Fluss server error has a broad category such as `ErrMetadata`,
 The typed error retains its protocol code, API key, endpoint, safe message, and
 protocol retryability:
 
+<!-- go-source: internal/docexamples/snippets_test.go classifyServerError -->
 ```go
 var server *fgo.ServerError
 if errors.As(err, &server) {

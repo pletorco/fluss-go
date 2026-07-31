@@ -20,6 +20,7 @@ confidentiality is provided and verified elsewhere.
 Load trusted roots explicitly, set `ServerName` to the name in the server
 certificate, and keep certificate verification enabled:
 
+<!-- go-source: internal/docexamples/snippets_test.go tlsAndSASL -->
 ```go
 caPEM, err := os.ReadFile(os.Getenv("FLUSS_CA_FILE"))
 if err != nil {
@@ -69,6 +70,7 @@ All authentication failures match `fgo.ErrAuthentication`. Use
 a fresh connection may repeat authentication, not that the same credentials
 will eventually become valid:
 
+<!-- go-source: internal/docexamples/snippets_test.go classifyAuthentication -->
 ```go
 if err != nil {
 	var authentication *fgo.AuthenticationError
