@@ -49,9 +49,13 @@ func TestSchemaCacheCoalescesFetchesAndSeparatesWaiterCancellation(t *testing.T)
 	<-started
 	deadline := time.Now().Add(time.Second)
 	for {
-		cache.mu.Lock()
-		waiters := cache.fetches[schemaCacheKey{path: path, id: 1}].waiters
-		cache.mu.Unlock()
+		cache.flights.mu.Lock()
+		call := cache.flights.calls[schemaCacheKey{path: path, id: 1}]
+		waiters := 0
+		if call != nil {
+			waiters = call.waiters
+		}
+		cache.flights.mu.Unlock()
 		if waiters == 8 {
 			break
 		}

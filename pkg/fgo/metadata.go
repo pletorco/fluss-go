@@ -98,18 +98,8 @@ type Router struct {
 	metadata         Metadata
 	fetch            MetadataFetcher
 	fetchPartition   PhysicalMetadataFetcher
-	flights          map[TablePath]*metadataFlight
-	partitionFlights map[string]*partitionMetadataFlight
-}
-
-type metadataFlight struct {
-	done chan struct{}
-	err  error
-}
-
-type partitionMetadataFlight struct {
-	done chan struct{}
-	err  error
+	flights          *coalescer[TablePath, struct{}]
+	partitionFlights *coalescer[string, struct{}]
 }
 
 // NewRouter creates an empty metadata router.
@@ -117,8 +107,8 @@ func NewRouter(coordinator Node, fetch MetadataFetcher) *Router {
 	return &Router{
 		metadata:         Metadata{Coordinator: coordinator, Tablets: make(map[int32]Node), Tables: make(map[TablePath]TableMetadata)},
 		fetch:            fetch,
-		flights:          make(map[TablePath]*metadataFlight),
-		partitionFlights: make(map[string]*partitionMetadataFlight),
+		flights:          newCoalescer[TablePath, struct{}](),
+		partitionFlights: newCoalescer[string, struct{}](),
 	}
 }
 
@@ -168,7 +158,7 @@ func (r *Router) RoutePhysical(ctx context.Context, path PhysicalTablePath, buck
 	if node, ok := r.lookupPartition(path, bucket); ok {
 		return node, nil
 	}
-	if err := r.RefreshPhysical(ctx, path); err != nil {
+	if err := r.refreshPhysical(ctx, path, false); err != nil {
 		return Node{}, err
 	}
 	if node, ok := r.lookupPartition(path, bucket); ok {
@@ -186,47 +176,52 @@ func (r *Router) refresh(ctx context.Context, path TablePath, force bool) error 
 	if r.fetch == nil {
 		return fmt.Errorf("%w: %s", ErrUnknownTable, path)
 	}
-	r.mu.Lock()
+	r.mu.RLock()
 	if !force {
 		if _, ok := r.metadata.Tables[path]; ok {
-			r.mu.Unlock()
+			r.mu.RUnlock()
 			return nil
 		}
 	}
-	if flight := r.flights[path]; flight != nil {
-		r.mu.Unlock()
-		select {
-		case <-flight.done:
-			return flight.err
-		case <-ctx.Done():
-			return ctx.Err()
+	r.mu.RUnlock()
+	_, err := r.flights.Do(ctx, path, func(workCtx context.Context) (struct{}, error) {
+		if !force {
+			r.mu.RLock()
+			_, cached := r.metadata.Tables[path]
+			r.mu.RUnlock()
+			if cached {
+				return struct{}{}, nil
+			}
 		}
-	}
-	flight := &metadataFlight{done: make(chan struct{})}
-	r.flights[path] = flight
-	r.mu.Unlock()
-
-	table, err := r.fetch(ctx, path)
-	if err == nil && table.Path != path {
-		err = fmt.Errorf("%w: refresh returned %s for %s", ErrUnknownTable, table.Path, path)
-	}
-	r.mu.Lock()
-	if err == nil {
+		table, fetchErr := r.fetch(workCtx, path)
+		if fetchErr == nil && table.Path != path {
+			fetchErr = fmt.Errorf("%w: refresh returned %s for %s", ErrUnknownTable, table.Path, path)
+		}
+		if fetchErr != nil {
+			return struct{}{}, fetchErr
+		}
+		r.mu.Lock()
 		next := cloneMetadata(r.metadata)
 		applyTableServers(&next, table)
 		next.Tables[path] = cloneTableMetadata(table)
 		r.metadata = next
-	}
-	flight.err = err
-	delete(r.flights, path)
-	close(flight.done)
-	r.mu.Unlock()
+		r.mu.Unlock()
+		return struct{}{}, nil
+	}, nil)
 	return err
 }
 
 // RefreshPhysical refreshes exactly one named partition. When a dedicated physical fetcher is
 // unavailable, it performs one table refresh and uses the partition included in that response.
 func (r *Router) RefreshPhysical(ctx context.Context, path PhysicalTablePath) error {
+	return r.refreshPhysical(ctx, path, true)
+}
+
+func (r *Router) refreshPhysical(
+	ctx context.Context,
+	path PhysicalTablePath,
+	force bool,
+) error {
 	if err := path.Validate(); err != nil {
 		return err
 	}
@@ -239,32 +234,27 @@ func (r *Router) RefreshPhysical(ctx context.Context, path PhysicalTablePath) er
 		}
 	}
 	key := physicalTableKey(path)
-	flight, owner, err := r.beginPartitionRefresh(ctx, key)
-	if err != nil || !owner {
-		return err
-	}
-	partition, fetchUsed, err := r.fetchPhysicalMetadata(ctx, path, key)
-	return r.finishPartitionRefresh(path, key, flight, partition, fetchUsed, err)
-}
-
-func (r *Router) beginPartitionRefresh(
-	ctx context.Context,
-	key string,
-) (*partitionMetadataFlight, bool, error) {
-	r.mu.Lock()
-	if flight := r.partitionFlights[key]; flight != nil {
-		r.mu.Unlock()
-		select {
-		case <-flight.done:
-			return nil, false, flight.err
-		case <-ctx.Done():
-			return nil, false, ctx.Err()
+	_, err := r.partitionFlights.Do(ctx, key, func(workCtx context.Context) (struct{}, error) {
+		if !force {
+			r.mu.RLock()
+			cached := r.hasPartition(path)
+			r.mu.RUnlock()
+			if cached {
+				return struct{}{}, nil
+			}
 		}
-	}
-	flight := &partitionMetadataFlight{done: make(chan struct{})}
-	r.partitionFlights[key] = flight
-	r.mu.Unlock()
-	return flight, true, nil
+		partition, fetchUsed, fetchErr := r.fetchPhysicalMetadata(workCtx, path, key)
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if fetchErr == nil && fetchUsed {
+			fetchErr = r.applyPhysicalMetadata(path, key, partition)
+		}
+		if fetchErr == nil && !r.hasPartition(path) {
+			fetchErr = fmt.Errorf("%w: %s", ErrUnknownPartition, path)
+		}
+		return struct{}{}, fetchErr
+	}, nil)
+	return err
 }
 
 func (r *Router) fetchPhysicalMetadata(
@@ -281,28 +271,6 @@ func (r *Router) fetchPhysicalMetadata(
 		err = fmt.Errorf("%w: refresh returned %s for %s", ErrUnknownPartition, partition.Path, path)
 	}
 	return partition, true, err
-}
-
-func (r *Router) finishPartitionRefresh(
-	path PhysicalTablePath,
-	key string,
-	flight *partitionMetadataFlight,
-	partition PartitionMetadata,
-	fetchUsed bool,
-	err error,
-) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err == nil && fetchUsed {
-		err = r.applyPhysicalMetadata(path, key, partition)
-	}
-	if err == nil && !r.hasPartition(path) {
-		err = fmt.Errorf("%w: %s", ErrUnknownPartition, path)
-	}
-	flight.err = err
-	delete(r.partitionFlights, key)
-	close(flight.done)
-	return err
 }
 
 func (r *Router) applyPhysicalMetadata(path PhysicalTablePath, key string, partition PartitionMetadata) error {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
@@ -117,17 +116,10 @@ type partitionCreationBackend interface {
 	createPartition(context.Context, TablePath, PartitionSpec) error
 }
 
-type partitionCreationFlight struct {
-	done chan struct{}
-	err  error
-}
-
 type dynamicPartitionCreator struct {
 	backend  partitionCreationBackend
 	settings DynamicPartitionCreationConfig
-
-	mu      sync.Mutex
-	flights map[string]*partitionCreationFlight
+	flights  *coalescer[string, struct{}]
 }
 
 func newDynamicPartitionCreator(
@@ -135,7 +127,7 @@ func newDynamicPartitionCreator(
 	settings DynamicPartitionCreationConfig,
 ) *dynamicPartitionCreator {
 	return &dynamicPartitionCreator{
-		backend: backend, settings: settings, flights: make(map[string]*partitionCreationFlight),
+		backend: backend, settings: settings, flights: newCoalescer[string, struct{}](),
 	}
 }
 
@@ -158,26 +150,9 @@ func (c *dynamicPartitionCreator) Ensure(
 		return err
 	}
 	key := physicalTableKey(path)
-	c.mu.Lock()
-	if flight := c.flights[key]; flight != nil {
-		c.mu.Unlock()
-		select {
-		case <-flight.done:
-			return flight.err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	flight := &partitionCreationFlight{done: make(chan struct{})}
-	c.flights[key] = flight
-	c.mu.Unlock()
-
-	err = c.ensure(ctx, path, spec)
-	c.mu.Lock()
-	flight.err = err
-	delete(c.flights, key)
-	close(flight.done)
-	c.mu.Unlock()
+	_, err = c.flights.Do(ctx, key, func(workCtx context.Context) (struct{}, error) {
+		return struct{}{}, c.ensure(workCtx, path, spec)
+	}, nil)
 	return err
 }
 

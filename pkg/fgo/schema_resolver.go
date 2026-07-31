@@ -59,22 +59,13 @@ type schemaCacheEntry struct {
 	used   uint64
 }
 
-type schemaFetch struct {
-	done      chan struct{}
-	cancel    context.CancelFunc
-	schema    Schema
-	err       error
-	waiters   int
-	completed bool
-}
-
 type schemaCache struct {
 	fetch func(context.Context, TablePath, int32) (Schema, error)
 	max   int
 
 	mu      sync.Mutex
 	entries map[schemaCacheKey]schemaCacheEntry
-	fetches map[schemaCacheKey]*schemaFetch
+	flights *coalescer[schemaCacheKey, Schema]
 	clock   uint64
 	closed  bool
 }
@@ -86,7 +77,7 @@ func newSchemaCache(
 	return &schemaCache{
 		fetch: fetch, max: maxEntries,
 		entries: make(map[schemaCacheKey]schemaCacheEntry),
-		fetches: make(map[schemaCacheKey]*schemaFetch),
+		flights: newCoalescer[schemaCacheKey, Schema](),
 	}
 }
 
@@ -117,61 +108,42 @@ func (c *schemaCache) resolveSchema(
 		c.mu.Unlock()
 		return entry.schema, nil
 	}
-	fetch := c.fetches[key]
-	if fetch == nil {
-		if c.fetch == nil {
-			c.mu.Unlock()
-			return Schema{}, fmt.Errorf("%w: schema resolver is unavailable", ErrInvalidConfig)
-		}
-		fetchCtx, cancel := context.WithCancel(context.Background())
-		fetch = &schemaFetch{done: make(chan struct{}), cancel: cancel}
-		c.fetches[key] = fetch
-		go c.runFetch(fetchCtx, key, fetch)
+	if c.fetch == nil {
+		c.mu.Unlock()
+		return Schema{}, fmt.Errorf("%w: schema resolver is unavailable", ErrInvalidConfig)
 	}
-	fetch.waiters++
 	c.mu.Unlock()
-
-	select {
-	case <-fetch.done:
-		c.releaseFetch(key, fetch)
-		return fetch.schema, fetch.err
-	case <-ctx.Done():
-		c.releaseFetch(key, fetch)
-		return Schema{}, ctx.Err()
-	}
-}
-
-func (c *schemaCache) runFetch(ctx context.Context, key schemaCacheKey, fetch *schemaFetch) {
-	schema, err := c.fetch(ctx, key.path, key.id)
-	fetch.cancel()
-	if err == nil {
-		err = schema.Validate()
-	}
-	c.mu.Lock()
-	fetch.schema, fetch.err, fetch.completed = schema, err, true
-	current := c.fetches[key] == fetch
-	if err == nil && !c.closed && current {
+	return c.flights.Do(ctx, key, func(fetchCtx context.Context) (Schema, error) {
+		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
+			return Schema{}, ErrClosed
+		}
+		if entry, ok := c.entries[key]; ok {
+			c.clock++
+			entry.used = c.clock
+			c.entries[key] = entry
+			c.mu.Unlock()
+			return entry.schema, nil
+		}
+		c.mu.Unlock()
+		schema, err := c.fetch(fetchCtx, key.path, key.id)
+		if err == nil {
+			err = schema.Validate()
+		}
+		if err != nil {
+			return Schema{}, err
+		}
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.closed {
+			return Schema{}, ErrClosed
+		}
 		c.clock++
 		c.entries[key] = schemaCacheEntry{schema: schema, used: c.clock}
 		c.evictLocked()
-	}
-	if current {
-		delete(c.fetches, key)
-	}
-	close(fetch.done)
-	c.mu.Unlock()
-}
-
-func (c *schemaCache) releaseFetch(key schemaCacheKey, fetch *schemaFetch) {
-	c.mu.Lock()
-	fetch.waiters--
-	if fetch.waiters == 0 && !fetch.completed {
-		if c.fetches[key] == fetch {
-			delete(c.fetches, key)
-		}
-		fetch.cancel()
-	}
-	c.mu.Unlock()
+		return schema, nil
+	}, nil)
 }
 
 func (c *schemaCache) store(path TablePath, schemaID int32, schema Schema) {
@@ -206,11 +178,9 @@ func (c *schemaCache) close() {
 	c.mu.Lock()
 	if !c.closed {
 		c.closed = true
-		for _, fetch := range c.fetches {
-			fetch.cancel()
-		}
 	}
 	c.mu.Unlock()
+	c.flights.Close(ErrClosed)
 }
 
 func evolveRow(source, target Schema, row Row) (Row, error) {

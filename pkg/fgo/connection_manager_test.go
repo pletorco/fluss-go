@@ -216,12 +216,25 @@ func TestConnectionManagerRejectsInvalidOrClosedRequests(t *testing.T) {
 func TestConnectionManagerCancelsWaitingDial(t *testing.T) {
 	manager := newConnectionManager(config{})
 	key := connectionKey{id: 1, address: "tablet:9123", role: TabletServer}
-	manager.flights[key] = &connectionFlight{done: make(chan struct{})}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = manager.flights.Do(context.Background(), key, func(context.Context) (*Client, error) {
+			close(started)
+			<-release
+			return nil, ErrClosed
+		}, nil)
+	}()
+	<-started
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := manager.getNode(ctx, Node{ID: 1, Address: "tablet:9123", Role: TabletServer}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("waiting get error = %v, want context.Canceled", err)
 	}
+	close(release)
+	<-done
 }
 
 func TestWaitRetryHandlesImmediateDelayAndCancellation(t *testing.T) {
