@@ -47,12 +47,24 @@ tasks:
 
   docs:check:
     desc: Verify public package manuals and canonical examples
+    deps:
+      - docs:examples:compile
+      - docs:examples:run
     cmds:
       - go run ./cmd/doccheck ./pkg/fmsg ./pkg/fgo ./pkg/fadm
       - go doc ./pkg/fmsg >/dev/null
       - go doc ./pkg/fgo >/dev/null
       - go doc ./pkg/fadm >/dev/null
-      - go test ./pkg/fmsg ./pkg/fgo ./pkg/fadm -run '^Example'
+
+  docs:examples:compile:
+    desc: Compile all pkg.go.dev examples, including live-cluster workflows
+    cmds:
+      - go test ./pkg/fmsg ./pkg/fgo ./pkg/fadm -run '^$'
+
+  docs:examples:run:
+    desc: Execute deterministic pkg.go.dev examples with expected output
+    cmds:
+      - go test -v ./pkg/fmsg ./pkg/fgo ./pkg/fadm -run '^Example'
 
   test:
     desc: Run the complete fast test suite

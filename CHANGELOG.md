@@ -14,6 +14,8 @@ breaking changes.
   configuration, result ownership, partial failures, and pre-v1 stability.
 - Added a CI documentation audit for public packages, declarations, methods,
   and interface contracts in hand-written Go source.
+- Expanded pkg.go.dev examples for KV writes, lookups, bounded scans, table
+  creation, partial failures, and deterministic codecs.
 
 ## [v0.1.0-beta.2] - 2026-07-31
 
