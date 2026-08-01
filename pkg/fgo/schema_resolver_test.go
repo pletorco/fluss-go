@@ -244,6 +244,14 @@ func TestHistoricalSchemasDecodeAcrossReadPaths(t *testing.T) {
 		records[0].Record.Value[2] != nil || records[1].Record.Value[2] != int64(4) {
 		t.Fatalf("historical log = next %d, records %#v, %v", next, records, err)
 	}
+	next, records, arrows, err = decodeFetchedLogWithResolver(
+		context.Background(), resolver, table, 0, 1, append(oldLog, currentLog...), true,
+	)
+	releaseScanArrows(arrows)
+	if err != nil || next != 2 || len(records) != 1 || records[0].Record.Offset != 1 ||
+		records[0].Record.Value[2] != int64(4) {
+		t.Fatalf("trimmed historical log = next %d, records %#v, %v", next, records, err)
+	}
 }
 
 func TestJava091SchemaFixturesResolveByID(t *testing.T) {

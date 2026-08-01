@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
 )
@@ -417,6 +419,9 @@ func (s *BatchScanner) decodeCurrent(ctx context.Context, isLog bool, encoded []
 		if err != nil {
 			return BatchResult{}, err
 		}
+		if len(rows) > s.config.Limit {
+			rows = rows[len(rows)-s.config.Limit:]
+		}
 		return BatchResult{Rows: s.projectRows(rows)}, nil
 	}
 	compacted := !strings.EqualFold(
@@ -429,18 +434,86 @@ func (s *BatchScanner) decodeCurrent(ctx context.Context, isLog bool, encoded []
 	if err != nil {
 		return BatchResult{}, err
 	}
+	records, arrows = limitLatestLogRecords(records, arrows, int64(s.config.Limit))
+	if err := s.projectArrowBatches(arrows); err != nil {
+		releaseScanArrows(arrows)
+		return BatchResult{}, err
+	}
 	rows := make([]Row, len(records))
 	for index := range records {
 		rows[index] = records[index].Record.Value
-	}
-	if len(rows) > s.config.Limit {
-		rows = rows[len(rows)-s.config.Limit:]
 	}
 	result := BatchResult{Rows: s.projectRows(rows), ArrowBatches: make([]ArrowLogBatch, len(arrows))}
 	for index := range arrows {
 		result.ArrowBatches[index] = arrows[index].Batch
 	}
 	return result, nil
+}
+
+func limitLatestLogRecords(
+	rows []ScanRecord,
+	arrows []ScanArrowBatch,
+	limit int64,
+) ([]ScanRecord, []ScanArrowBatch) {
+	skip := scanResultRows(rows, arrows) - limit
+	if skip <= 0 {
+		return rows, arrows
+	}
+	limitedRows := make([]ScanRecord, 0, len(rows))
+	limitedArrows := make([]ScanArrowBatch, 0, len(arrows))
+	for _, segment := range orderedScanSegments(rows, arrows) {
+		if segment.row >= 0 {
+			if skip > 0 {
+				skip--
+				continue
+			}
+			limitedRows = append(limitedRows, rows[segment.row])
+			continue
+		}
+		item := &arrows[segment.arrow]
+		count := item.Batch.Record.NumRows()
+		if skip >= count {
+			skip -= count
+			item.Batch.Release()
+			continue
+		}
+		if skip > 0 {
+			sliced := sliceArrowLogBatch(&item.Batch, skip, count)
+			item.Batch.Release()
+			item.Batch = sliced
+			skip = 0
+		}
+		limitedArrows = append(limitedArrows, *item)
+	}
+	return limitedRows, limitedArrows
+}
+
+func (s *BatchScanner) projectArrowBatches(batches []ScanArrowBatch) error {
+	if len(s.projection) == 0 {
+		return nil
+	}
+	projected, err := projectSchema(s.table.Schema, s.config.Projection)
+	if err != nil {
+		return err
+	}
+	schema, err := projected.ArrowSchema()
+	if err != nil {
+		return err
+	}
+	for index := range batches {
+		source := batches[index].Batch.Record
+		columns := make([]arrow.Array, len(s.projection))
+		for columnIndex, position := range s.projection {
+			if position < 0 || position >= int(source.NumCols()) {
+				return fmt.Errorf("%w: projected Arrow column %d is unavailable", ErrInvalidSchema, position)
+			}
+			columns[columnIndex] = source.Column(position)
+		}
+		record := array.NewRecordBatch(schema, columns, source.NumRows())
+		source.Release()
+		batches[index].Batch.Record = record
+	}
+	return nil
 }
 
 func decodeValueRecordBatch(table Table, encoded []byte) ([]Row, error) {
