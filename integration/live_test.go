@@ -122,7 +122,7 @@ func TestFluss091Integration(t *testing.T) {
 	})
 
 	t.Run("coordinator restart recovery", func(t *testing.T) {
-		testCoordinatorRecovery(t, client, plainSeeds, logPath)
+		testCoordinatorRecovery(t, client, logPath)
 	})
 }
 
@@ -2176,7 +2176,6 @@ func assertFailoverLogRows(
 func testCoordinatorRecovery(
 	t *testing.T,
 	client *fgo.Client,
-	seeds []string,
 	path fgo.TablePath,
 ) {
 	t.Helper()
@@ -2201,30 +2200,24 @@ func testCoordinatorRecovery(
 
 	startPlaintextCoordinator(t)
 	restarted = true
-	recovered := openClient(t, seeds)
-	defer recovered.Close()
-	recoveredAdmin, err := fadm.New(recovered)
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx, stop := context.WithTimeout(context.Background(), 45*time.Second)
 	defer stop()
 	if err := waitForCondition(ctx, 250*time.Millisecond, func() (bool, error) {
-		nodes, nodesErr := recoveredAdmin.ServerNodes(ctx)
+		nodes, nodesErr := admin.ServerNodes(ctx)
 		if nodesErr != nil {
 			return false, nil
 		}
-		_, tableErr := recovered.OpenTable(ctx, path)
+		_, tableErr := client.OpenTable(ctx, path)
 		return len(nodes) == 4 && tableErr == nil, nil
 	}); err != nil {
-		t.Fatalf("coordinator did not recover through configured seeds: %v", err)
+		t.Fatalf("long-lived client did not recover after coordinator restart: %v", err)
 	}
 	canceled, cancelRequest := context.WithCancel(ctx)
 	cancelRequest()
-	if _, err := recoveredAdmin.ServerNodes(canceled); !errors.Is(err, context.Canceled) {
+	if _, err := admin.ServerNodes(canceled); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled recovered admin request = %v", err)
 	}
-	if _, err := recoveredAdmin.ServerNodes(ctx); err != nil {
+	if _, err := admin.ServerNodes(ctx); err != nil {
 		t.Fatalf("admin request after cancellation = %v", err)
 	}
 }

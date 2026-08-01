@@ -249,12 +249,17 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 		cfg.dialContext = dialer.DialContext
 	}
 	manager := newConnectionManager(cfg)
-	client, err := manager.bootstrap(ctx)
+	bootstrap, err := manager.bootstrap(ctx)
 	if err != nil {
 		_ = manager.Close()
 		return nil, err
 	}
+	client := newClient(nil, nil)
 	client.manager = manager
+	client.serverID = bootstrap.serverID
+	client.address = bootstrap.address
+	client.role = bootstrap.role
+	client.observer = cfg.observer
 	client.snapshotProvider = cfg.snapshotProvider
 	client.remoteFiles = cfg.remoteFiles
 	client.router = NewRouter(Node{ID: client.serverID, Address: client.address, Role: Coordinator}, client.fetchTableMetadata).
@@ -274,9 +279,13 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 }
 
 func newClient(requester fmsg.Requester, close func() error) *Client {
-	client := &Client{requester: requester, close: close, versions: make(map[fmsg.APIKey]int16)}
+	client := newPhysicalClient(requester, close)
 	client.schemas = newSchemaCache(defaultSchemaCacheEntries, client.fetchSchema)
 	return client
+}
+
+func newPhysicalClient(requester fmsg.Requester, close func() error) *Client {
+	return &Client{requester: requester, close: close, versions: make(map[fmsg.APIKey]int16)}
 }
 
 // Requester exposes the low-level protocol requester implemented by the client.
@@ -288,6 +297,9 @@ func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
 	}
 	if c.manager != nil {
+		if err := c.ensureOpen(); err != nil {
+			return nil, err
+		}
 		return c.manager.request(ctx, Node{ID: c.serverID, Address: c.address, Role: c.role}, request)
 	}
 	return c.request(ctx, request)
@@ -298,6 +310,9 @@ func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 func (c *Client) RequestTo(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
 	if request == nil {
 		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
+	}
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
 	}
 	if c.manager == nil {
 		return nil, fmt.Errorf("%w: client does not manage server connections", ErrClosed)
@@ -316,6 +331,9 @@ func (c *Client) RequestCoordinator(ctx context.Context, request fmsg.Request) (
 // RequestBucket sends a bucket-scoped request to its current tablet leader. A stale metadata
 // response causes one cache invalidation and one bounded reroute.
 func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, bucket int32, request fmsg.Request) (fmsg.Response, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	if c.router == nil {
 		return nil, fmt.Errorf("%w: client does not manage metadata", ErrClosed)
 	}
@@ -380,9 +398,21 @@ func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 	return response, nil
 }
 
+func (c *Client) ensureOpen() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return ErrClosed
+	}
+	return nil
+}
+
 // Close stops token refresh and closes all managed connections.
 // Close is idempotent.
 func (c *Client) Close() error {
+	if !c.markClosed() {
+		return nil
+	}
 	if c.tokenManager != nil {
 		c.tokenManager.Stop()
 	}
@@ -392,17 +422,27 @@ func (c *Client) Close() error {
 	if c.manager != nil {
 		return c.manager.Close()
 	}
-	return c.shutdown()
+	return c.closeTransport()
 }
 
 func (c *Client) shutdown() error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
+	if !c.markClosed() {
 		return nil
 	}
+	return c.closeTransport()
+}
+
+func (c *Client) markClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return false
+	}
 	c.closed = true
-	c.mu.Unlock()
+	return true
+}
+
+func (c *Client) closeTransport() error {
 	if c.close != nil {
 		return c.close()
 	}

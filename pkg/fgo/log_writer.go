@@ -416,6 +416,9 @@ type logBatchCompletion struct {
 
 // NewLogWriter creates an append writer for a log table.
 func (c *Client) NewLogWriter(ctx context.Context, table Table, options ...LogWriterOption) (*LogWriter, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	writer, err := newLogWriter(ctx, clientLogWriterBackend{client: c}, table, options...)
 	if err == nil {
 		writer.observer = c.observer

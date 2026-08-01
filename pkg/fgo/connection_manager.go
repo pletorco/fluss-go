@@ -150,7 +150,7 @@ func (m *connectionManager) open(ctx context.Context, address string, expectedRo
 		_ = conn.Close()
 		return nil, err
 	}
-	client := newClient(requester, requester.Close)
+	client := newPhysicalClient(requester, requester.Close)
 	client.observer = m.cfg.observer
 	if err := client.negotiate(ctx, m.cfg.name, m.cfg.version); err != nil {
 		_ = client.shutdown()

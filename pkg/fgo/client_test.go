@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -98,6 +99,116 @@ func TestClientCloseIsIdempotent(t *testing.T) {
 	request, _ := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
 	if _, err := client.Request(context.Background(), request); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Request after Close error = %v, want ErrClosed", err)
+	}
+}
+
+func TestClientCloseIsConcurrentSafe(t *testing.T) {
+	closed := make(chan struct{}, 16)
+	client := newClient(nil, func() error {
+		closed <- struct{}{}
+		return nil
+	})
+	var wait sync.WaitGroup
+	errs := make(chan error, 16)
+	for range 16 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			errs <- client.Close()
+		}()
+	}
+	wait.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(closed) != 1 {
+		t.Fatalf("transport close calls = %d, want 1", len(closed))
+	}
+	request, _ := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
+	if _, err := client.Request(context.Background(), request); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Request() after concurrent Close error = %v", err)
+	}
+}
+
+func TestClientCloseRejectsPublicOperationsAndResourceConstruction(t *testing.T) {
+	providerCalls := 0
+	client := newClient(nil, nil)
+	client.snapshotProvider = SnapshotBatchProviderFunc(func(
+		context.Context,
+		SnapshotBatchRequest,
+	) (SnapshotBatchReader, error) {
+		providerCalls++
+		return &fakeSnapshotBatchReader{}, nil
+	})
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request, _ := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
+	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
+	table := kvWriterTable()
+	bucket := testTableBucket(table)
+	checks := map[string]func() error{
+		"request": func() error {
+			_, err := client.Request(context.Background(), request)
+			return err
+		},
+		"request to": func() error {
+			_, err := client.RequestTo(context.Background(), Node{Address: "server:9123", Role: Coordinator}, request)
+			return err
+		},
+		"request coordinator": func() error {
+			_, err := client.RequestCoordinator(context.Background(), request)
+			return err
+		},
+		"request bucket": func() error {
+			_, err := client.RequestBucket(context.Background(), path, 0, request)
+			return err
+		},
+		"open table": func() error {
+			_, err := client.OpenTable(context.Background(), path.TablePath)
+			return err
+		},
+		"resolve buckets": func() error {
+			_, err := client.ResolveTableBuckets(context.Background(), path)
+			return err
+		},
+		"log writer": func() error {
+			_, err := client.NewLogWriter(context.Background(), logWriterTable())
+			return err
+		},
+		"KV writer": func() error {
+			_, err := client.NewKVWriter(context.Background(), table)
+			return err
+		},
+		"lookup": func() error {
+			_, err := client.NewLookupClient(context.Background(), table)
+			return err
+		},
+		"log scanner": func() error {
+			_, err := client.NewLogScanner(context.Background(), logWriterTable(), AtOffset(0))
+			return err
+		},
+		"batch scanner": func() error {
+			_, err := client.NewBatchScanner(context.Background(), table, bucket)
+			return err
+		},
+		"snapshot scanner": func() error {
+			_, err := client.NewSnapshotBatchScanner(context.Background(), table, bucket, 1)
+			return err
+		},
+	}
+	for name, check := range checks {
+		t.Run(name, func(t *testing.T) {
+			if err := check(); !errors.Is(err, ErrClosed) {
+				t.Fatalf("error = %v, want ErrClosed", err)
+			}
+		})
+	}
+	if providerCalls != 0 {
+		t.Fatalf("snapshot provider calls after Close = %d", providerCalls)
 	}
 }
 

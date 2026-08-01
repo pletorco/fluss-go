@@ -299,6 +299,9 @@ type kvBatchCompletion struct {
 
 // NewKVWriter creates a primary-key writer for table.
 func (c *Client) NewKVWriter(ctx context.Context, table Table, options ...KVWriterOption) (*KVWriter, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	writer, err := newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
 	if err == nil {
 		writer.observer = c.observer

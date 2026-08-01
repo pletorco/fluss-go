@@ -421,6 +421,9 @@ type LogScanner struct {
 
 // NewLogScanner creates a scanner subscribed to all current buckets at start.
 func (c *Client) NewLogScanner(ctx context.Context, table Table, start ScanOffset, options ...LogScannerOption) (*LogScanner, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	scanner, err := newLogScanner(ctx, clientLogScannerBackend{client: c}, table, start, options...)
 	if err == nil {
 		scanner.observer = c.observer

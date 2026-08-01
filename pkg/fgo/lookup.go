@@ -299,6 +299,9 @@ type LookupClient struct {
 
 // NewLookupClient creates a point and prefix lookup client for table.
 func (c *Client) NewLookupClient(ctx context.Context, table Table, options ...LookupOption) (*LookupClient, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	lookup, err := newLookupClient(ctx, clientLookupBackend{client: c}, table, options...)
 	if err == nil {
 		lookup.observer = c.observer

@@ -8,6 +8,14 @@ breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Kept the long-lived `fgo.Client` open when a failed managed Coordinator
+  connection is replaced, so `OpenTable`, `fadm.DescribeTable`, schema reads,
+  metadata routing, and child resource construction continue through the new
+  transport. Explicitly closed clients now reject every request and resource
+  constructor, including snapshot providers, with `ErrClosed`.
+
 ## [v0.1.0-beta.8] - 2026-08-01
 
 ### Added
