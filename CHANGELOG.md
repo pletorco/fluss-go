@@ -8,6 +8,36 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.8] - 2026-08-01
+
+### Added
+
+- Added public-beta security, support, contribution, conduct, and structured
+  issue-reporting guidance for external users and contributors.
+- Added a live Apache Fluss 0.9.1 regression that starts a log scan inside a
+  server-returned record batch and rejects every record before the requested
+  inclusive offset.
+
+### Changed
+
+- Updated every optional adapter module to require the beta.8 root client so
+  adapter-only installations also select the corrected scanner behavior.
+
+### Fixed
+
+- Prevented explicit and timestamp-based log scans from exposing row or Arrow
+  records before the resolved inclusive start offset. Trimming now applies to
+  local and remote-log payloads before row limits and stopping offsets, keeps
+  Arrow base offsets and change vectors aligned, and prevents fetch offsets
+  from moving backwards.
+- Enforced `LIMIT_SCAN` bounds across oversized KV, row, Arrow, and mixed-format
+  responses, and applied configured projections to Arrow batch results.
+- Recomputed stopping-offset completion after bucket subscription changes so
+  resubscribing can resume a completed bounded scan and unsubscribed buckets
+  cannot prevent the remaining scan from completing.
+- Corrected the pinned checkout revision in the scheduled reliability workflow
+  so mixed, soak, and fault profiles can run against the reviewed source.
+
 ## [v0.1.0-beta.7] - 2026-08-01
 
 ### Added
@@ -226,7 +256,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.7...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.8...HEAD
+[v0.1.0-beta.8]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.7...v0.1.0-beta.8
 [v0.1.0-beta.7]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.6...v0.1.0-beta.7
 [v0.1.0-beta.6]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.5...v0.1.0-beta.6
 [v0.1.0-beta.5]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.4...v0.1.0-beta.5

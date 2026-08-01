@@ -7,7 +7,7 @@ toolchain go1.26.5
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.2
-	github.com/pletorco/fluss-go v0.1.0-beta.7
+	github.com/pletorco/fluss-go v0.1.0-beta.8
 )
 
 require (
