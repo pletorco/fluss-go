@@ -140,6 +140,9 @@ func (c *Client) ResolveTableBuckets(
 	ctx context.Context,
 	path PhysicalTablePath,
 ) ([]TableBucket, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	if err := path.Validate(); err != nil {
 		return nil, err
 	}
@@ -237,6 +240,9 @@ func (c *Client) NewBatchScanner(
 	bucket TableBucket,
 	options ...BatchScannerOption,
 ) (*BatchScanner, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	return newBatchScanner(ctx, clientBatchScanBackend{client: c}, nil, table, bucket, options...)
 }
 
@@ -248,6 +254,9 @@ func (c *Client) NewSnapshotBatchScanner(
 	snapshotID int64,
 	options ...BatchScannerOption,
 ) (*BatchScanner, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	if c.snapshotProvider == nil {
 		return nil, fmt.Errorf("%w: snapshot batch provider is not configured", ErrUnsupportedAPI)
 	}

@@ -286,6 +286,36 @@ func TestTypedBatchScannerConstructors(t *testing.T) {
 	}
 }
 
+func TestTypedBatchScannerConstructorsRejectClosedClient(t *testing.T) {
+	table := kvWriterTable()
+	bucket := testTableBucket(table)
+	providerCalls := 0
+	client := newClient(nil, nil)
+	client.snapshotProvider = SnapshotBatchProviderFunc(func(
+		context.Context,
+		SnapshotBatchRequest,
+	) (SnapshotBatchReader, error) {
+		providerCalls++
+		return &fakeSnapshotBatchReader{}, nil
+	})
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTypedBatchScanner(
+		context.Background(), client, table, bucket, typedRowCodec(),
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("typed batch constructor error = %v", err)
+	}
+	if _, err := NewTypedSnapshotBatchScanner(
+		context.Background(), client, table, bucket, 1, typedRowCodec(),
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("typed snapshot constructor error = %v", err)
+	}
+	if providerCalls != 0 {
+		t.Fatalf("snapshot provider calls after Close = %d", providerCalls)
+	}
+}
+
 func TestTypedConstructorsValidateNilValues(t *testing.T) {
 	codec, keyCodec := typedRowCodec(), typedKeyCodec()
 	if _, err := NewTypedLogWriter(context.Background(), nil, Table{}, codec); !errors.Is(err, ErrInvalidConfig) {

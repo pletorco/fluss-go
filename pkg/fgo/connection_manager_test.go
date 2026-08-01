@@ -555,6 +555,101 @@ func TestConnectionManagerEvictsConnectionAfterPartialCanceledWrite(t *testing.T
 	<-secondDone
 }
 
+func TestClientCoordinatorReplacementKeepsLogicalClientOpen(t *testing.T) {
+	firstClient, firstServer := net.Pipe()
+	firstDone := serveVersionThenRemoteError(
+		t, firstServer, Coordinator, fmsg.ErrorCodeNotLeaderOrFollower,
+	)
+	secondClient, secondServer := net.Pipe()
+	secondDone := serveReplacementCoordinator(t, secondServer)
+	dials := 0
+	metrics := &metricRecorder{}
+	replacementStarted := make(chan struct{})
+	releaseReplacement := make(chan struct{})
+	client, err := Open(
+		context.Background(),
+		WithSeedBrokers("coordinator:9123"),
+		WithRetryPolicy(RetryPolicy{
+			MaxAttempts: 2,
+			Backoff:     func(int) time.Duration { return 0 },
+		}),
+		WithMetricsObserver(metrics),
+		WithDialContext(func(context.Context, string, string) (net.Conn, error) {
+			dials++
+			if dials == 1 {
+				return firstClient, nil
+			}
+			close(replacementStarted)
+			<-releaseReplacement
+			return secondClient, nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := connectionKey{id: -1, address: "coordinator:9123", role: Coordinator}
+	client.manager.mu.Lock()
+	bootstrap := client.manager.clients[key]
+	client.manager.mu.Unlock()
+	if bootstrap == nil || bootstrap == client {
+		t.Fatal("Open() did not separate the logical client from its bootstrap connection")
+	}
+
+	replaced := make(chan error, 1)
+	go func() {
+		request, _ := apiVersionsRequest()
+		_, requestErr := client.RequestCoordinator(context.Background(), request)
+		replaced <- requestErr
+	}()
+	<-replacementStarted
+	openDuringReplacement := client.ensureOpen()
+	probe, probeErr := client.NewBatchScanner(
+		context.Background(), kvWriterTable(), testTableBucket(kvWriterTable()),
+	)
+	if probe != nil {
+		_ = probe.Close()
+	}
+	close(releaseReplacement)
+	if err := <-replaced; err != nil {
+		t.Fatalf("replacement request error = %v", err)
+	}
+	if openDuringReplacement != nil || probeErr != nil {
+		t.Fatalf("logical client during replacement = %v, batch scanner = %v", openDuringReplacement, probeErr)
+	}
+	if err := client.ensureOpen(); err != nil {
+		t.Fatalf("logical client after replacement = %v", err)
+	}
+	table, err := client.OpenTable(
+		context.Background(), TablePath{Database: "db", Table: "events"},
+	)
+	if err != nil || table.ID != 9 || table.SchemaID != 3 || table.Kind != PrimaryKeyTable {
+		t.Fatalf("OpenTable() after replacement = %#v, %v", table, err)
+	}
+	buckets, err := client.ResolveTableBuckets(
+		context.Background(), PhysicalTablePath{TablePath: table.Path},
+	)
+	if err != nil || len(buckets) != 1 || buckets[0].BucketID != 0 {
+		t.Fatalf("ResolveTableBuckets() after replacement = %#v, %v", buckets, err)
+	}
+	if dials != 2 {
+		t.Fatalf("dial calls = %d, want 2", dials)
+	}
+	if event, ok := metrics.find(MetricRetry, MetricOperationRPC); !ok ||
+		event.APIKey != fmsg.APIKeyApiVersions || event.Attempt != 2 {
+		t.Fatalf("replacement retry metric = %#v, found=%t", event, ok)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.OpenTable(
+		context.Background(), TablePath{Database: "db", Table: "events"},
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("OpenTable() after Close error = %v", err)
+	}
+	<-firstDone
+	<-secondDone
+}
+
 func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
 	firstClient, firstServer := net.Pipe()
 	firstDone := serveVersionThenRemoteError(t, firstServer, TabletServer, fmsg.ErrorCodeNotLeaderOrFollower)
@@ -811,14 +906,81 @@ func serveVersionThenRemoteError(t *testing.T, conn net.Conn, role ServerRole, c
 	return done
 }
 
+func serveReplacementCoordinator(t *testing.T, conn net.Conn) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer conn.Close()
+		for index, expected := range []fmsg.APIKey{
+			fmsg.APIKeyApiVersions,
+			fmsg.APIKeyApiVersions,
+			fmsg.APIKeyGetTableInfo,
+			fmsg.APIKeyGetTableSchema,
+			fmsg.APIKeyGetMetadata,
+		} {
+			id, key, _ := readTransportRequest(t, conn)
+			if key != expected {
+				t.Errorf("request %d API key = %d, want %d", index, key, expected)
+				return
+			}
+			var body []byte
+			var err error
+			switch key {
+			case fmsg.APIKeyApiVersions:
+				body, err = versionResponseFor(
+					Coordinator,
+					fmsg.APIKeyApiVersions,
+					fmsg.APIKeyGetTableInfo,
+					fmsg.APIKeyGetTableSchema,
+					fmsg.APIKeyGetMetadata,
+				)
+			case fmsg.APIKeyGetTableInfo:
+				body, err = proto.Marshal(&fmsg.GetTableInfoResponse{
+					TableId:      proto.Int64(9),
+					SchemaId:     proto.Int32(3),
+					TableJson:    []byte(`{"bucket_count":4}`),
+					CreatedTime:  proto.Int64(1),
+					ModifiedTime: proto.Int64(1),
+				})
+			case fmsg.APIKeyGetTableSchema:
+				body, err = proto.Marshal(&fmsg.GetTableSchemaResponse{
+					SchemaId: proto.Int32(3),
+					SchemaJson: []byte(
+						`{"version":1,"columns":[{"name":"id","data_type":{"type":"BIGINT"},"id":1}],"primary_key":["id"],"highest_field_id":1}`,
+					),
+				})
+			case fmsg.APIKeyGetMetadata:
+				metadata := metadataResponse(TablePath{Database: "db", Table: "events"})
+				metadata.TableMetadata[0].TableJson = []byte(`{}`)
+				metadata.TableMetadata[0].CreatedTime = proto.Int64(1)
+				metadata.TableMetadata[0].ModifiedTime = proto.Int64(1)
+				body, err = proto.Marshal(metadata)
+			}
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			writeTransportResponse(t, conn, id, body)
+		}
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+	return done
+}
+
 func versionResponse(role ServerRole) ([]byte, error) {
-	apiKey := int32(fmsg.APIKeyApiVersions)
-	minimum, maximum, roleValue := int32(0), int32(0), int32(role)
+	return versionResponseFor(role, fmsg.APIKeyApiVersions)
+}
+
+func versionResponseFor(role ServerRole, keys ...fmsg.APIKey) ([]byte, error) {
+	versions := make([]*fmsg.PbApiVersion, len(keys))
+	for index, key := range keys {
+		versions[index] = apiVersion(key, 0, 0)
+	}
+	roleValue := int32(role)
 	return proto.Marshal(&fmsg.ApiVersionsResponse{
-		ServerType: &roleValue,
-		ApiVersions: []*fmsg.PbApiVersion{{
-			ApiKey: &apiKey, MinVersion: &minimum, MaxVersion: &maximum,
-		}},
+		ServerType:  &roleValue,
+		ApiVersions: versions,
 	})
 }
 

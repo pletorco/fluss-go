@@ -517,11 +517,8 @@ func (t Table) RequirePrimaryKey() error {
 
 // OpenTable loads authoritative table metadata and schema from the coordinator.
 func (c *Client) OpenTable(ctx context.Context, path TablePath) (Table, error) {
-	c.mu.RLock()
-	closed := c.closed
-	c.mu.RUnlock()
-	if closed {
-		return Table{}, ErrClosed
+	if err := c.ensureOpen(); err != nil {
+		return Table{}, err
 	}
 	if err := path.Validate(); err != nil {
 		return Table{}, err
