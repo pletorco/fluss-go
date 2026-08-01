@@ -1003,7 +1003,8 @@ func decodeFetchedLogWithResolver(
 	compacted bool,
 ) (int64, []ScanRecord, []ScanArrowBatch, error) {
 	return decodeFetchedLogBatchesWithResolver(
-		ctx, resolver, table, bucket, fetchOffset, encoded, compacted, false,
+		ctx, resolver, table, bucket, fetchOffset, encoded,
+		fetchedLogDecodeOptions{compacted: compacted},
 	)
 }
 
@@ -1017,8 +1018,14 @@ func decodeFetchedFetchResponseWithResolver(
 	compacted bool,
 ) (int64, []ScanRecord, []ScanArrowBatch, error) {
 	return decodeFetchedLogBatchesWithResolver(
-		ctx, resolver, table, bucket, fetchOffset, encoded, compacted, true,
+		ctx, resolver, table, bucket, fetchOffset, encoded,
+		fetchedLogDecodeOptions{compacted: compacted, allowIncompleteTail: true},
 	)
+}
+
+type fetchedLogDecodeOptions struct {
+	compacted           bool
+	allowIncompleteTail bool
 }
 
 func decodeFetchedLogBatchesWithResolver(
@@ -1028,8 +1035,7 @@ func decodeFetchedLogBatchesWithResolver(
 	bucket int32,
 	fetchOffset int64,
 	encoded []byte,
-	compacted bool,
-	allowIncompleteTail bool,
+	options fetchedLogDecodeOptions,
 ) (int64, []ScanRecord, []ScanArrowBatch, error) {
 	next := fetchOffset
 	var rows []ScanRecord
@@ -1041,7 +1047,7 @@ func decodeFetchedLogBatchesWithResolver(
 			return fetchOffset, nil, nil, err
 		}
 		if !complete {
-			if allowIncompleteTail {
+			if options.allowIncompleteTail {
 				// Byte-limited fetches may end inside the next batch. Refetch it from
 				// the last complete offset, matching the Fluss Java scanner.
 				break
@@ -1051,7 +1057,7 @@ func decodeFetchedLogBatchesWithResolver(
 		}
 		payload := encoded[:size]
 		batchNext, batchRows, arrowBatch, err := decodeEvolvedFetchedBatch(
-			ctx, resolver, table, bucket, next, payload, compacted,
+			ctx, resolver, table, bucket, next, payload, options.compacted,
 		)
 		if err != nil {
 			releaseScanArrows(arrows)
