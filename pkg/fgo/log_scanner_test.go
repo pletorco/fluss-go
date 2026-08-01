@@ -3,6 +3,7 @@ package fgo
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -268,6 +269,174 @@ func TestDecodeFetchedArrowTrimsMultipleBatchesAndRejectsOverflow(t *testing.T) 
 	overflow := encodedArrowRows(t, table.Schema, int64(^uint64(0)>>1), 1, 2)
 	if _, _, _, err = decodeFetchedLog(table.Schema, 0, 0, overflow); !errors.Is(err, ErrMalformedRecordBatch) {
 		t.Fatalf("overflow decodeFetchedLog() error = %v", err)
+	}
+}
+
+func TestLogScannerIgnoresIncompleteTrailingRowBatch(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	first := encodedRows(t, table.Schema, 4, 1, 2)
+	second := encodedRows(t, table.Schema, 6, 3, 4, 5)
+	backend.fetches[0] = scannerFetch{records: append(append([]byte(nil), first...), second[:len(second)-1]...)}
+
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = scanner.Close() }()
+
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 {
+		t.Fatalf("first Poll() = %#v, %v", result, err)
+	}
+	requireRecordOffsets(t, result.Records, 4, 5)
+	result.Release()
+
+	backend.fetches[0] = scannerFetch{records: second}
+	result, err = scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 {
+		t.Fatalf("second Poll() = %#v, %v", result, err)
+	}
+	requireRecordOffsets(t, result.Records, 6, 7, 8)
+	result.Release()
+	calls := backend.fetchCalls()
+	if len(calls) != 2 || calls[1].offset != 6 {
+		t.Fatalf("fetch calls = %#v", calls)
+	}
+}
+
+func TestLogScannerIgnoresIncompleteTrailingArrowBatch(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	first := encodedArrowRows(t, table.Schema, 10, 1, 2)
+	second := encodedArrowRows(t, table.Schema, 12, 3, 4, 5)
+	backend.fetches[0] = scannerFetch{records: append(append([]byte(nil), first...), second[:len(second)-1]...)}
+
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = scanner.Close() }()
+
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 || len(result.ArrowBatches) != 1 {
+		t.Fatalf("first Poll() = %#v, %v", result, err)
+	}
+	batch := result.ArrowBatches[0].Batch
+	if batch.BaseOffset != 10 || batch.Record.NumRows() != 2 {
+		t.Fatalf("first Arrow batch = %#v", batch)
+	}
+	result.Release()
+
+	backend.fetches[0] = scannerFetch{records: second}
+	result, err = scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 || len(result.ArrowBatches) != 1 {
+		t.Fatalf("second Poll() = %#v, %v", result, err)
+	}
+	batch = result.ArrowBatches[0].Batch
+	if batch.BaseOffset != 12 || batch.Record.NumRows() != 3 {
+		t.Fatalf("second Arrow batch = %#v", batch)
+	}
+	result.Release()
+	calls := backend.fetchCalls()
+	if len(calls) != 2 || calls[1].offset != 12 {
+		t.Fatalf("fetch calls = %#v", calls)
+	}
+}
+
+func TestLogScannerRetriesIncompleteFirstBatchWithoutAdvancing(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	complete := encodedRows(t, table.Schema, 20, 1, 2)
+	backend.fetches[0] = scannerFetch{records: complete[:len(complete)-1]}
+
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = scanner.Close() }()
+
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 || len(result.Records) != 0 || len(result.ArrowBatches) != 0 {
+		t.Fatalf("incomplete Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	backend.fetches[0] = scannerFetch{records: complete}
+
+	result, err = scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 {
+		t.Fatalf("retry Poll() = %#v, %v", result, err)
+	}
+	requireRecordOffsets(t, result.Records, 20, 21)
+	result.Release()
+	calls := backend.fetchCalls()
+	if len(calls) != 2 || calls[0].offset != 20 || calls[1].offset != 20 {
+		t.Fatalf("fetch calls = %#v", calls)
+	}
+}
+
+func TestLogScannerAcceptsFirstArrowBatchLargerThanBucketFetchLimit(t *testing.T) {
+	table := logWriterTable()
+	arrowSchema, err := table.Schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrowSchema)
+	value := strings.Repeat("x", 600<<10)
+	for id := int32(1); id <= 2; id++ {
+		builder.Field(0).(*array.Int32Builder).Append(id)
+		builder.Field(1).(*array.StringBuilder).Append(value)
+	}
+	record := builder.NewRecordBatch()
+	builder.Release()
+	encoded, err := EncodeArrowLogBatch(ArrowLogBatch{
+		Magic: 0, BaseOffset: 30, SchemaID: 3, Record: record,
+		Changes: []ChangeType{Append, Append},
+	}, ArrowCompressionNone, memory.DefaultAllocator)
+	record.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) <= 1<<20 {
+		t.Fatalf("encoded Arrow batch size = %d, want larger than 1 MiB", len(encoded))
+	}
+
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{records: encoded}
+	scanner, err := newLogScanner(
+		context.Background(), backend, table, AtOffset(30), WithScanRowLimit(1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = scanner.Close() }()
+
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 || !result.Done || len(result.ArrowBatches) != 1 ||
+		result.ArrowBatches[0].Batch.Record.NumRows() != 1 {
+		t.Fatalf("Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	calls := backend.fetchCalls()
+	if len(calls) != 1 || calls[0].config.MaxBucketBytes != 1<<20 {
+		t.Fatalf("fetch calls = %#v", calls)
+	}
+}
+
+func TestLogScannerRejectsInvalidCompleteBatchHeader(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{records: make([]byte, 12)}
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = scanner.Close() }()
+
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 1 ||
+		!errors.Is(result.BucketErrors[0].Err, ErrMalformedRecordBatch) {
+		t.Fatalf("Poll() = %#v, %v", result, err)
 	}
 }
 

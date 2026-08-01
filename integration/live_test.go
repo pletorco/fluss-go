@@ -921,6 +921,9 @@ func testLogWriteFormat(
 		t.Fatal(err)
 	}
 	assertFormatRow(t, client, table, format)
+	if format == fgo.LogWriteFormatArrow {
+		testDefaultFetchWithLargeArrowBatch(t, client, table)
+	}
 }
 
 func appendArrowFormatRow(t *testing.T, writer *fgo.LogWriter, table fgo.Table) {
@@ -939,6 +942,75 @@ func appendArrowFormatRow(t *testing.T, writer *fgo.LogWriter, table fgo.Table) 
 		Await(context.Background())
 	if result.Err != nil {
 		t.Fatalf("append Arrow row: %v", result.Err)
+	}
+}
+
+func testDefaultFetchWithLargeArrowBatch(t *testing.T, client *fgo.Client, table fgo.Table) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	schema, err := table.Schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	value := strings.Repeat("x", 600<<10)
+	for id := int32(2); id <= 3; id++ {
+		builder.Field(0).(*array.Int32Builder).Append(id)
+		builder.Field(1).(*array.StringBuilder).Append(value)
+	}
+	record := builder.NewRecordBatch()
+	builder.Release()
+	defer record.Release()
+
+	writer, err := client.NewLogWriter(
+		ctx, table,
+		fgo.WithLogWriteFormat(fgo.LogWriteFormatArrow),
+		fgo.WithLogLinger(0),
+		fgo.WithLogBatchLimits(4<<20, 10),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := writer.AppendArrow(ctx, 0, record, []fgo.ChangeType{fgo.Append, fgo.Append}).Await(ctx)
+	if write.Err != nil {
+		t.Fatalf("append oversized Arrow batch: %v", write.Err)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithScanLimits(16<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanRowLimit(3),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	rows := int64(0)
+	for !scanner.Done() && ctx.Err() == nil {
+		result, pollErr := scanner.Poll(ctx)
+		if pollErr != nil {
+			t.Fatal(pollErr)
+		}
+		if len(result.BucketErrors) != 0 {
+			result.Release()
+			t.Fatalf("scan oversized Arrow batch: %#v", result.BucketErrors)
+		}
+		rows += int64(len(result.Records))
+		for _, batch := range result.ArrowBatches {
+			rows += batch.Batch.Record.NumRows()
+		}
+		result.Release()
+	}
+	if ctx.Err() != nil {
+		t.Fatal(ctx.Err())
+	}
+	if rows != 3 {
+		t.Fatalf("default 1 MiB bucket fetch returned %d rows, want 3", rows)
 	}
 }
 

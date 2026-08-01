@@ -675,7 +675,7 @@ func (s *LogScanner) pollBucket(
 			path: target.Path, schemaID: target.SchemaID, schema: target.Schema,
 		}
 	}
-	next, rows, arrows, err := decodeFetchedLogWithResolver(
+	next, rows, arrows, err := decodeFetchedFetchResponseWithResolver(
 		requestCtx, resolver, target, bucket, offset, fetched.records, s.compacted,
 	)
 	if err != nil {
@@ -1002,14 +1002,52 @@ func decodeFetchedLogWithResolver(
 	encoded []byte,
 	compacted bool,
 ) (int64, []ScanRecord, []ScanArrowBatch, error) {
+	return decodeFetchedLogBatchesWithResolver(
+		ctx, resolver, table, bucket, fetchOffset, encoded, compacted, false,
+	)
+}
+
+func decodeFetchedFetchResponseWithResolver(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	bucket int32,
+	fetchOffset int64,
+	encoded []byte,
+	compacted bool,
+) (int64, []ScanRecord, []ScanArrowBatch, error) {
+	return decodeFetchedLogBatchesWithResolver(
+		ctx, resolver, table, bucket, fetchOffset, encoded, compacted, true,
+	)
+}
+
+func decodeFetchedLogBatchesWithResolver(
+	ctx context.Context,
+	resolver schemaResolver,
+	table Table,
+	bucket int32,
+	fetchOffset int64,
+	encoded []byte,
+	compacted bool,
+	allowIncompleteTail bool,
+) (int64, []ScanRecord, []ScanArrowBatch, error) {
 	next := fetchOffset
 	var rows []ScanRecord
 	var arrows []ScanArrowBatch
 	for len(encoded) != 0 {
-		size, err := fetchedBatchSize(encoded)
+		size, complete, err := completeFetchedBatchSize(encoded)
 		if err != nil {
 			releaseScanArrows(arrows)
 			return fetchOffset, nil, nil, err
+		}
+		if !complete {
+			if allowIncompleteTail {
+				// Byte-limited fetches may end inside the next batch. Refetch it from
+				// the last complete offset, matching the Fluss Java scanner.
+				break
+			}
+			releaseScanArrows(arrows)
+			return fetchOffset, nil, nil, incompleteFetchedBatchError(encoded)
 		}
 		payload := encoded[:size]
 		batchNext, batchRows, arrowBatch, err := decodeEvolvedFetchedBatch(
@@ -1163,14 +1201,35 @@ func (s *LogScanner) projectScanArrows(batches []ScanArrowBatch) error {
 }
 
 func fetchedBatchSize(encoded []byte) (int, error) {
-	if len(encoded) < 12 {
-		return 0, fmt.Errorf("%w: truncated fetched batch", ErrMalformedRecordBatch)
+	size, complete, err := completeFetchedBatchSize(encoded)
+	if err != nil {
+		return 0, err
 	}
-	size := 12 + int(binary.LittleEndian.Uint32(encoded[8:]))
-	if size < logBatchV0HeaderSize || size > len(encoded) {
-		return 0, fmt.Errorf("%w: invalid fetched batch size", ErrMalformedRecordBatch)
+	if !complete {
+		return 0, incompleteFetchedBatchError(encoded)
 	}
 	return size, nil
+}
+
+func completeFetchedBatchSize(encoded []byte) (int, bool, error) {
+	if len(encoded) < 12 {
+		return 0, false, nil
+	}
+	size := uint64(12) + uint64(binary.LittleEndian.Uint32(encoded[8:]))
+	if size < uint64(logBatchV0HeaderSize) {
+		return 0, false, fmt.Errorf("%w: invalid fetched batch size", ErrMalformedRecordBatch)
+	}
+	if size > uint64(len(encoded)) {
+		return 0, false, nil
+	}
+	return int(size), true, nil
+}
+
+func incompleteFetchedBatchError(encoded []byte) error {
+	if len(encoded) < 12 {
+		return fmt.Errorf("%w: truncated fetched batch", ErrMalformedRecordBatch)
+	}
+	return fmt.Errorf("%w: invalid fetched batch size", ErrMalformedRecordBatch)
 }
 
 func decodeFetchedBatch(

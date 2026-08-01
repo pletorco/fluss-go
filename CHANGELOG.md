@@ -15,6 +15,9 @@ breaking changes.
   metadata routing, and child resource construction continue through the new
   transport. Explicitly closed clients now reject every request and resource
   constructor, including snapshot providers, with `ErrClosed`.
+- Accepted byte-limited log fetch responses that end with an incomplete trailing
+  record batch, preserving every complete row or Arrow batch and resuming the
+  next fetch at the last complete offset instead of reporting a malformed batch.
 
 ## [v0.1.0-beta.8] - 2026-08-01
 

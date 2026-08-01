@@ -143,7 +143,7 @@ func TestMetricsObserverScannerEvents(t *testing.T) {
 	_ = scanner.Close()
 
 	badBackend := scannerBackend(0)
-	badBackend.fetches[0] = scannerFetch{records: []byte{1}}
+	badBackend.fetches[0] = scannerFetch{records: make([]byte, 12)}
 	badScanner, err := newLogScanner(context.Background(), badBackend, table, AtOffset(0))
 	if err != nil {
 		t.Fatal(err)
