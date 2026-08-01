@@ -265,6 +265,15 @@ NOTICE, 업데이트 방법과 보안 패치 책임을 함께 기록한다.
 - `task security`: `govulncheck`, Trivy와 의존성 무결성 검사를 포함하는 로컬 보안 gate
 - `task verify`: PR 전에 필요한 formatter, generation, static analysis와 테스트 검증
 - `task ci`: CI에서 사용하는 전체 필수 검증
+- `task sonar`: release 준비 branch에서 PR 생성 전에 실행하고 Quality Gate 완료까지
+  기다리는 로컬 검증
+
+Release 준비 PR은 문서와 코드를 모두 완성한 뒤 `task ci`와 `task sonar`를 통과해야
+생성한다. SonarQube Community Edition은 로컬 분석을 단일 `main` branch로 표시하므로
+그 branch label은 판정에 사용하지 않는다. scanner가 보고한 SCM revision과 작업 branch의
+`HEAD`가 같은지 확인하고 해당 revision의 Quality Gate 결과를 사용한다. Sonar finding은
+merge 후가 아니라 같은 작업 branch에서 수정하며, Sonar를 post-merge GitHub Actions
+gate로 취급하지 않는다.
 
 ## 10. 호환성과 보안을 기본값으로 삼는다
 

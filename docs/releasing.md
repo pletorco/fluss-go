@@ -7,7 +7,15 @@ GitHub Release before merge.
 Before opening a release-preparation PR, finish the versioned changelog,
 release notes, and affected user manuals together on that branch. The PR is
 the review boundary for the complete release documentation, not a placeholder
-that is filled after merge.
+that is filled after merge. Run `task ci` and `task sonar` on the completed
+branch before opening the PR. `task sonar` is a local pre-PR gate: it waits for
+the Quality Gate and must pass before review begins. Fix findings on the same
+branch rather than discovering them after merge.
+
+SonarQube Community Edition records these local analyses under its single
+`main` branch. Ignore that displayed branch label. Validate the SCM revision
+reported by the scanner against `git rev-parse HEAD` and use the Quality Gate
+result for that revision.
 
 The current prepared prerelease is `v0.1.0-beta.9`, with release notes in
 `.github/releases/v0.1.0-beta.9.md`.
@@ -23,8 +31,8 @@ The current prepared prerelease is `v0.1.0-beta.9`, with release notes in
    changes also require a recent scheduled `mixed`, `soak`, and `fault` run.
 3. Update local refs and verify that the worktree is clean, `HEAD` equals
    `origin/main`, and the current branch is `main`.
-4. Run `task ci` on that commit. Run `task sonar` once and confirm the Sonar
-   Quality Gate passes.
+4. Run `task ci` on that commit. Sonar remains the local pre-PR gate and is not
+   rerun as a post-merge GitHub Actions gate.
 5. Confirm that `CHANGELOG.md` records the version and publication date and
    that the prepared release notes match it. Update the current release and
    installation examples in `README.md`, and move the supported prerelease in

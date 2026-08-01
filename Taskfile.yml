@@ -289,7 +289,7 @@ tasks:
       - ./integration/storage/run.sh all
 
   sonar:
-    desc: Generate coverage and submit a local SonarQube analysis
+    desc: Generate coverage, submit a local SonarQube analysis, and wait for its quality gate
     preconditions:
       - sh: test -f .env
         msg: A local .env file with SONAR_HOST_URL and SONAR_TOKEN is required.
@@ -308,6 +308,8 @@ tasks:
           sonar-scanner \
             -Dsonar.host.url="$SONAR_HOST_URL" \
             -Dsonar.token="$SONAR_TOKEN" \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300 \
             -Dsonar.issue.ignore.multicriteria=testCognitiveComplexity \
             -Dsonar.issue.ignore.multicriteria.testCognitiveComplexity.ruleKey=go:S3776 \
             '-Dsonar.issue.ignore.multicriteria.testCognitiveComplexity.resourceKey=**/*_test.go'
