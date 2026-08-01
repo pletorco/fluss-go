@@ -299,7 +299,18 @@ tasks:
         msg: Install SonarScanner CLI and make sonar-scanner available on PATH.
     cmds:
       - task: coverage:generate
-      - cmd: set -a; . ./.env; set +a; test -n "$SONAR_HOST_URL"; test -n "$SONAR_TOKEN"; sonar-scanner -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN"
+      - cmd: |
+          set -a
+          . ./.env
+          set +a
+          test -n "$SONAR_HOST_URL"
+          test -n "$SONAR_TOKEN"
+          sonar-scanner \
+            -Dsonar.host.url="$SONAR_HOST_URL" \
+            -Dsonar.token="$SONAR_TOKEN" \
+            -Dsonar.issue.ignore.multicriteria=testCognitiveComplexity \
+            -Dsonar.issue.ignore.multicriteria.testCognitiveComplexity.ruleKey=go:S3776 \
+            '-Dsonar.issue.ignore.multicriteria.testCognitiveComplexity.resourceKey=**/*_test.go'
 
   generate:
     desc: Regenerate protocol artifacts
