@@ -10,7 +10,7 @@ This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.7
+go get github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.8
 ```
 
 Create an `oss.Config` with `oss.LoadDefaultConfig`, pass it to
