@@ -646,6 +646,13 @@ func TestRemoteAndLocalLogPayloadsMergeWithoutGaps(t *testing.T) {
 		rows[0].Record.Value[1] != "remote" || rows[1].Record.Value[1] != "local" {
 		t.Fatalf("merged rows = %#v, %v", rows, err)
 	}
+	_, rows, arrows, err = decodeFetchedLog(
+		table.Schema, 0, 1, append(downloaded, local...),
+	)
+	releaseScanArrows(arrows)
+	if err != nil || len(rows) != 1 || rows[0].Record.Offset != 1 || rows[0].Record.Value[1] != "local" {
+		t.Fatalf("trimmed merged rows = %#v, %v", rows, err)
+	}
 }
 
 func TestClientRemoteLogRequiresReaderAndCopiesToken(t *testing.T) {

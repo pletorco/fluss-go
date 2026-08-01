@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 	"google.golang.org/protobuf/proto"
 )
@@ -234,6 +235,123 @@ func TestBatchScannerReadsLatestLogRows(t *testing.T) {
 	}
 	result.Release()
 	_ = scanner.Close()
+}
+
+func TestBatchScannerLimitsOversizedKVResponse(t *testing.T) {
+	table := kvWriterTable()
+	encoded := encodedValueBatch(
+		t, table,
+		Row{int32(1), "one", int64(10)},
+		Row{int32(2), "two", int64(20)},
+		Row{int32(3), "three", int64(30)},
+	)
+	scanner, err := newBatchScanner(
+		context.Background(),
+		batchScanBackendFunc(func(context.Context, TableBucket, int32) (bool, []byte, error) {
+			return false, encoded, nil
+		}),
+		nil, table, testTableBucket(table), WithBatchLimit(2), WithBatchProjection("name"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.Rows) != 2 || len(result.Rows[0]) != 1 ||
+		result.Rows[0][0] != "two" || result.Rows[1][0] != "three" {
+		t.Fatalf("Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	_ = scanner.Close()
+}
+
+func TestBatchScannerLimitsAndProjectsArrowResponse(t *testing.T) {
+	table := logWriterTable()
+	encoded := encodedArrowRows(t, table.Schema, 10, 1, 2, 3, 4)
+	scanner, err := newBatchScanner(
+		context.Background(),
+		batchScanBackendFunc(func(context.Context, TableBucket, int32) (bool, []byte, error) {
+			return true, encoded, nil
+		}),
+		nil, table, testTableBucket(table),
+		WithBatchLimit(2), WithBatchProjection("name", "id"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.Rows) != 0 || len(result.ArrowBatches) != 1 {
+		t.Fatalf("Poll() = %#v, %v", result, err)
+	}
+	batch := result.ArrowBatches[0]
+	ids := batch.Record.Column(1).(*array.Int32)
+	if batch.BaseOffset != 12 || batch.Record.NumRows() != 2 || batch.Record.NumCols() != 2 ||
+		batch.Record.Schema().Field(0).Name != "name" || batch.Record.Schema().Field(1).Name != "id" ||
+		ids.Value(0) != 3 || ids.Value(1) != 4 ||
+		len(batch.Changes) != 2 || batch.Changes[0] != UpdateAfter || batch.Changes[1] != Delete {
+		t.Fatalf("limited projected Arrow batch = %#v", batch)
+	}
+	result.Release()
+	result.Release()
+	_ = scanner.Close()
+}
+
+func TestBatchScannerLimitsMixedLogFormatsByOffset(t *testing.T) {
+	table := logWriterTable()
+	for _, test := range []struct {
+		name          string
+		encoded       []byte
+		wantRows      []int32
+		wantArrowBase int64
+		wantArrowRows int64
+		wantArrowID   int32
+	}{
+		{
+			name: "rows before Arrow",
+			encoded: append(
+				encodedRows(t, table.Schema, 10, 1, 2),
+				encodedArrowRows(t, table.Schema, 12, 3, 4, 5)...,
+			),
+			wantArrowBase: 12, wantArrowRows: 3, wantArrowID: 3,
+		},
+		{
+			name: "Arrow before rows",
+			encoded: append(
+				encodedArrowRows(t, table.Schema, 10, 1, 2, 3),
+				encodedRows(t, table.Schema, 13, 4, 5)...,
+			),
+			wantRows: []int32{4, 5}, wantArrowBase: 12, wantArrowRows: 1, wantArrowID: 3,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			scanner, err := newBatchScanner(
+				context.Background(),
+				batchScanBackendFunc(func(context.Context, TableBucket, int32) (bool, []byte, error) {
+					return true, test.encoded, nil
+				}),
+				nil, table, testTableBucket(table), WithBatchLimit(3),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := scanner.Poll(context.Background())
+			if err != nil || len(result.Rows) != len(test.wantRows) || len(result.ArrowBatches) != 1 {
+				t.Fatalf("Poll() = %#v, %v", result, err)
+			}
+			for index, want := range test.wantRows {
+				if result.Rows[index][0] != want {
+					t.Fatalf("row %d = %#v, want id %d", index, result.Rows[index], want)
+				}
+			}
+			batch := result.ArrowBatches[0]
+			ids := batch.Record.Column(0).(*array.Int32)
+			if batch.BaseOffset != test.wantArrowBase || batch.Record.NumRows() != test.wantArrowRows ||
+				ids.Value(0) != test.wantArrowID || int64(len(result.Rows))+batch.Record.NumRows() != 3 {
+				t.Fatalf("mixed limited batch = %#v", batch)
+			}
+			result.Release()
+			_ = scanner.Close()
+		})
+	}
 }
 
 func TestBatchScannerCurrentFailures(t *testing.T) {

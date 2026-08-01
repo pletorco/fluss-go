@@ -849,7 +849,7 @@ func (b *boundedScan) appendArrow(segment scanSegment, item *ScanArrowBatch) {
 	} else {
 		b.arrows = append(b.arrows, ScanArrowBatch{
 			Bucket: b.bucket,
-			Batch:  sliceArrowLogBatch(batch, allowed),
+			Batch:  sliceArrowLogBatch(batch, 0, allowed),
 		})
 		batch.Release()
 	}
@@ -858,10 +858,11 @@ func (b *boundedScan) appendArrow(segment scanSegment, item *ScanArrowBatch) {
 	b.next = segment.offset + allowed
 }
 
-func sliceArrowLogBatch(batch *ArrowLogBatch, rows int64) ArrowLogBatch {
+func sliceArrowLogBatch(batch *ArrowLogBatch, start, end int64) ArrowLogBatch {
 	sliced := *batch
-	sliced.Record = batch.Record.NewSlice(0, rows)
-	sliced.Changes = append([]ChangeType(nil), batch.Changes[:rows]...)
+	sliced.BaseOffset += start
+	sliced.Record = batch.Record.NewSlice(start, end)
+	sliced.Changes = append([]ChangeType(nil), batch.Changes[start:end]...)
 	sliced.owned = true
 	sliced.release = &sync.Once{}
 	return sliced
@@ -921,6 +922,7 @@ func (s *LogScanner) updateDone() {
 }
 
 func (s *LogScanner) updateDoneLocked() {
+	s.done = false
 	if s.config.RowLimit > 0 && s.delivered >= s.config.RowLimit {
 		s.done = true
 		return
@@ -928,8 +930,12 @@ func (s *LogScanner) updateDoneLocked() {
 	if s.config.StoppingOffsets == nil {
 		return
 	}
-	for bucket, stop := range s.config.StoppingOffsets {
-		if s.offset[bucket] < stop {
+	if len(s.offset) == 0 {
+		return
+	}
+	for bucket, offset := range s.offset {
+		stop, ok := s.config.StoppingOffsets[bucket]
+		if !ok || offset < stop {
 			return
 		}
 	}
@@ -1173,14 +1179,16 @@ func decodeFetchedBatch(
 ) (int64, []ScanRecord, *ScanArrowBatch, error) {
 	batch, rowErr := DecodeLogBatchRows(schema, payload, compacted)
 	if rowErr == nil {
-		rows := make([]ScanRecord, len(batch.Records))
-		for index, record := range batch.Records {
+		start, next, err := fetchedBatchOffsets(batch.BaseOffset, int64(len(batch.Records)), current)
+		if err != nil {
+			return current, nil, nil, err
+		}
+		records := batch.Records[start:]
+		rows := make([]ScanRecord, len(records))
+		for index, record := range records {
 			rows[index] = ScanRecord{Bucket: bucket, Record: record}
 		}
-		if len(batch.Records) != 0 {
-			current = batch.BaseOffset + int64(len(batch.Records))
-		}
-		return current, rows, nil, nil
+		return next, rows, nil, nil
 	}
 	arrowSchema, err := schema.ArrowSchema()
 	if err != nil {
@@ -1190,11 +1198,46 @@ func decodeFetchedBatch(
 	if err != nil {
 		return current, nil, nil, errors.Join(rowErr, err)
 	}
-	if arrowBatch.Record.NumRows() != 0 {
-		current = arrowBatch.BaseOffset + arrowBatch.Record.NumRows()
+	count := arrowBatch.Record.NumRows()
+	start, next, err := fetchedBatchOffsets(arrowBatch.BaseOffset, count, current)
+	if err != nil {
+		arrowBatch.Release()
+		return current, nil, nil, err
+	}
+	if start == count {
+		arrowBatch.Release()
+		return next, nil, nil, nil
+	}
+	if start > 0 {
+		sliced := sliceArrowLogBatch(arrowBatch, start, count)
+		arrowBatch.Release()
+		arrowBatch = &sliced
 	}
 	result := &ScanArrowBatch{Bucket: bucket, Batch: *arrowBatch}
-	return current, nil, result, nil
+	return next, nil, result, nil
+}
+
+func fetchedBatchOffsets(base, count, current int64) (int64, int64, error) {
+	if count < 0 {
+		return 0, current, fmt.Errorf("%w: negative log batch record count", ErrMalformedRecordBatch)
+	}
+	if count == 0 {
+		return 0, current, nil
+	}
+	if base > math.MaxInt64-count {
+		return 0, current, fmt.Errorf("%w: log batch offset overflow", ErrMalformedRecordBatch)
+	}
+	end := base + count
+	start := int64(0)
+	if current >= end {
+		start = count
+	} else if current > base {
+		start = current - base
+	}
+	if end > current {
+		current = end
+	}
+	return start, current, nil
 }
 
 func releaseScanArrows(batches []ScanArrowBatch) {

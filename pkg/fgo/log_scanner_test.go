@@ -43,17 +43,17 @@ func (b *fakeLogScannerBackend) metadata(context.Context, PhysicalTablePath) (in
 }
 
 func (b *fakeLogScannerBackend) listOffset(
-	context.Context,
-	PhysicalTablePath,
-	int32,
-	int64,
-	int64,
-	ScanOffset,
+	_ context.Context,
+	_ PhysicalTablePath,
+	bucket int32,
+	_ int64,
+	_ int64,
+	_ ScanOffset,
 ) (int64, error) {
 	if b.listErr != nil {
 		return 0, b.listErr
 	}
-	return b.listOffsets[0], nil
+	return b.listOffsets[bucket], nil
 }
 
 func (b *fakeLogScannerBackend) fetch(
@@ -107,6 +107,382 @@ func encodedRows(t *testing.T, schema Schema, base int64, values ...int32) []byt
 		t.Fatal(err)
 	}
 	return encoded
+}
+
+func encodedArrowRows(t *testing.T, schema Schema, base int64, values ...int32) []byte {
+	t.Helper()
+	arrowSchema, err := schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrowSchema)
+	changes := make([]ChangeType, len(values))
+	for index, value := range values {
+		builder.Field(0).(*array.Int32Builder).Append(value)
+		builder.Field(1).(*array.StringBuilder).Append("arrow")
+		changes[index] = ChangeType(index%4 + 1)
+	}
+	record := builder.NewRecordBatch()
+	builder.Release()
+	encoded, err := EncodeArrowLogBatch(ArrowLogBatch{
+		Magic: 0, BaseOffset: base, SchemaID: 3, Record: record, Changes: changes,
+	}, ArrowCompressionNone, memory.DefaultAllocator)
+	record.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func requireRecordOffsets(t *testing.T, records []ScanRecord, want ...int64) {
+	t.Helper()
+	if len(records) != len(want) {
+		t.Fatalf("record count = %d, want %d: %#v", len(records), len(want), records)
+	}
+	for index := range want {
+		if records[index].Record.Offset != want[index] {
+			t.Fatalf("record %d offset = %d, want %d", index, records[index].Record.Offset, want[index])
+		}
+	}
+}
+
+func TestDecodeFetchedRowsTrimsBeforeRequestedOffset(t *testing.T) {
+	table := logWriterTable()
+	encoded := encodedRows(t, table.Schema, 5, 10, 11, 12)
+	for _, test := range []struct {
+		name    string
+		current int64
+		next    int64
+		offsets []int64
+	}{
+		{name: "before", current: 4, next: 8, offsets: []int64{5, 6, 7}},
+		{name: "at base", current: 5, next: 8, offsets: []int64{5, 6, 7}},
+		{name: "inside", current: 6, next: 8, offsets: []int64{6, 7}},
+		{name: "at end", current: 8, next: 8},
+		{name: "after", current: 9, next: 9},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			next, rows, arrows, err := decodeFetchedLog(table.Schema, 0, test.current, encoded)
+			if err != nil || next != test.next || len(arrows) != 0 {
+				t.Fatalf("decodeFetchedLog() = next %d, rows %#v, arrows %#v, %v", next, rows, arrows, err)
+			}
+			requireRecordOffsets(t, rows, test.offsets...)
+		})
+	}
+}
+
+func TestDecodeFetchedRowsTrimsMultipleBatchesAndPreservesOffset(t *testing.T) {
+	table := logWriterTable()
+	first := encodedRows(t, table.Schema, 4, 1, 2)
+	second := encodedRows(t, table.Schema, 6, 3, 4, 5)
+	next, rows, arrows, err := decodeFetchedLog(table.Schema, 0, 5, append(first, second...))
+	if err != nil || next != 9 || len(arrows) != 0 {
+		t.Fatalf("decodeFetchedLog() = next %d, rows %#v, arrows %#v, %v", next, rows, arrows, err)
+	}
+	requireRecordOffsets(t, rows, 5, 6, 7, 8)
+	overlapping := append(
+		encodedRows(t, table.Schema, 5, 1, 2),
+		encodedRows(t, table.Schema, 6, 3, 4)...,
+	)
+	next, rows, arrows, err = decodeFetchedLog(table.Schema, 0, 5, overlapping)
+	if err != nil || next != 8 || len(arrows) != 0 {
+		t.Fatalf("overlapping decodeFetchedLog() = next %d, rows %#v, arrows %#v, %v", next, rows, arrows, err)
+	}
+	requireRecordOffsets(t, rows, 5, 6, 7)
+
+	empty := encodedRows(t, table.Schema, 100)
+	next, rows, arrows, err = decodeFetchedLog(table.Schema, 0, 9, empty)
+	if err != nil || next != 9 || len(rows) != 0 || len(arrows) != 0 {
+		t.Fatalf("empty decodeFetchedLog() = next %d, rows %#v, arrows %#v, %v", next, rows, arrows, err)
+	}
+
+	overflow := encodedRows(t, table.Schema, int64(^uint64(0)>>1), 1, 2)
+	if _, _, _, err = decodeFetchedLog(table.Schema, 0, 0, overflow); !errors.Is(err, ErrMalformedRecordBatch) {
+		t.Fatalf("overflow decodeFetchedLog() error = %v", err)
+	}
+	if _, _, err = fetchedBatchOffsets(0, -1, 0); !errors.Is(err, ErrMalformedRecordBatch) {
+		t.Fatalf("negative count error = %v", err)
+	}
+}
+
+func TestDecodeFetchedArrowTrimsBeforeRequestedOffset(t *testing.T) {
+	table := logWriterTable()
+	encoded := encodedArrowRows(t, table.Schema, 5, 10, 11, 12)
+	for _, test := range []struct {
+		name        string
+		current     int64
+		next        int64
+		base        int64
+		rows        int64
+		firstValue  int32
+		firstChange ChangeType
+	}{
+		{name: "before", current: 4, next: 8, base: 5, rows: 3, firstValue: 10, firstChange: Insert},
+		{name: "at base", current: 5, next: 8, base: 5, rows: 3, firstValue: 10, firstChange: Insert},
+		{name: "inside", current: 6, next: 8, base: 6, rows: 2, firstValue: 11, firstChange: UpdateBefore},
+		{name: "at end", current: 8, next: 8},
+		{name: "after", current: 9, next: 9},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			next, rows, arrows, err := decodeFetchedLog(table.Schema, 0, test.current, encoded)
+			if err != nil || next != test.next || len(rows) != 0 {
+				t.Fatalf("decodeFetchedLog() = next %d, rows %#v, arrows %#v, %v", next, rows, arrows, err)
+			}
+			defer releaseScanArrows(arrows)
+			if test.rows == 0 {
+				if len(arrows) != 0 {
+					t.Fatalf("Arrow batches = %#v, want none", arrows)
+				}
+				return
+			}
+			if len(arrows) != 1 || arrows[0].Batch.BaseOffset != test.base ||
+				arrows[0].Batch.Record.NumRows() != test.rows || len(arrows[0].Batch.Changes) != int(test.rows) {
+				t.Fatalf("Arrow batches = %#v", arrows)
+			}
+			values := arrows[0].Batch.Record.Column(0).(*array.Int32)
+			if values.Value(0) != test.firstValue || arrows[0].Batch.Changes[0] != test.firstChange {
+				t.Fatalf("first Arrow row = %d/%v", values.Value(0), arrows[0].Batch.Changes[0])
+			}
+		})
+	}
+}
+
+func TestDecodeFetchedArrowTrimsMultipleBatchesAndRejectsOverflow(t *testing.T) {
+	table := logWriterTable()
+	first := encodedArrowRows(t, table.Schema, 4, 10, 11)
+	second := encodedArrowRows(t, table.Schema, 6, 12, 13, 14)
+	next, rows, arrows, err := decodeFetchedLog(table.Schema, 0, 5, append(first, second...))
+	if err != nil || next != 9 || len(rows) != 0 || len(arrows) != 2 {
+		t.Fatalf("decodeFetchedLog() = next %d, rows %#v, arrows %#v, %v", next, rows, arrows, err)
+	}
+	defer releaseScanArrows(arrows)
+	if arrows[0].Batch.BaseOffset != 5 || arrows[0].Batch.Record.NumRows() != 1 ||
+		arrows[1].Batch.BaseOffset != 6 || arrows[1].Batch.Record.NumRows() != 3 {
+		t.Fatalf("Arrow batches = %#v", arrows)
+	}
+	firstValues := arrows[0].Batch.Record.Column(0).(*array.Int32)
+	if firstValues.Value(0) != 11 || arrows[0].Batch.Changes[0] != UpdateBefore {
+		t.Fatalf("first retained Arrow row = %d/%v", firstValues.Value(0), arrows[0].Batch.Changes[0])
+	}
+
+	overflow := encodedArrowRows(t, table.Schema, int64(^uint64(0)>>1), 1, 2)
+	if _, _, _, err = decodeFetchedLog(table.Schema, 0, 0, overflow); !errors.Is(err, ErrMalformedRecordBatch) {
+		t.Fatalf("overflow decodeFetchedLog() error = %v", err)
+	}
+}
+
+func TestLogScannerAppliesBoundsAfterTrimmingRows(t *testing.T) {
+	table := logWriterTable()
+	for _, test := range []struct {
+		name   string
+		option LogScannerOption
+	}{
+		{name: "row limit", option: WithScanRowLimit(2)},
+		{name: "stopping offset", option: WithScanStoppingOffsets(map[int32]int64{0: 7})},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			backend := scannerBackend(0)
+			backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 4, 1, 2, 3, 4)}
+			scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(5), test.option)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := scanner.Poll(context.Background())
+			if err != nil || !result.Done {
+				t.Fatalf("Poll() = %#v, %v", result, err)
+			}
+			requireRecordOffsets(t, result.Records, 5, 6)
+			if scanner.offset[0] != 7 || scanner.delivered != 2 {
+				t.Fatalf("scanner offset/delivered = %d/%d", scanner.offset[0], scanner.delivered)
+			}
+			result.Release()
+			_ = scanner.Close()
+		})
+	}
+}
+
+func TestLogScannerAppliesBoundsAfterTrimmingArrow(t *testing.T) {
+	table := logWriterTable()
+	for _, test := range []struct {
+		name   string
+		option LogScannerOption
+	}{
+		{name: "row limit", option: WithScanRowLimit(2)},
+		{name: "stopping offset", option: WithScanStoppingOffsets(map[int32]int64{0: 13})},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			backend := scannerBackend(0)
+			backend.fetches[0] = scannerFetch{records: encodedArrowRows(t, table.Schema, 10, 1, 2, 3, 4)}
+			scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(11), test.option)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := scanner.Poll(context.Background())
+			if err != nil || !result.Done || len(result.ArrowBatches) != 1 {
+				t.Fatalf("Poll() = %#v, %v", result, err)
+			}
+			batch := result.ArrowBatches[0].Batch
+			values := batch.Record.Column(0).(*array.Int32)
+			if batch.BaseOffset != 11 || batch.Record.NumRows() != 2 || len(batch.Changes) != 2 ||
+				values.Value(0) != 2 || batch.Changes[0] != UpdateBefore ||
+				scanner.offset[0] != 13 || scanner.delivered != 2 {
+				t.Fatalf("bounded Arrow batch/scanner = %#v, %d/%d", batch, scanner.offset[0], scanner.delivered)
+			}
+			result.Release()
+			result.Release()
+			_ = scanner.Close()
+		})
+	}
+}
+
+func TestLogScannerTimestampTrimsPerBucketRows(t *testing.T) {
+	table := logWriterTable()
+	table.BucketCount = 2
+	backend := scannerBackend(0, 1)
+	backend.listOffsets = map[int32]int64{0: 5, 1: 8}
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 4, 1, 2, 3)}
+	backend.fetches[1] = scannerFetch{records: encodedRows(t, table.Schema, 7, 4, 5, 6)}
+	scanner, err := newLogScanner(context.Background(), backend, table, AtTimestamp(time.UnixMilli(1234)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Records) != 4 || result.Records[0].Bucket != 0 || result.Records[1].Bucket != 0 ||
+		result.Records[2].Bucket != 1 || result.Records[3].Bucket != 1 {
+		t.Fatalf("timestamp records = %#v", result.Records)
+	}
+	requireRecordOffsets(t, result.Records, 5, 6, 8, 9)
+	calls := backend.fetchCalls()
+	if len(calls) != 2 || calls[0].offset != 5 || calls[1].offset != 8 {
+		t.Fatalf("timestamp fetch calls = %#v", calls)
+	}
+	result.Release()
+	_ = scanner.Close()
+}
+
+func TestLogScannerTimestampTrimsArrowBatch(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	backend.listOffsets[0] = 12
+	backend.fetches[0] = scannerFetch{records: encodedArrowRows(t, table.Schema, 10, 1, 2, 3, 4)}
+	scanner, err := newLogScanner(context.Background(), backend, table, AtTimestamp(time.UnixMilli(1234)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.ArrowBatches) != 1 {
+		t.Fatalf("Poll() = %#v, %v", result, err)
+	}
+	batch := result.ArrowBatches[0].Batch
+	values := batch.Record.Column(0).(*array.Int32)
+	if batch.BaseOffset != 12 || batch.Record.NumRows() != 2 || values.Value(0) != 3 ||
+		backend.fetchCalls()[0].offset != 12 {
+		t.Fatalf("timestamp Arrow batch = %#v, calls %#v", batch, backend.fetchCalls())
+	}
+	result.Release()
+	_ = scanner.Close()
+}
+
+func TestLogScannerDoesNotRegressAfterEntirelyOldBatch(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 4, 1, 2)}
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(8))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.Records) != 0 || scanner.offset[0] != 8 {
+		t.Fatalf("old batch Poll() = %#v, offset %d, %v", result, scanner.offset[0], err)
+	}
+	result.Release()
+
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 8, 3)}
+	result, err = scanner.Poll(context.Background())
+	if err != nil || scanner.offset[0] != 9 {
+		t.Fatalf("recovery Poll() = %#v, offset %d, %v", result, scanner.offset[0], err)
+	}
+	requireRecordOffsets(t, result.Records, 8)
+	calls := backend.fetchCalls()
+	if len(calls) != 2 || calls[0].offset != 8 || calls[1].offset != 8 {
+		t.Fatalf("fetch calls = %#v", calls)
+	}
+	result.Release()
+	_ = scanner.Close()
+}
+
+func TestLogScannerStoppingOffsetsReopenAfterSubscribe(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1, 2)}
+	scanner, err := newLogScanner(
+		context.Background(), backend, table, AtOffset(5),
+		WithScanStoppingOffsets(map[int32]int64{0: 7}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || !result.Done {
+		t.Fatalf("initial Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	if err := scanner.Subscribe(context.Background(), 0, AtOffset(5)); err != nil || scanner.Done() {
+		t.Fatalf("Subscribe() = done %v, %v", scanner.Done(), err)
+	}
+	result, err = scanner.Poll(context.Background())
+	if err != nil || !result.Done {
+		t.Fatalf("resubscribed Poll() = %#v, %v", result, err)
+	}
+	requireRecordOffsets(t, result.Records, 5, 6)
+	result.Release()
+	_ = scanner.Close()
+}
+
+func TestLogScannerRowLimitRemainsDoneAfterSubscribe(t *testing.T) {
+	table := logWriterTable()
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1)}
+	scanner, err := newLogScanner(
+		context.Background(), backend, table, AtOffset(5), WithScanRowLimit(1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || !result.Done {
+		t.Fatalf("Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	if err := scanner.Subscribe(context.Background(), 0, AtOffset(5)); err != nil || !scanner.Done() {
+		t.Fatalf("Subscribe() = done %v, %v", scanner.Done(), err)
+	}
+	_ = scanner.Close()
+}
+
+func TestLogScannerStoppingOffsetsIgnoreUnsubscribedBuckets(t *testing.T) {
+	table := logWriterTable()
+	table.BucketCount = 2
+	backend := scannerBackend(0, 1)
+	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1, 2)}
+	scanner, err := newLogScanner(
+		context.Background(), backend, table, AtOffset(5),
+		WithScanStoppingOffsets(map[int32]int64{0: 7, 1: 7}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner.Unsubscribe(1)
+	result, err := scanner.Poll(context.Background())
+	if err != nil || !result.Done || len(backend.fetchCalls()) != 1 {
+		t.Fatalf("Poll() = %#v, %v, calls %#v", result, err, backend.fetchCalls())
+	}
+	requireRecordOffsets(t, result.Records, 5, 6)
+	result.Release()
+	_ = scanner.Close()
 }
 
 func TestLogScannerPollPreservesBucketOrderAndPartialErrors(t *testing.T) {
@@ -209,8 +585,11 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	backend.listOffsets[0] = 12
 	projected := Schema{Columns: []Column{{Name: "name", Type: StringType, Nullable: true}}}
 	encoded, err := (LogBatch{
-		Magic: 0, BaseOffset: 12, SchemaID: 3, AppendOnly: true,
-		Records: []Record{{Value: Row{"projected"}, Change: Append}},
+		Magic: 0, BaseOffset: 11, SchemaID: 3, AppendOnly: true,
+		Records: []Record{
+			{Value: Row{"skipped"}, Change: Append},
+			{Value: Row{"projected"}, Change: Append},
+		},
 	}).EncodeRows(projected, true)
 	if err != nil {
 		t.Fatal(err)

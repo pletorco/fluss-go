@@ -573,6 +573,81 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 		t.Fatalf("scanned rows = %#v", found)
 	}
 	testBoundedLogScan(t, ctx, client, table)
+	testExplicitOffsetInsideBatch(t, ctx, client, table)
+}
+
+func testExplicitOffsetInsideBatch(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	table fgo.Table,
+) {
+	t.Helper()
+	const records = 20
+	writer, err := client.NewLogWriter(
+		ctx,
+		table,
+		fgo.WithLogLinger(time.Hour),
+		fgo.WithLogBucketAssignment(fgo.AssignmentSticky),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	futures := make([]*fgo.WriteFuture, records)
+	for index := range records {
+		futures[index] = writer.Append(ctx, fgo.Row{int32(-2_000_000_000 + index), "offset-boundary"})
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	results := make([]fgo.WriteResult, records)
+	for index := range futures {
+		results[index] = futures[index].Await(ctx)
+		if results[index].Err != nil || !results[index].OffsetKnown {
+			t.Fatalf("batched append %d = %#v", index, results[index])
+		}
+		if index > 0 && (results[index].Bucket != results[0].Bucket ||
+			results[index].BaseOffset != results[index-1].BaseOffset+1) {
+			t.Fatalf("writes were not one contiguous bucket batch: %#v", results)
+		}
+	}
+
+	middle := records / 2
+	start := results[middle].BaseOffset
+	scanner, err := client.NewLogScanner(
+		ctx,
+		table,
+		fgo.AtOffset(start),
+		fgo.WithScanRowLimit(int64(records-middle)),
+		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	for bucket := int32(0); bucket < int32(table.BucketCount); bucket++ {
+		if bucket != results[0].Bucket {
+			scanner.Unsubscribe(bucket)
+		}
+	}
+	var offsets []int64
+	for !scanner.Done() && ctx.Err() == nil {
+		result, pollErr := scanner.Poll(ctx)
+		if pollErr != nil {
+			t.Fatal(pollErr)
+		}
+		for _, record := range result.Records {
+			if record.Record.Offset < start {
+				result.Release()
+				t.Fatalf("scan exposed offset %d before requested %d", record.Record.Offset, start)
+			}
+			offsets = append(offsets, record.Record.Offset)
+		}
+		result.Release()
+	}
+	if len(offsets) != records-middle || offsets[0] != start {
+		t.Fatalf("explicit offset scan = %v, want %d records starting at %d", offsets, records-middle, start)
+	}
 }
 
 func testSchemaEvolution(
