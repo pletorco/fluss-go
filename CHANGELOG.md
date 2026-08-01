@@ -8,6 +8,8 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.9] - 2026-08-01
+
 ### Fixed
 
 - Kept the long-lived `fgo.Client` open when a failed managed Coordinator
@@ -267,7 +269,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.8...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.9...HEAD
+[v0.1.0-beta.9]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.8...v0.1.0-beta.9
 [v0.1.0-beta.8]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.7...v0.1.0-beta.8
 [v0.1.0-beta.7]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.6...v0.1.0-beta.7
 [v0.1.0-beta.6]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.5...v0.1.0-beta.6

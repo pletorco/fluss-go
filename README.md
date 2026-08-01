@@ -7,7 +7,7 @@ Public beta Go client for Apache Fluss 0.9.1-incubating.
 Development and review follow the project
 [coding guidelines](CODING_GUIDELINES.md).
 
-The current release is `v0.1.0-beta.8`. It is suitable for compatibility
+The current release is `v0.1.0-beta.9`. It is suitable for compatibility
 testing and application evaluation against the pinned Fluss 0.9.1 target, but
 it does not yet provide a stable v1 API or a production support commitment.
 
@@ -21,7 +21,7 @@ remaining centered on the Apache Fluss table model:
 ## Install
 
 ```sh
-go get github.com/pletorco/fluss-go@v0.1.0-beta.8
+go get github.com/pletorco/fluss-go@v0.1.0-beta.9
 ```
 
 The API is experimental before v1. Pin a release in production rather than
@@ -33,7 +33,7 @@ OpenTelemetry SDKs to the root module graph. Install an adapter at the same
 release version when it is needed, for example:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.8
+go get github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.9
 ```
 
 ## Quick Start
