@@ -88,10 +88,17 @@ Useful focused commands include:
 | Dependency or security surface | `task security` |
 | Public Fluss workflow | `task test:integration` |
 | S3 or HDFS adapter service behavior | `task test:storage` |
+| Release preparation | `task ci` and `task sonar` before opening the PR |
 
 Integration tasks require Docker and may take longer than unit checks. If a
 required environment is unavailable, explain the missing verification in the
 pull request; required evidence must still pass before merge.
+
+`task sonar` is a local release-preparation gate and waits for its Quality
+Gate. SonarQube Community Edition displays local analyses under `main`; verify
+the scanner's SCM revision against the release branch `HEAD` instead of using
+that branch label. Resolve findings before opening the release PR. Sonar is not
+part of the post-merge GitHub Actions workflows.
 
 ## Commits and pull requests
 
