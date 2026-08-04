@@ -39,6 +39,13 @@ type fakeLogScannerBackend struct {
 	calls       []scannerFetchCall
 }
 
+type resolvingLogScannerBackend struct {
+	*fakeLogScannerBackend
+	resolver schemaResolver
+}
+
+func (b resolvingLogScannerBackend) schemaResolver() schemaResolver { return b.resolver }
+
 func (b *fakeLogScannerBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
 	return b.physicalID, b.locations, b.metadataErr
 }
@@ -787,6 +794,77 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	_ = scanner.Close()
 }
 
+func TestLogScannerEvolvesAndProjectsHistoricalRowsAndArrow(t *testing.T) {
+	path := TablePath{Database: "db", Table: "events"}
+	source := evolutionSchema("old_name", true, StringType)
+	target := Schema{
+		Columns: []Column{
+			{Name: "id", Type: IntType, ID: 1},
+			{Name: "name", Type: StringType, Nullable: true, ID: 2},
+			{Name: "extra", Type: BigIntType, Nullable: true, ID: 3},
+		},
+		HighestFieldID: 3,
+	}
+	table := Table{ID: 9, SchemaID: 2, Path: path, Kind: LogTable, BucketCount: 1, Schema: target}
+	rowBatch, err := (LogBatch{
+		Magic: 0, BaseOffset: 0, SchemaID: 1, AppendOnly: true,
+		Records: []Record{{Value: Row{int32(1), "row"}, Change: Append}},
+	}).EncodeRows(source, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arrowSchema, err := source.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrowSchema)
+	builder.Field(0).(*array.Int32Builder).Append(2)
+	builder.Field(1).(*array.StringBuilder).Append("arrow")
+	record := builder.NewRecordBatch()
+	builder.Release()
+	arrowBatch, err := EncodeArrowLogBatch(ArrowLogBatch{
+		Magic: 0, BaseOffset: 1, SchemaID: 1, Record: record, Changes: []ChangeType{Append},
+	}, ArrowCompressionNone, memory.DefaultAllocator)
+	record.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{
+		records: append(rowBatch, arrowBatch...), highWatermark: 2,
+	}
+	resolving := resolvingLogScannerBackend{
+		fakeLogScannerBackend: backend,
+		resolver:              &mapSchemaResolver{schemas: map[int32]Schema{1: source, 2: target}},
+	}
+	scanner, err := newLogScanner(
+		context.Background(), resolving, table, AtOffset(0),
+		WithScanProjection("extra", "name"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Release()
+	defer scanner.Close()
+	if len(result.Records) != 1 || len(result.Records[0].Record.Value) != 2 ||
+		result.Records[0].Record.Value[0] != nil || result.Records[0].Record.Value[1] != "row" {
+		t.Fatalf("evolved projected row = %#v", result.Records)
+	}
+	if len(result.ArrowBatches) != 1 {
+		t.Fatalf("evolved projected Arrow batches = %#v", result.ArrowBatches)
+	}
+	projected := result.ArrowBatches[0].Batch.Record
+	if projected.NumCols() != 2 || projected.NumRows() != 1 ||
+		projected.Schema().Field(0).Name != "extra" || projected.Schema().Field(1).Name != "name" ||
+		projected.Column(0).NullN() != 1 || projected.Column(1).(*array.String).Value(0) != "arrow" {
+		t.Fatalf("evolved projected Arrow record = %#v", projected)
+	}
+}
+
 func TestLogScannerDecodesIndexedTable(t *testing.T) {
 	table := appendWriterTable()
 	table.Properties = map[string]string{"table.log.format": "INDEXED"}
@@ -1103,6 +1181,21 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 		bucket.GetMaxFetchBytes() != 1<<20 {
 		t.Fatalf("FetchLog request = %#v", fetched)
 	}
+	backend := clientLogScannerBackend{client: client}
+	physicalPath := PhysicalTablePath{TablePath: path}
+	if offset, listErr := backend.listOffset(
+		context.Background(), physicalPath, 0, 9, 23, Earliest(),
+	); listErr != nil || offset != 4 || listed.GetPartitionId() != 23 || listed.GetOffsetType() != 0 {
+		t.Fatalf("partition ListOffsets = %#v, offset %d, error %v", listed, offset, listErr)
+	}
+	fetchResult, fetchErr := backend.fetch(context.Background(), logFetchRequest{
+		path: physicalPath, bucket: 0, tableID: 9, partitionID: 23, offset: 4,
+		config: LogScannerConfig{FetchMaxBytes: 2 << 20, FetchMaxBytesForBucket: 1 << 20},
+	})
+	if fetchErr != nil || fetchResult.highWatermark != 5 ||
+		fetched.GetTablesReq()[0].GetBucketsReq()[0].GetPartitionId() != 23 {
+		t.Fatalf("partition FetchLog = %#v, result %#v, error %v", fetched, fetchResult, fetchErr)
+	}
 	result.Release()
 	_ = scanner.Close()
 }
@@ -1146,5 +1239,77 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 	}
 	if _, err := backend.listOffset(context.Background(), path, 0, 9, -1, AtOffset(0)); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("explicit ListOffsets error = %v", err)
+	}
+
+	for _, test := range []struct {
+		name     string
+		fetch    bool
+		mode     string
+		target   error
+		contains string
+	}{
+		{name: "list transport", mode: "transport", target: context.Canceled},
+		{name: "list response type", mode: "unexpected", contains: "list offsets: unexpected response"},
+		{name: "list omitted bucket", mode: "omitted", target: ErrValidation},
+		{name: "list mismatched bucket", mode: "mismatched", target: ErrValidation},
+		{name: "fetch transport", fetch: true, mode: "transport", target: context.Canceled},
+		{name: "fetch response type", fetch: true, mode: "unexpected", contains: "fetch log: unexpected response"},
+		{name: "fetch omitted table", fetch: true, mode: "omitted", target: ErrValidation},
+		{name: "fetch mismatched table", fetch: true, mode: "table", target: ErrValidation},
+		{name: "fetch omitted bucket", fetch: true, mode: "bucket omitted", target: ErrValidation},
+		{name: "fetch mismatched bucket", fetch: true, mode: "bucket mismatched", target: ErrValidation},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tablet.requester = requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+				if test.mode == "transport" {
+					return nil, context.Canceled
+				}
+				if test.mode == "unexpected" {
+					response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
+					return response, nil
+				}
+				response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+				switch message := response.Message().(type) {
+				case *fmsg.ListOffsetsResponse:
+					if test.mode != "omitted" {
+						bucket := int32(0)
+						if test.mode == "mismatched" {
+							bucket = 1
+						}
+						message.BucketsResp = []*fmsg.PbListOffsetsRespForBucket{{BucketId: proto.Int32(bucket)}}
+					}
+				case *fmsg.FetchLogResponse:
+					if test.mode != "omitted" {
+						tableID := int64(9)
+						if test.mode == "table" {
+							tableID = 10
+						}
+						table := &fmsg.PbFetchLogRespForTable{TableId: proto.Int64(tableID)}
+						if test.mode != "bucket omitted" {
+							bucket := int32(0)
+							if test.mode == "bucket mismatched" {
+								bucket = 1
+							}
+							table.BucketsResp = []*fmsg.PbFetchLogRespForBucket{{BucketId: proto.Int32(bucket)}}
+						}
+						message.TablesResp = []*fmsg.PbFetchLogRespForTable{table}
+					}
+				}
+				return response, nil
+			})
+			var err error
+			if test.fetch {
+				_, err = backend.fetch(context.Background(), logFetchRequest{
+					path: path, bucket: 0, tableID: 9, partitionID: -1,
+					config: LogScannerConfig{FetchMaxBytes: 1, FetchMaxBytesForBucket: 1},
+				})
+			} else {
+				_, err = backend.listOffset(context.Background(), path, 0, 9, -1, Latest())
+			}
+			if err == nil || (test.target != nil && !errors.Is(err, test.target)) ||
+				(test.contains != "" && !strings.Contains(err.Error(), test.contains)) {
+				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
+			}
+		})
 	}
 }

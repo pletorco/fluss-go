@@ -577,6 +577,14 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 		len(requestMessage.GetTargetColumns()) != 2 || requestMessage.GetBucketsReq()[0].GetBucketId() != 0 {
 		t.Fatalf("PutKv request = %#v", requestMessage)
 	}
+	backend := clientUpsertWriterBackend{client: client}
+	offset, err := backend.put(context.Background(), kvPutRequest{
+		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: 11, partitionID: 23,
+		records: []byte{1}, timeout: time.Second, acks: 1,
+	})
+	if err != nil || offset != 10 || requestMessage.GetBucketsReq()[0].GetPartitionId() != 23 {
+		t.Fatalf("partition PutKv = %#v, offset %d, error %v", requestMessage, offset, err)
+	}
 	_ = writer.Close(context.Background())
 
 	tablet.requester = requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
@@ -586,10 +594,60 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 		}}
 		return response, nil
 	})
-	backend := clientUpsertWriterBackend{client: client}
 	if _, err := backend.put(context.Background(), kvPutRequest{
 		path: PhysicalTablePath{TablePath: path}, tableID: 11, partitionID: -1, timeout: time.Second, acks: 1,
 	}); !errors.Is(err, ErrStorage) {
 		t.Fatalf("PutKv server error = %v", err)
+	}
+
+	for _, test := range []struct {
+		name      string
+		requester requesterFunc
+		target    error
+	}{
+		{
+			name: "transport",
+			requester: func(context.Context, fmsg.Request) (fmsg.Response, error) {
+				return nil, context.Canceled
+			},
+			target: context.Canceled,
+		},
+		{
+			name: "response type",
+			requester: func(context.Context, fmsg.Request) (fmsg.Response, error) {
+				response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
+				return response, nil
+			},
+		},
+		{
+			name: "omitted bucket",
+			requester: func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+				response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+				return response, nil
+			},
+			target: ErrValidation,
+		},
+		{
+			name: "mismatched bucket",
+			requester: func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+				response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+				response.Message().(*fmsg.PutKvResponse).BucketsResp = []*fmsg.PbPutKvRespForBucket{{
+					BucketId: proto.Int32(1),
+				}}
+				return response, nil
+			},
+			target: ErrValidation,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tablet.requester = test.requester
+			_, err := backend.put(context.Background(), kvPutRequest{
+				path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: 11,
+				partitionID: -1, timeout: time.Second, acks: 1,
+			})
+			if err == nil || (test.target != nil && !errors.Is(err, test.target)) {
+				t.Fatalf("PutKv error = %v, want %v", err, test.target)
+			}
+		})
 	}
 }

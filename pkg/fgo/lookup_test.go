@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -764,9 +765,15 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 	}
 	backend := clientLookupBackend{client: client}
 	if _, err := backend.lookup(context.Background(), lookupRequest{
-		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: table.ID, partitionID: -1,
+		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: table.ID, partitionID: 23,
 		keys: [][]byte{{1}}, insertIfNotExist: true, timeout: 2 * time.Second, acks: -1,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.prefixLookup(
+		context.Background(), PhysicalTablePath{TablePath: path},
+		0, table.ID, 23, [][]byte{{1}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if len(pointRequests) != 2 || pointRequests[0].InsertIfNotExists != nil ||
@@ -774,8 +781,10 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 		!pointRequests[1].GetInsertIfNotExists() || pointRequests[1].GetAcks() != -1 ||
 		pointRequests[1].GetTimeoutMs() != 2000 ||
 		pointRequests[1].GetTableId() != table.ID ||
+		pointRequests[1].GetBucketsReq()[0].GetPartitionId() != 23 ||
 		len(pointRequests[1].GetBucketsReq()[0].GetKeys()) != 1 ||
-		prefixRequest.GetTableId() != table.ID {
+		prefixRequest.GetTableId() != table.ID ||
+		prefixRequest.GetBucketsReq()[0].GetPartitionId() != 23 {
 		t.Fatalf("requests = %#v / %#v", pointRequests, prefixRequest)
 	}
 	_ = lookup.Close()
@@ -783,38 +792,90 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 
 func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 	table := lookupTable()
-	client := routedWriterClient(t,
-		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
-			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-			metadata := metadataResponse(table.Path)
-			metadata.TableMetadata[0].TableId = proto.Int64(table.ID)
-			proto.Merge(response.Message().(*fmsg.MetadataResponse), metadata)
-			return response, nil
-		},
-		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
-			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-			switch message := response.Message().(type) {
-			case *fmsg.LookupResponse:
-				message.BucketsResp = []*fmsg.PbLookupRespForBucket{{
-					BucketId: proto.Int32(0), ErrorCode: proto.Int32(int32(fmsg.ErrorCodeAuthorizationException)),
-				}}
-			case *fmsg.PrefixLookupResponse:
-				message.BucketsResp = []*fmsg.PbPrefixLookupRespForBucket{{BucketId: proto.Int32(0)}}
+	for _, test := range []struct {
+		name     string
+		prefix   bool
+		mode     string
+		target   error
+		contains string
+	}{
+		{name: "lookup request", mode: "request", target: context.Canceled},
+		{name: "lookup response type", mode: "unexpected", contains: "lookup: unexpected response"},
+		{name: "lookup omitted bucket", mode: "omitted", target: ErrValidation},
+		{name: "lookup mismatched bucket", mode: "mismatched", target: ErrValidation},
+		{name: "lookup server error", mode: "server", target: ErrAuthorization},
+		{name: "lookup value count", mode: "count", target: ErrValidation},
+		{name: "prefix request", prefix: true, mode: "request", target: context.Canceled},
+		{name: "prefix response type", prefix: true, mode: "unexpected", contains: "prefix lookup: unexpected response"},
+		{name: "prefix omitted bucket", prefix: true, mode: "omitted", target: ErrValidation},
+		{name: "prefix mismatched bucket", prefix: true, mode: "mismatched", target: ErrValidation},
+		{name: "prefix server error", prefix: true, mode: "server", target: ErrAuthorization},
+		{name: "prefix value count", prefix: true, mode: "count", target: ErrValidation},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := routedWriterClient(t,
+				func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+					response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+					metadata := metadataResponse(table.Path)
+					metadata.TableMetadata[0].TableId = proto.Int64(table.ID)
+					proto.Merge(response.Message().(*fmsg.MetadataResponse), metadata)
+					return response, nil
+				},
+				func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+					if test.mode == "request" {
+						return nil, context.Canceled
+					}
+					if test.mode == "unexpected" {
+						response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
+						return response, nil
+					}
+					response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+					switch message := response.Message().(type) {
+					case *fmsg.LookupResponse:
+						if test.mode != "omitted" {
+							bucket := int32(0)
+							if test.mode == "mismatched" {
+								bucket = 1
+							}
+							result := &fmsg.PbLookupRespForBucket{BucketId: proto.Int32(bucket)}
+							if test.mode == "server" {
+								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
+							}
+							message.BucketsResp = []*fmsg.PbLookupRespForBucket{result}
+						}
+					case *fmsg.PrefixLookupResponse:
+						if test.mode != "omitted" {
+							bucket := int32(0)
+							if test.mode == "mismatched" {
+								bucket = 1
+							}
+							result := &fmsg.PbPrefixLookupRespForBucket{BucketId: proto.Int32(bucket)}
+							if test.mode == "server" {
+								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
+							}
+							message.BucketsResp = []*fmsg.PbPrefixLookupRespForBucket{result}
+						}
+					}
+					return response, nil
+				},
+			)
+			tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
+			tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
+			backend := clientLookupBackend{client: client}
+			path := PhysicalTablePath{TablePath: table.Path}
+			var err error
+			if test.prefix {
+				_, err = backend.prefixLookup(context.Background(), path, 0, table.ID, -1, [][]byte{{1}})
+			} else {
+				_, err = backend.lookup(context.Background(), lookupRequest{
+					path: path, bucket: 0, tableID: table.ID, partitionID: -1, keys: [][]byte{{1}},
+				})
 			}
-			return response, nil
-		},
-	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
-	tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
-	backend := clientLookupBackend{client: client}
-	path := PhysicalTablePath{TablePath: table.Path}
-	if _, err := backend.lookup(context.Background(), lookupRequest{
-		path: path, bucket: 0, tableID: table.ID, partitionID: -1, keys: [][]byte{{1}},
-	}); !errors.Is(err, ErrAuthorization) {
-		t.Fatalf("lookup body error = %v", err)
-	}
-	if _, err := backend.prefixLookup(context.Background(), path, 0, table.ID, -1, [][]byte{{1}}); !errors.Is(err, ErrValidation) {
-		t.Fatalf("prefix count error = %v", err)
+			if err == nil || (test.target != nil && !errors.Is(err, test.target)) ||
+				(test.contains != "" && !strings.Contains(err.Error(), test.contains)) {
+				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
+			}
+		})
 	}
 }
 
