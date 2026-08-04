@@ -11,7 +11,7 @@ This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.9
+go get github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.10
 ```
 
 The opener receives a validated authority, absolute path, context, and a
