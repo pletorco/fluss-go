@@ -24,10 +24,10 @@ type putKVCall struct {
 	mergeMode   MergeMode
 }
 
-type fakeKVWriterBackend struct {
+type fakeUpsertWriterBackend struct {
 	mu          sync.Mutex
 	physicalID  int64
-	locations   map[int32]Node
+	locations   map[int32]ServerNode
 	writerID    int64
 	metadataErr error
 	initErr     error
@@ -37,15 +37,15 @@ type fakeKVWriterBackend struct {
 	calls       []putKVCall
 }
 
-func (b *fakeKVWriterBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error) {
+func (b *fakeUpsertWriterBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
 	return b.physicalID, b.locations, b.metadataErr
 }
 
-func (b *fakeKVWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
+func (b *fakeUpsertWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
 	return b.writerID, b.initErr
 }
 
-func (b *fakeKVWriterBackend) put(
+func (b *fakeUpsertWriterBackend) put(
 	ctx context.Context,
 	input kvPutRequest,
 ) (int64, error) {
@@ -80,13 +80,13 @@ func (b *fakeKVWriterBackend) put(
 	return int64(len(b.calls)*10 + len(batch.Records)), nil
 }
 
-func (b *fakeKVWriterBackend) putCalls() []putKVCall {
+func (b *fakeUpsertWriterBackend) putCalls() []putKVCall {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return append([]putKVCall(nil), b.calls...)
 }
 
-func kvWriterTable() Table {
+func upsertWriterTable() Table {
 	return Table{
 		ID: 11, SchemaID: 4, Path: TablePath{Database: "db", Table: "users"},
 		Kind: PrimaryKeyTable, BucketCount: 1,
@@ -101,20 +101,20 @@ func kvWriterTable() Table {
 	}
 }
 
-func kvBackend(bucketIDs ...int32) *fakeKVWriterBackend {
-	locations := make(map[int32]Node, len(bucketIDs))
+func kvBackend(bucketIDs ...int32) *fakeUpsertWriterBackend {
+	locations := make(map[int32]ServerNode, len(bucketIDs))
 	for _, id := range bucketIDs {
-		locations[id] = Node{ID: id + 10, Address: "tablet", Role: TabletServer}
+		locations[id] = ServerNode{ID: id + 10, Address: "tablet", ServerType: TabletServer}
 	}
-	return &fakeKVWriterBackend{physicalID: 11, locations: locations, writerID: 99}
+	return &fakeUpsertWriterBackend{physicalID: 11, locations: locations, writerID: 99}
 }
 
-func TestKVWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
-	table := kvWriterTable()
+func TestUpsertWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
+	table := upsertWriterTable()
 	backend := kvBackend(0)
-	writer, err := newKVWriter(
+	writer, err := newUpsertWriter(
 		context.Background(), backend, table,
-		WithKVBatchLimits(1<<20, 2), WithKVBuffer(8), WithKVLinger(time.Hour), WithKVRequest(time.Second, 1),
+		WithUpsertBatchLimits(1<<20, 2), WithUpsertBuffer(8), WithUpsertLinger(time.Hour), WithUpsertRequest(time.Second, 1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +141,7 @@ func TestKVWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
 	}
 }
 
-func TestKVWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
+func TestUpsertWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 	backend := kvBackend(0)
 	backend.putErrs = []error{
 		responseServerError(
@@ -149,9 +149,9 @@ func TestKVWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 		),
 		nil,
 	}
-	writer, err := newKVWriter(
-		context.Background(), backend, kvWriterTable(), WithKVLinger(0),
-		WithKVRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
+	writer, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
+		WithUpsertRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -174,13 +174,13 @@ func TestKVWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 	}
 }
 
-func TestKVWriterMergeModes(t *testing.T) {
-	table := kvWriterTable()
+func TestUpsertWriterMergeModes(t *testing.T) {
+	table := upsertWriterTable()
 	table.Properties = map[string]string{"table.merge-engine": "aggregation"}
 	backend := kvBackend(0)
-	writer, err := newKVWriter(
+	writer, err := newUpsertWriter(
 		context.Background(), backend, table,
-		WithKVMergeMode(MergeModeOverwrite), WithKVLinger(0),
+		WithUpsertMergeMode(MergeModeOverwrite), WithUpsertLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -198,17 +198,17 @@ func TestKVWriterMergeModes(t *testing.T) {
 	}
 
 	table.Properties = map[string]string{}
-	if _, err := newKVWriter(
-		context.Background(), kvBackend(0), table, WithKVMergeMode(MergeModeOverwrite),
+	if _, err := newUpsertWriter(
+		context.Background(), kvBackend(0), table, WithUpsertMergeMode(MergeModeOverwrite),
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("overwrite without merge engine error = %v", err)
 	}
-	if _, err := kvWriterConfig([]KVWriterOption{
-		WithKVMergeMode(MergeMode(2)),
+	if _, err := upsertWriterConfig([]UpsertWriterOption{
+		WithUpsertMergeMode(MergeMode(2)),
 	}); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("invalid merge mode error = %v", err)
 	}
-	config, err := kvWriterConfig(nil)
+	config, err := upsertWriterConfig(nil)
 	if err != nil || config.MergeMode != MergeModeDefault {
 		t.Fatalf("default merge mode = %d, %v", config.MergeMode, err)
 	}
@@ -239,10 +239,10 @@ func assertKVBatchCalls(t *testing.T, calls []putKVCall) {
 	}
 }
 
-func TestKVWriterPartialUpdateUsesTargetColumns(t *testing.T) {
-	table := kvWriterTable()
+func TestUpsertWriterPartialUpdateUsesTargetColumns(t *testing.T) {
+	table := upsertWriterTable()
 	backend := kvBackend(0)
-	writer, err := newKVWriter(context.Background(), backend, table, WithKVLinger(time.Hour))
+	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertLinger(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,12 +270,12 @@ func TestKVWriterPartialUpdateUsesTargetColumns(t *testing.T) {
 	_ = writer.Close(context.Background())
 }
 
-func TestKVWriterPartitionRoutingAndHash(t *testing.T) {
-	table := kvWriterTable()
+func TestUpsertWriterPartitionRoutingAndHash(t *testing.T) {
+	table := upsertWriterTable()
 	table.BucketCount = 3
 	backend := kvBackend(0, 1, 2)
 	backend.physicalID = 55
-	writer, err := newKVWriter(context.Background(), backend, table, WithKVPartition("day=1"), WithKVLinger(0))
+	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertPartition("day=1"), WithUpsertLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,11 +292,11 @@ func TestKVWriterPartitionRoutingAndHash(t *testing.T) {
 	_ = writer.Close(context.Background())
 }
 
-func TestKVWriterFailureCancellationAndClose(t *testing.T) {
-	table := kvWriterTable()
+func TestUpsertWriterFailureCancellationAndClose(t *testing.T) {
+	table := upsertWriterTable()
 	backend := kvBackend(0)
 	backend.putErr = errors.New("ambiguous")
-	writer, err := newKVWriter(context.Background(), backend, table, WithKVLinger(0))
+	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestKVWriterFailureCancellationAndClose(t *testing.T) {
 	release := make(chan struct{})
 	backend = kvBackend(0)
 	backend.block = release
-	writer, _ = newKVWriter(context.Background(), backend, table, WithKVLinger(0))
+	writer, _ = newUpsertWriter(context.Background(), backend, table, WithUpsertLinger(0))
 	first := writer.Upsert(context.Background(), Row{int32(1), nil, nil})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -342,9 +342,9 @@ func TestKVWriterFailureCancellationAndClose(t *testing.T) {
 	_ = writer.Close(context.Background())
 }
 
-func TestKVWriterRejectsInvalidMutations(t *testing.T) {
-	table := kvWriterTable()
-	writer, err := newKVWriter(context.Background(), kvBackend(0), table, WithKVLinger(time.Hour))
+func TestUpsertWriterRejectsInvalidMutations(t *testing.T) {
+	table := upsertWriterTable()
+	writer, err := newUpsertWriter(context.Background(), kvBackend(0), table, WithUpsertLinger(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestKVWriterRejectsInvalidMutations(t *testing.T) {
 
 	auto := table
 	auto.Schema.AutoIncrement = []string{"score"}
-	writer, err = newKVWriter(context.Background(), kvBackend(0), auto, WithKVLinger(time.Hour))
+	writer, err = newUpsertWriter(context.Background(), kvBackend(0), auto, WithUpsertLinger(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,12 +392,12 @@ func TestKVWriterRejectsInvalidMutations(t *testing.T) {
 	_ = writer.Close(context.Background())
 }
 
-func TestKVWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
+func TestUpsertWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	release := make(chan struct{})
 	backend := kvBackend(0)
 	backend.block = release
-	writer, err := newKVWriter(
-		context.Background(), backend, kvWriterTable(), WithKVLinger(0),
+	writer, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -422,12 +422,12 @@ func TestKVWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	}
 }
 
-func TestKVWriterRequestTimeoutTerminatesClose(t *testing.T) {
+func TestUpsertWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	backend := kvBackend(0)
 	backend.block = make(chan struct{})
-	writer, err := newKVWriter(
-		context.Background(), backend, kvWriterTable(),
-		WithKVLinger(time.Hour), WithKVRequest(20*time.Millisecond, -1),
+	writer, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(),
+		WithUpsertLinger(time.Hour), WithUpsertRequest(20*time.Millisecond, -1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -450,13 +450,13 @@ func TestKVWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	}
 }
 
-func TestKVWriterClosePreservesTerminalFailure(t *testing.T) {
+func TestUpsertWriterClosePreservesTerminalFailure(t *testing.T) {
 	release := make(chan struct{})
 	backend := kvBackend(0)
 	backend.block = release
 	backend.putErr = errWriterTerminal
-	writer, err := newKVWriter(
-		context.Background(), backend, kvWriterTable(), WithKVLinger(time.Hour),
+	writer, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -476,11 +476,11 @@ func TestKVWriterClosePreservesTerminalFailure(t *testing.T) {
 	}
 }
 
-func TestKVWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
+func TestUpsertWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
 	backend := kvBackend(0)
 	backend.putErr = errWriterTerminal
-	writer, err := newKVWriter(
-		context.Background(), backend, kvWriterTable(), WithKVLinger(time.Hour),
+	writer, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -498,8 +498,8 @@ func TestKVWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
 	}
 }
 
-func TestKVWriterRejectsInvalidConfiguration(t *testing.T) {
-	table := kvWriterTable()
+func TestUpsertWriterRejectsInvalidConfiguration(t *testing.T) {
+	table := upsertWriterTable()
 	logTable := table
 	logTable.Kind = LogTable
 	badBucket := table
@@ -507,32 +507,32 @@ func TestKVWriterRejectsInvalidConfiguration(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		table   Table
-		backend *fakeKVWriterBackend
-		options []KVWriterOption
+		backend *fakeUpsertWriterBackend
+		options []UpsertWriterOption
 		target  error
 	}{
 		{"log table", logTable, kvBackend(0), nil, ErrTableKind},
 		{"bad bucket key", badBucket, kvBackend(0), nil, ErrInvalidSchema},
-		{"nil option", table, kvBackend(0), []KVWriterOption{nil}, ErrInvalidConfig},
-		{"batch limits", table, kvBackend(0), []KVWriterOption{WithKVBatchLimits(1, 0)}, ErrInvalidConfig},
-		{"buffer", table, kvBackend(0), []KVWriterOption{WithKVBuffer(0)}, ErrInvalidConfig},
-		{"concurrency", table, kvBackend(0), []KVWriterOption{WithKVConcurrency(65)}, ErrInvalidConfig},
-		{"linger", table, kvBackend(0), []KVWriterOption{WithKVLinger(-1)}, ErrInvalidConfig},
-		{"request", table, kvBackend(0), []KVWriterOption{WithKVRequest(0, 2)}, ErrInvalidConfig},
-		{"metadata", table, &fakeKVWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
+		{"nil option", table, kvBackend(0), []UpsertWriterOption{nil}, ErrInvalidConfig},
+		{"batch limits", table, kvBackend(0), []UpsertWriterOption{WithUpsertBatchLimits(1, 0)}, ErrInvalidConfig},
+		{"buffer", table, kvBackend(0), []UpsertWriterOption{WithUpsertBuffer(0)}, ErrInvalidConfig},
+		{"concurrency", table, kvBackend(0), []UpsertWriterOption{WithUpsertConcurrency(65)}, ErrInvalidConfig},
+		{"linger", table, kvBackend(0), []UpsertWriterOption{WithUpsertLinger(-1)}, ErrInvalidConfig},
+		{"request", table, kvBackend(0), []UpsertWriterOption{WithUpsertRequest(0, 2)}, ErrInvalidConfig},
+		{"metadata", table, &fakeUpsertWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", table, kvBackend(), nil, ErrMetadata},
-		{"init", table, &fakeKVWriterBackend{physicalID: 11, locations: kvBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
+		{"init", table, &fakeUpsertWriterBackend{physicalID: 11, locations: kvBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := newKVWriter(context.Background(), test.backend, test.table, test.options...)
+			_, err := newUpsertWriter(context.Background(), test.backend, test.table, test.options...)
 			if !errors.Is(err, test.target) {
-				t.Fatalf("newKVWriter() error = %v, want %v", err, test.target)
+				t.Fatalf("newUpsertWriter() error = %v, want %v", err, test.target)
 			}
 		})
 	}
 }
 
-func TestClientKVWriterBackendMessagesAndErrors(t *testing.T) {
+func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 	path := TablePath{Database: "db", Table: "users"}
 	var requestMessage *fmsg.PutKvRequest
 	client := routedWriterClient(t,
@@ -560,11 +560,11 @@ func TestClientKVWriterBackendMessagesAndErrors(t *testing.T) {
 			return response, nil
 		},
 	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
+	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyPutKv] = 1
-	writer, err := client.NewKVWriter(
-		context.Background(), kvWriterTable(),
-		WithKVLinger(0), WithKVMergeMode(MergeModeOverwrite),
+	writer, err := client.NewUpsertWriter(
+		context.Background(), upsertWriterTable(),
+		WithUpsertLinger(0), WithUpsertMergeMode(MergeModeOverwrite),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -586,7 +586,7 @@ func TestClientKVWriterBackendMessagesAndErrors(t *testing.T) {
 		}}
 		return response, nil
 	})
-	backend := clientKVWriterBackend{client: client}
+	backend := clientUpsertWriterBackend{client: client}
 	if _, err := backend.put(context.Background(), kvPutRequest{
 		path: PhysicalTablePath{TablePath: path}, tableID: 11, partitionID: -1, timeout: time.Second, acks: 1,
 	}); !errors.Is(err, ErrStorage) {

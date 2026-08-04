@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestServerNodes(t *testing.T) {
+func TestGetServerNodes(t *testing.T) {
 	requester := &fakeRequester{coordinator: func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		if request.APIKey() != fmsg.APIKeyGetMetadata {
 			t.Fatalf("API key = %d", request.APIKey())
@@ -27,23 +27,23 @@ func TestServerNodes(t *testing.T) {
 		}
 		return response, nil
 	}}
-	nodes, err := newClient(requester).ServerNodes(context.Background())
+	nodes, err := newClient(requester).GetServerNodes(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 3 || nodes[0].Role != fgo.Coordinator || nodes[0].ID != 7 ||
-		nodes[1].Role != fgo.TabletServer || nodes[1].ID != 2 || nodes[1].Rack != "rack-a" ||
+	if len(nodes) != 3 || nodes[0].ServerType != fgo.Coordinator || nodes[0].ID != 7 ||
+		nodes[1].ServerType != fgo.TabletServer || nodes[1].ID != 2 || nodes[1].Rack != "rack-a" ||
 		nodes[2].ID != 3 {
 		t.Fatalf("nodes = %#v", nodes)
 	}
 	nodes[0].Host = "changed"
-	again, err := newClient(requester).ServerNodes(context.Background())
+	again, err := newClient(requester).GetServerNodes(context.Background())
 	if err != nil || again[0].Host != "coordinator" {
 		t.Fatalf("second result = %#v, %v", again, err)
 	}
 }
 
-func TestServerNodesErrors(t *testing.T) {
+func TestGetServerNodesErrors(t *testing.T) {
 	sentinel := errors.New("metadata failed")
 	cases := []struct {
 		name        string
@@ -86,7 +86,7 @@ func TestServerNodesErrors(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := newClient(&fakeRequester{coordinator: test.coordinator}).ServerNodes(context.Background())
+			_, err := newClient(&fakeRequester{coordinator: test.coordinator}).GetServerNodes(context.Background())
 			if test.target != nil && !errors.Is(err, test.target) {
 				t.Fatalf("error = %v, want %v", err, test.target)
 			}

@@ -74,13 +74,13 @@ func TestPartitionSpecValidation(t *testing.T) {
 func TestPartitionSpecWriterAndScannerOptions(t *testing.T) {
 	schema := Schema{PartitionKey: []string{"region", "day"}}
 	spec := PartitionSpec{"day": "30", "region": "kr"}
-	var logConfig LogWriterConfig
-	if err := WithLogPartitionSpec(schema, spec)(&logConfig); err != nil || logConfig.Partition != "kr$30" {
-		t.Fatalf("WithLogPartitionSpec() = %#v, %v", logConfig, err)
+	var logConfig AppendWriterConfig
+	if err := WithAppendPartitionSpec(schema, spec)(&logConfig); err != nil || logConfig.Partition != "kr$30" {
+		t.Fatalf("WithAppendPartitionSpec() = %#v, %v", logConfig, err)
 	}
-	var kvConfig KVWriterConfig
-	if err := WithKVPartitionSpec(schema, spec)(&kvConfig); err != nil || kvConfig.Partition != "kr$30" {
-		t.Fatalf("WithKVPartitionSpec() = %#v, %v", kvConfig, err)
+	var kvConfig UpsertWriterConfig
+	if err := WithUpsertPartitionSpec(schema, spec)(&kvConfig); err != nil || kvConfig.Partition != "kr$30" {
+		t.Fatalf("WithUpsertPartitionSpec() = %#v, %v", kvConfig, err)
 	}
 	var scanConfig LogScannerConfig
 	if err := WithScanPartitionSpec(schema, spec)(&scanConfig); err != nil || scanConfig.Partition != "kr$30" {
@@ -301,10 +301,10 @@ func TestDynamicPartitionClientRefreshesRouter(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	physical := PhysicalTablePath{TablePath: path, Partition: "kr"}
 	client := &Client{}
-	client.router = NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+	client.router = NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		return TableMetadata{Path: path, ID: 1, Partitions: make(map[string]PartitionMetadata)}, nil
 	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
-		return PartitionMetadata{Path: physical, ID: 2, Buckets: map[int32]Node{}}, nil
+		return PartitionMetadata{Path: physical, ID: 2, Buckets: map[int32]ServerNode{}}, nil
 	})
 	if err := client.checkPartition(context.Background(), physical); err != nil {
 		t.Fatal(err)

@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func advancedACLResponse(t *testing.T, message any, response fmsg.Response, acl ACL) {
+func advancedACLResponse(t *testing.T, message any, response fmsg.Response, acl ACLBinding) {
 	t.Helper()
 	switch message := message.(type) {
 	case *fmsg.CreateAclsRequest:
@@ -144,7 +144,7 @@ func advancedSnapshotResponse(t *testing.T, message any, response fmsg.Response)
 	case *fmsg.GetKvSnapshotMetadataRequest:
 		snapshotMetadataResponse(t, message, response)
 	case *fmsg.AcquireKvSnapshotLeaseRequest:
-		acquireSnapshotLeaseResponse(t, message, response)
+		acquireKVSnapshotLeaseResponse(t, message, response)
 	case *fmsg.ReleaseKvSnapshotLeaseRequest:
 		if message.GetLeaseId() != "lease-1" || len(message.GetBucketsToRelease()) != 2 ||
 			message.GetBucketsToRelease()[0].GetPartitionId() != 4 {
@@ -191,7 +191,7 @@ func snapshotMetadataResponse(
 	}}
 }
 
-func acquireSnapshotLeaseResponse(
+func acquireKVSnapshotLeaseResponse(
 	t *testing.T,
 	message *fmsg.AcquireKvSnapshotLeaseRequest,
 	response fmsg.Response,
@@ -226,8 +226,7 @@ func advancedStorageResponse(t *testing.T, message any, response fmsg.Response, 
 			Key: proto.String("service"), Value: proto.String("filesystem"),
 		}}
 	case *fmsg.GetLakeSnapshotRequest:
-		if message.GetTablePath().GetTableName() != "users" || message.GetSnapshotId() != 44 ||
-			!message.GetReadable() {
+		if message.GetTablePath().GetTableName() != "users" || message.GetSnapshotId() != 44 || message.GetReadable() {
 			t.Fatalf("GetLakeSnapshot request = %#v", message)
 		}
 		snapshot := response.Message().(*fmsg.GetLakeSnapshotResponse)
@@ -245,7 +244,7 @@ func advancedStorageResponse(t *testing.T, message any, response fmsg.Response, 
 func advancedCoordinator(
 	t *testing.T,
 	seen map[fmsg.APIKey]int,
-	acl ACL,
+	acl ACLBinding,
 	progressCalls *atomic.Int32,
 	tokenBytes []byte,
 ) func(context.Context, fmsg.Request) (fmsg.Response, error) {
@@ -312,13 +311,13 @@ func advancedStatsBucket(
 func TestAdvancedAdminOperations(t *testing.T) {
 	path := fgo.TablePath{Database: "db", Table: "users"}
 	physical := fgo.PhysicalTablePath{TablePath: path, Partition: "region=kr"}
-	acl := ACL{
+	acl := ACLBinding{
 		ResourceName: "db", ResourceType: ACLResourceDatabase, PrincipalName: "alice",
 		PrincipalType: ACLPrincipalUser, Host: ACLWildcardHost,
 		Operation: ACLOperationDrop, Permission: ACLPermissionAllow,
 	}
 	filterName := "db"
-	filter := ACLFilter{
+	filter := ACLBindingFilter{
 		ResourceName: &filterName, ResourceType: ACLResourceDatabase,
 		Operation: ACLOperationDrop, Permission: ACLPermissionAllow,
 	}
@@ -342,7 +341,7 @@ func TestAdvancedAdminOperations(t *testing.T) {
 	}
 }
 
-func exerciseACLAndConfig(t *testing.T, ctx context.Context, client *Client, acl ACL, filter ACLFilter) {
+func exerciseACLAndConfig(t *testing.T, ctx context.Context, client *Client, acl ACLBinding, filter ACLBindingFilter) {
 	t.Helper()
 	created, err := client.CreateACLs(ctx, acl, acl)
 	if err != nil || len(created) != 2 || created[0].Err != nil ||
@@ -355,7 +354,7 @@ func exerciseACLAndConfig(t *testing.T, ctx context.Context, client *Client, acl
 	}
 	dropped, err := client.DropACLs(ctx, filter)
 	if err != nil || len(dropped) != 1 || len(dropped[0].Matches) != 1 ||
-		dropped[0].Matches[0].ACL != acl {
+		dropped[0].Matches[0].Binding != acl {
 		t.Fatalf("DropACLs() = %#v, %v", dropped, err)
 	}
 	configs, err := client.DescribeClusterConfigs(ctx)
@@ -364,8 +363,8 @@ func exerciseACLAndConfig(t *testing.T, ctx context.Context, client *Client, acl
 	}
 	value := "value"
 	if err := client.AlterClusterConfigs(ctx,
-		ConfigChange{Key: "cluster.config", Value: &value, Op: ConfigSet},
-		ConfigChange{Key: "cluster.list", Op: ConfigSubtract},
+		AlterConfig{Key: "cluster.config", Value: &value, Op: ConfigSet},
+		AlterConfig{Key: "cluster.list", Op: ConfigSubtract},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -379,13 +378,13 @@ func exerciseACLAndConfig(t *testing.T, ctx context.Context, client *Client, acl
 
 func exerciseRebalance(t *testing.T, ctx context.Context, client *Client, progressCalls *atomic.Int32) {
 	t.Helper()
-	id, err := client.StartRebalance(ctx, 1, 2)
+	id, err := client.Rebalance(ctx, 1, 2)
 	if err != nil || id != "rebalance-1" {
-		t.Fatalf("StartRebalance() = %q, %v", id, err)
+		t.Fatalf("Rebalance() = %q, %v", id, err)
 	}
-	progress, err := client.RebalanceProgress(ctx, id)
+	progress, err := client.ListRebalanceProgress(ctx, id)
 	if err != nil || progress.Status != 1 || progress.Tables[0].Buckets[0].NewLeader != 3 {
-		t.Fatalf("RebalanceProgress() = %#v, %v", progress, err)
+		t.Fatalf("ListRebalanceProgress() = %#v, %v", progress, err)
 	}
 	waited, err := client.WaitRebalance(ctx, id, time.Millisecond)
 	if err != nil || waited.Status != 1 || progressCalls.Load() != 3 {
@@ -421,15 +420,15 @@ func exerciseProducerOffsets(t *testing.T, ctx context.Context, client *Client) 
 
 func exerciseSnapshots(t *testing.T, ctx context.Context, client *Client, path fgo.TablePath) {
 	t.Helper()
-	latest, err := client.LatestKVSnapshots(ctx, path, "region=kr")
+	latest, err := client.GetLatestKVSnapshots(ctx, path, "region=kr")
 	if err != nil || latest.PartitionID != 4 || !latest.Snapshots[0].Available || latest.Snapshots[1].Available {
-		t.Fatalf("LatestKVSnapshots() = %#v, %v", latest, err)
+		t.Fatalf("GetLatestKVSnapshots() = %#v, %v", latest, err)
 	}
-	metadata, err := client.KVSnapshotMetadata(ctx, 12, 4, 0, 30)
+	metadata, err := client.GetKVSnapshotMetadata(ctx, 12, 4, 0, 30)
 	if err != nil || metadata.LogOffset != 40 || metadata.Files[0].LocalName != "1.sst" {
-		t.Fatalf("KVSnapshotMetadata() = %#v, %v", metadata, err)
+		t.Fatalf("GetKVSnapshotMetadata() = %#v, %v", metadata, err)
 	}
-	leases := []SnapshotLease{
+	leases := []KVSnapshotLease{
 		{TableID: 12, PartitionID: 4, Bucket: 0, SnapshotID: 30},
 		{TableID: 12, PartitionID: -1, Bucket: 1, SnapshotID: 31},
 		{TableID: 13, PartitionID: -1, Bucket: 2, SnapshotID: 32},
@@ -461,7 +460,7 @@ func exerciseStorageAndStats(
 	tokenBytes []byte,
 ) {
 	t.Helper()
-	token, err := client.FileSystemSecurityToken(ctx)
+	token, err := client.GetFileSystemSecurityToken(ctx)
 	if err != nil || token.Schema != "hadoop" || token.AdditionalInfo["service"] != "filesystem" {
 		t.Fatalf("FileSystemSecurityToken() = %#v, %v", token, err)
 	}
@@ -470,16 +469,16 @@ func exerciseStorageAndStats(
 		t.Fatal("security token aliases response memory")
 	}
 	snapshotID := int64(44)
-	lake, err := client.LakeSnapshot(ctx, path, &snapshotID, true)
+	lake, err := client.GetLakeSnapshot(ctx, path, snapshotID)
 	snapshotID = 45
 	if err != nil || lake.SnapshotID != 44 || lake.Buckets[0].PartitionID != 4 ||
 		lake.Buckets[1].PartitionID != -1 {
-		t.Fatalf("LakeSnapshot() = %#v, %v", lake, err)
+		t.Fatalf("GetLakeSnapshot() = %#v, %v", lake, err)
 	}
-	stats := client.TableStats(ctx, fgo.Table{ID: 12}, physical, 4, []int32{0, 1})
+	stats := client.GetTableStats(ctx, fgo.Table{ID: 12}, physical, 4, []int32{0, 1})
 	if len(stats) != 2 || stats[0].RowCount != 100 || stats[0].Err != nil ||
 		!errors.Is(stats[1].Err, fgo.ErrMetadata) {
-		t.Fatalf("TableStats() = %#v", stats)
+		t.Fatalf("GetTableStats() = %#v", stats)
 	}
 }
 
@@ -494,42 +493,42 @@ func TestAdvancedAdminValidation(t *testing.T) {
 	client := newClient(fake)
 	ctx := context.Background()
 	path := fgo.TablePath{Database: "db", Table: "t"}
-	validACL := ACL{
+	validACL := ACLBinding{
 		ResourceName: "db", ResourceType: ACLResourceDatabase, PrincipalName: "alice",
 		PrincipalType: ACLPrincipalUser, Host: ACLWildcardHost,
 		Operation: ACLOperationRead, Permission: ACLPermissionAllow,
 	}
-	validLease := SnapshotLease{TableID: 1, PartitionID: -1, Bucket: 0, SnapshotID: 1}
+	validLease := KVSnapshotLease{TableID: 1, PartitionID: -1, Bucket: 0, SnapshotID: 1}
 	checks := map[string]func() error{
-		"create ACL empty": func() error { _, err := client.CreateACLs(ctx); return err },
-		"create ACL invalid": func() error {
+		"create ACLBinding empty": func() error { _, err := client.CreateACLs(ctx); return err },
+		"create ACLBinding invalid": func() error {
 			invalid := validACL
 			invalid.Host = ""
 			_, err := client.CreateACLs(ctx, invalid)
 			return err
 		},
-		"list ACL": func() error {
-			_, err := client.ListACLs(ctx, ACLFilter{ResourceType: -1})
+		"list ACLBinding": func() error {
+			_, err := client.ListACLs(ctx, ACLBindingFilter{ResourceType: -1})
 			return err
 		},
-		"drop ACL empty": func() error { _, err := client.DropACLs(ctx); return err },
-		"drop ACL invalid": func() error {
-			_, err := client.DropACLs(ctx, ACLFilter{Operation: -1})
+		"drop ACLBinding empty": func() error { _, err := client.DropACLs(ctx); return err },
+		"drop ACLBinding invalid": func() error {
+			_, err := client.DropACLs(ctx, ACLBindingFilter{Operation: -1})
 			return err
 		},
 		"alter config empty": func() error { return client.AlterClusterConfigs(ctx) },
 		"alter config invalid": func() error {
-			return client.AlterClusterConfigs(ctx, ConfigChange{Op: ConfigSet})
+			return client.AlterClusterConfigs(ctx, AlterConfig{Op: ConfigSet})
 		},
 		"add tag empty":    func() error { return client.AddServerTag(ctx, nil, 1) },
 		"add tag negative": func() error { return client.AddServerTag(ctx, []int32{-1}, 1) },
 		"add tag unknown":  func() error { return client.AddServerTag(ctx, []int32{1}, 2) },
 		"remove tag":       func() error { return client.RemoveServerTag(ctx, []int32{1}, -1) },
 		"rebalance empty": func() error {
-			_, err := client.StartRebalance(ctx)
+			_, err := client.Rebalance(ctx)
 			return err
 		},
-		"progress empty": func() error { _, err := client.RebalanceProgress(ctx, ""); return err },
+		"progress empty": func() error { _, err := client.ListRebalanceProgress(ctx, ""); return err },
 		"wait interval": func() error {
 			_, err := client.WaitRebalance(ctx, "id", 0)
 			return err
@@ -552,11 +551,11 @@ func TestAdvancedAdminValidation(t *testing.T) {
 		"get producer":    func() error { _, err := client.GetProducerOffsets(ctx, ""); return err },
 		"delete producer": func() error { return client.DeleteProducerOffsets(ctx, "") },
 		"latest snapshot": func() error {
-			_, err := client.LatestKVSnapshots(ctx, fgo.TablePath{}, "")
+			_, err := client.GetLatestKVSnapshots(ctx, fgo.TablePath{}, "")
 			return err
 		},
 		"snapshot metadata": func() error {
-			_, err := client.KVSnapshotMetadata(ctx, -1, -2, -1, -1)
+			_, err := client.GetKVSnapshotMetadata(ctx, -1, -2, -1, -1)
 			return err
 		},
 		"acquire empty": func() error {
@@ -566,7 +565,7 @@ func TestAdvancedAdminValidation(t *testing.T) {
 		"acquire invalid": func() error {
 			invalid := validLease
 			invalid.SnapshotID = -1
-			_, err := client.AcquireKVSnapshotLease(ctx, "lease", time.Second, []SnapshotLease{invalid})
+			_, err := client.AcquireKVSnapshotLease(ctx, "lease", time.Second, []KVSnapshotLease{invalid})
 			return err
 		},
 		"renew empty": func() error {
@@ -577,10 +576,10 @@ func TestAdvancedAdminValidation(t *testing.T) {
 			return client.ReleaseKVSnapshotLease(ctx, "lease", []fgo.TableBucket{{TableID: -1}})
 		},
 		"drop empty": func() error { return client.DropKVSnapshotLease(ctx, "") },
-		"lake path":  func() error { _, err := client.LakeSnapshot(ctx, fgo.TablePath{}, nil, false); return err },
+		"lake path":  func() error { _, err := client.GetLatestLakeSnapshot(ctx, fgo.TablePath{}); return err },
 		"lake ID": func() error {
 			id := int64(-1)
-			_, err := client.LakeSnapshot(ctx, path, &id, false)
+			_, err := client.GetLakeSnapshot(ctx, path, id)
 			return err
 		},
 	}
@@ -591,9 +590,9 @@ func TestAdvancedAdminValidation(t *testing.T) {
 			}
 		})
 	}
-	stats := client.TableStats(ctx, fgo.Table{ID: -1}, fgo.PhysicalTablePath{}, -2, []int32{-1})
+	stats := client.GetTableStats(ctx, fgo.Table{ID: -1}, fgo.PhysicalTablePath{}, -2, []int32{-1})
 	if len(stats) != 1 || !errors.Is(stats[0].Err, fgo.ErrInvalidConfig) {
-		t.Fatalf("invalid TableStats() = %#v", stats)
+		t.Fatalf("invalid GetTableStats() = %#v", stats)
 	}
 }
 
@@ -605,7 +604,7 @@ func TestAdvancedAdminErrorsAndCancellation(t *testing.T) {
 			return response, nil
 		}}
 		client := newClient(fake)
-		acl := ACL{
+		acl := ACLBinding{
 			ResourceName: "r", ResourceType: ACLResourceDatabase, PrincipalName: "p",
 			PrincipalType: ACLPrincipalUser, Host: ACLWildcardHost,
 			Operation: ACLOperationRead, Permission: ACLPermissionAllow,
@@ -613,7 +612,7 @@ func TestAdvancedAdminErrorsAndCancellation(t *testing.T) {
 		if _, err := client.CreateACLs(ctx, acl); !errors.Is(err, fgo.ErrValidation) {
 			t.Fatalf("CreateACLs error = %v", err)
 		}
-		filter := ACLFilter{
+		filter := ACLBindingFilter{
 			ResourceType: ACLResourceAny,
 			Operation:    ACLOperationAny,
 			Permission:   ACLPermissionAny,
@@ -627,8 +626,8 @@ func TestAdvancedAdminErrorsAndCancellation(t *testing.T) {
 			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
 			return response, nil
 		}}
-		if _, err := newClient(fake).StartRebalance(ctx, 1); !errors.Is(err, fgo.ErrValidation) {
-			t.Fatalf("StartRebalance error = %v", err)
+		if _, err := newClient(fake).Rebalance(ctx, 1); !errors.Is(err, fgo.ErrValidation) {
+			t.Fatalf("Rebalance error = %v", err)
 		}
 	})
 	t.Run("wait cancellation", func(t *testing.T) {
@@ -655,7 +654,7 @@ func TestAdvancedAdminErrorsAndCancellation(t *testing.T) {
 		if _, err := newClient(fake).DescribeClusterConfigs(ctx); !errors.Is(err, sentinel) {
 			t.Fatalf("DescribeClusterConfigs error = %v", err)
 		}
-		stats := newClient(fake).TableStats(ctx, fgo.Table{ID: 1}, fgo.PhysicalTablePath{}, -1, []int32{0})
+		stats := newClient(fake).GetTableStats(ctx, fgo.Table{ID: 1}, fgo.PhysicalTablePath{}, -1, []int32{0})
 		if !errors.Is(stats[0].Err, sentinel) {
 			t.Fatalf("TableStats error = %v", stats[0].Err)
 		}
@@ -667,7 +666,7 @@ func TestAdvancedAdminErrorsAndCancellation(t *testing.T) {
 			response, _ := fmsg.NewResponse(fmsg.APIKeyGetTableStats, 0)
 			return response, nil
 		}}
-		stats := newClient(fake).TableStats(ctx, fgo.Table{ID: 1}, fgo.PhysicalTablePath{}, -1, []int32{0})
+		stats := newClient(fake).GetTableStats(ctx, fgo.Table{ID: 1}, fgo.PhysicalTablePath{}, -1, []int32{0})
 		if !errors.Is(stats[0].Err, fgo.ErrValidation) || !strings.Contains(stats[0].Err.Error(), "bucket 0") {
 			t.Fatalf("TableStats error = %v", stats[0].Err)
 		}

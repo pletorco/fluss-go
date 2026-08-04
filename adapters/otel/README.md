@@ -43,7 +43,7 @@ Every measurement uses the same bounded attributes:
 - `fluss.operation`
 - `fluss.error.class`
 - `fluss.api.key`
-- `fluss.server.role`
+- `fluss.server.type`
 - `fluss.failed`
 
 Enum attributes are numeric values from `fgo`. Addresses, table and object

@@ -26,6 +26,46 @@ They are not hand-edited, and their names and fields follow the pinned
 `FlussApi.proto`. `task verify:generate` proves source reproducibility while the
 separate protocol API baseline makes generated surface changes explicit.
 
+## Fluss terminology migration
+
+The post-beta.9 API intentionally removes pre-RC names that came from Kafka,
+implementation details, or generic local terminology. No deprecated aliases
+are retained. The following table is the migration guide for applications
+upgrading from beta.9:
+
+| beta.9 API | Fluss-aligned API |
+| --- | --- |
+| `fgo.WithSeedBrokers` | `fgo.WithBootstrapServers` |
+| `fgo.Client.OpenTable` | `fgo.Client.GetTable` |
+| `fgo.LogWriter`, `NewLogWriter`, `LogWriterConfig`, `LogWriterOption` | `fgo.AppendWriter`, `NewAppendWriter`, `AppendWriterConfig`, `AppendWriterOption` |
+| `fgo.WithLog*` writer options | corresponding `fgo.WithAppend*` options |
+| `fgo.LogWriteFormat*` | `fgo.LogFormat*` |
+| `fgo.TypedLogWriter`, `NewTypedLogWriter` | `fgo.TypedAppendWriter`, `NewTypedAppendWriter` |
+| `fgo.KVWriter`, `NewKVWriter`, `KVWriterConfig`, `KVWriterOption` | `fgo.UpsertWriter`, `NewUpsertWriter`, `UpsertWriterConfig`, `UpsertWriterOption` |
+| `fgo.WithKV*` writer options | corresponding `fgo.WithUpsert*` options |
+| `fgo.TypedKVWriter`, `NewTypedKVWriter` | `fgo.TypedUpsertWriter`, `NewTypedUpsertWriter` |
+| `fgo.LookupClient`, `NewLookupClient` | `fgo.Lookuper`, `NewLookuper` |
+| `fgo.TypedLookupClient`, `NewTypedLookupClient` | `fgo.TypedLookuper`, `NewTypedLookuper` |
+| `fgo.Node`, `Node.Role` | `fgo.ServerNode`, `ServerNode.ServerType` |
+| `fgo.ServerRole`, `UnknownServerRole`, `ErrServerRole` | `fgo.ServerType`, `UnknownServerType`, `ErrServerType` |
+| `fgo.MetricEvent.ServerRole`, metric key `fluss.server.role` | `fgo.MetricEvent.ServerType`, metric key `fluss.server.type` |
+| `fgo.PlainAuthenticator` | `fgo.SASLPlainAuthenticator` |
+| `fadm.Database`, `DatabaseDefinition` | `fadm.DatabaseInfo`, `DatabaseDescriptor` |
+| `fadm.TableDefinition`, `Partition` | `fadm.TableDescriptor`, `PartitionInfo` |
+| `fadm.ConfigChange`, `ConfigOp`, `ClusterConfig` | `fadm.AlterConfig`, `AlterConfigOpType`, `ConfigEntry` |
+| `fadm.ACL`, `ACLFilter`, `ACLResult.ACL` | `fadm.ACLBinding`, `ACLBindingFilter`, `CreateACLResult.Binding` |
+| `fadm.LatestKVSnapshot`, `SnapshotLease` | `fadm.KVSnapshots`, `KVSnapshotLease` |
+| `ListDatabases`, `DescribeDatabase` | `ListDatabaseSummaries`, `GetDatabaseInfo` |
+| `DescribeTable`, `TableSchema`, `ListPartitions` | `GetTableInfo`, `GetTableSchema`, `ListPartitionInfos` |
+| `ServerNodes`, `FileSystemSecurityToken`, `TableStats` | `GetServerNodes`, `GetFileSystemSecurityToken`, `GetTableStats` |
+| `LatestKVSnapshots`, `KVSnapshotMetadata` | `GetLatestKVSnapshots`, `GetKVSnapshotMetadata` |
+| `StartRebalance`, `RebalanceProgress` | `Rebalance`, `ListRebalanceProgress` |
+| combined `LakeSnapshot` method | `GetLatestLakeSnapshot`, `GetLakeSnapshot`, or `GetReadableLakeSnapshot` |
+
+Method behavior, wire messages, cancellation, ownership, retries, and lifecycle
+semantics are unchanged except that the combined lake-snapshot selector is now
+split into the three operations exposed by the Fluss Admin API.
+
 ## Compatibility gate
 
 `task api:check` compares all three public packages with binary export-data

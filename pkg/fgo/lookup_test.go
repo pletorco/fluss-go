@@ -26,7 +26,7 @@ type lookupCall struct {
 type fakeLookupBackend struct {
 	mu          sync.Mutex
 	physicalID  int64
-	locations   map[int32]Node
+	locations   map[int32]ServerNode
 	metadataErr error
 	values      map[string][]byte
 	prefixes    map[string][][]byte
@@ -43,7 +43,7 @@ type fakeLookupBackend struct {
 	maxActive   int
 }
 
-func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error) {
+func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
 	return b.physicalID, b.locations, b.metadataErr
 }
 
@@ -167,9 +167,9 @@ func lookupTable() Table {
 }
 
 func lookupBackendFor(table Table, bucketIDs ...int32) *fakeLookupBackend {
-	locations := make(map[int32]Node, len(bucketIDs))
+	locations := make(map[int32]ServerNode, len(bucketIDs))
 	for _, bucket := range bucketIDs {
-		locations[bucket] = Node{ID: bucket + 10, Address: "tablet", Role: TabletServer}
+		locations[bucket] = ServerNode{ID: bucket + 10, Address: "tablet", ServerType: TabletServer}
 	}
 	return &fakeLookupBackend{
 		physicalID: table.ID, locations: locations,
@@ -199,12 +199,12 @@ func encodeLookupValue(t testing.TB, table Table, row Row) []byte {
 	return value
 }
 
-func TestLookupClientPreservesInputAndNotFound(t *testing.T) {
+func TestLookuperPreservesInputAndNotFound(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	putLookupValue(t, backend, table, PrimaryKey{"a", int32(1)}, Row{"a", int32(1), "one"})
 	putLookupValue(t, backend, table, PrimaryKey{"b", int32(2)}, Row{"b", int32(2), "two"})
-	client, err := newLookupClient(context.Background(), backend, table, WithLookupBatch(1, 2))
+	client, err := newLookuper(context.Background(), backend, table, WithLookupBatch(1, 2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,13 +224,13 @@ func TestLookupClientPreservesInputAndNotFound(t *testing.T) {
 	_ = client.Close()
 }
 
-func TestLookupClientBatchesConcurrentCalls(t *testing.T) {
+func TestLookuperBatchesConcurrentCalls(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"shared", int32(1)}
 	putLookupValue(t, backend, table, key, Row{"shared", int32(1), "one"})
 	const callers = 16
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(callers, 2),
 		WithLookupQueue(callers, time.Hour),
@@ -267,7 +267,7 @@ func TestLookupClientBatchesConcurrentCalls(t *testing.T) {
 	}
 }
 
-func TestLookupClientKeepsCallerCancellationIndependent(t *testing.T) {
+func TestLookuperKeepsCallerCancellationIndependent(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"shared", int32(1)}
@@ -275,7 +275,7 @@ func TestLookupClientKeepsCallerCancellationIndependent(t *testing.T) {
 	release := make(chan struct{})
 	backend.block = release
 	backend.entered = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(2, 1),
 		WithLookupQueue(2, time.Hour),
@@ -302,13 +302,13 @@ func TestLookupClientKeepsCallerCancellationIndependent(t *testing.T) {
 	}
 }
 
-func TestLookupClientBoundsQueuedAndInflightKeys(t *testing.T) {
+func TestLookuperBoundsQueuedAndInflightKeys(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	release := make(chan struct{})
 	backend.block = release
 	backend.entered = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(1, 1),
 		WithLookupQueue(2, 0),
@@ -346,12 +346,12 @@ func TestLookupClientBoundsQueuedAndInflightKeys(t *testing.T) {
 	}
 }
 
-func TestLookupClientSchedulesIndependentBatchesFairly(t *testing.T) {
+func TestLookuperSchedulesIndependentBatchesFairly(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	release := make(chan struct{})
 	backend.block = release
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(1, 2), WithLookupQueue(2, 0),
 	)
@@ -380,7 +380,7 @@ func TestLookupClientSchedulesIndependentBatchesFairly(t *testing.T) {
 	}
 }
 
-func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
+func TestLookuperRetriesOnlyReadOnlyRequests(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"retry", int32(1)}
@@ -391,7 +391,7 @@ func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
 		),
 		nil,
 	}
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(1, 1),
 		WithLookupQueue(1, 0),
@@ -416,7 +416,7 @@ func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = newLookupClient(
+	_, err = newLookuper(
 		context.Background(), lookupBackendFor(table, 0, 1), table,
 		WithLookupInsertIfNotExists(time.Second, -1),
 		WithLookupRetryPolicy(RetryPolicy{MaxAttempts: 2}),
@@ -426,11 +426,11 @@ func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
 	}
 }
 
-func TestLookupClientRequestTimeout(t *testing.T) {
+func TestLookuperRequestTimeout(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	backend.block = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(1, 1), WithLookupQueue(1, 0),
 		WithLookupTimeout(10*time.Millisecond),
@@ -447,12 +447,12 @@ func TestLookupClientRequestTimeout(t *testing.T) {
 	}
 }
 
-func TestLookupClientCloseCompletesQueuedAndInflight(t *testing.T) {
+func TestLookuperCloseCompletesQueuedAndInflight(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	backend.block = make(chan struct{})
 	backend.entered = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(1, 1), WithLookupQueue(3, 0),
 	)
@@ -494,7 +494,7 @@ func TestLookupInsertIfNotExists(t *testing.T) {
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"new", int32(1)}
 	putLookupValue(t, backend, table, key, Row{"new", int32(1), nil})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupInsertIfNotExists(2*time.Second, 1),
 	)
@@ -542,7 +542,7 @@ func TestDecodeLookupValueRejectsInvalidEnvelope(t *testing.T) {
 	}
 }
 
-func TestPrefixLookupClientDecodesRows(t *testing.T) {
+func TestPrefixLookuperDecodesRows(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key, err := EncodePrefixLookupKey(table.Schema, PrimaryKey{"a"}, 1)
@@ -553,7 +553,7 @@ func TestPrefixLookupClientDecodesRows(t *testing.T) {
 		value := encodeLookupValue(t, table, row)
 		backend.prefixes[string(key)] = append(backend.prefixes[string(key)], value)
 	}
-	client, err := newLookupClient(context.Background(), backend, table)
+	client, err := newLookuper(context.Background(), backend, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +565,7 @@ func TestPrefixLookupClientDecodesRows(t *testing.T) {
 	_ = client.Close()
 }
 
-func TestPrefixLookupClientBatchesConcurrentCalls(t *testing.T) {
+func TestPrefixLookuperBatchesConcurrentCalls(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	prefix := PrimaryKey{"a"}
@@ -577,7 +577,7 @@ func TestPrefixLookupClientBatchesConcurrentCalls(t *testing.T) {
 		encodeLookupValue(t, table, Row{"a", int32(1), "one"}),
 	}
 	const callers = 4
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(callers, 1), WithLookupQueue(callers, time.Hour),
 	)
@@ -606,12 +606,12 @@ func TestPrefixLookupClientBatchesConcurrentCalls(t *testing.T) {
 	}
 }
 
-func TestLookupClientPartialErrorsAndValidation(t *testing.T) {
+func TestLookuperPartialErrorsAndValidation(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	backend.lookupErr = errors.New("lookup unavailable")
 	backend.prefixErr = errors.New("prefix unavailable")
-	client, err := newLookupClient(context.Background(), backend, table)
+	client, err := newLookuper(context.Background(), backend, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +627,7 @@ func TestLookupClientPartialErrorsAndValidation(t *testing.T) {
 
 	bad := table
 	bad.Schema.BucketKey = []string{"id"}
-	client, err = newLookupClient(context.Background(), lookupBackendFor(bad, 0, 1), bad)
+	client, err = newLookuper(context.Background(), lookupBackendFor(bad, 0, 1), bad)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -637,14 +637,14 @@ func TestLookupClientPartialErrorsAndValidation(t *testing.T) {
 	_ = client.Close()
 }
 
-func TestLookupClientCancellationAndClose(t *testing.T) {
+func TestLookuperCancellationAndClose(t *testing.T) {
 	table := lookupTable()
 	release := make(chan struct{})
 	entered := make(chan struct{})
 	backend := lookupBackendFor(table, 0, 1)
 	backend.block = release
 	backend.entered = entered
-	client, err := newLookupClient(context.Background(), backend, table)
+	client, err := newLookuper(context.Background(), backend, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -664,7 +664,7 @@ func TestLookupClientCancellationAndClose(t *testing.T) {
 	close(release)
 }
 
-func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
+func TestLookuperRejectsInvalidConfiguration(t *testing.T) {
 	table := lookupTable()
 	logTable := table
 	logTable.Kind = LogTable
@@ -691,9 +691,9 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 		{"no buckets", table, lookupBackendFor(table), nil, ErrMetadata},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := newLookupClient(context.Background(), test.backend, test.table, test.options...)
+			_, err := newLookuper(context.Background(), test.backend, test.table, test.options...)
 			if !errors.Is(err, test.target) {
-				t.Fatalf("newLookupClient() error = %v, want %v", err, test.target)
+				t.Fatalf("newLookuper() error = %v, want %v", err, test.target)
 			}
 		})
 	}
@@ -750,9 +750,9 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 			return response, nil
 		},
 	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
+	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
-	lookup, err := client.NewLookupClient(context.Background(), table)
+	lookup, err := client.NewLookuper(context.Background(), table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -804,7 +804,7 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 			return response, nil
 		},
 	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
+	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
 	backend := clientLookupBackend{client: client}
 	path := PhysicalTablePath{TablePath: table.Path}
@@ -839,7 +839,7 @@ func benchmarkLookupCrossCallBatching(b *testing.B, batch int, delay time.Durati
 	backend.delay = 100 * time.Microsecond
 	key := PrimaryKey{"bench", int32(1)}
 	putLookupValue(b, backend, table, key, Row{"bench", int32(1), "one"})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupBatch(batch, 8),
 		WithLookupQueue(1024, delay),

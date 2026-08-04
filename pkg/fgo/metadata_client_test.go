@@ -52,14 +52,14 @@ func TestMetadataResponseConversionFailures(t *testing.T) {
 }
 
 func TestApplyPartitionServersCopiesAvailableNodes(t *testing.T) {
-	coordinator := Node{ID: 1, Address: "coordinator:9123", Role: Coordinator}
-	tablets := map[int32]Node{2: {ID: 2, Address: "tablet:9123", Role: TabletServer}}
+	coordinator := ServerNode{ID: 1, Address: "coordinator:9123", ServerType: Coordinator}
+	tablets := map[int32]ServerNode{2: {ID: 2, Address: "tablet:9123", ServerType: TabletServer}}
 	metadata := &Metadata{}
 	applyPartitionServers(metadata, PartitionMetadata{
 		coordinator: coordinator,
 		tablets:     tablets,
 	})
-	tablets[2] = Node{}
+	tablets[2] = ServerNode{}
 	if metadata.Coordinator != coordinator || metadata.Tablets[2].Address != "tablet:9123" {
 		t.Fatalf("partition servers = %#v", metadata)
 	}
@@ -108,7 +108,7 @@ func TestClientFetchesPhysicalMetadataThroughCoordinator(t *testing.T) {
 	}
 }
 
-func TestOpenTableLoadsServerSchema(t *testing.T) {
+func TestGetTableLoadsServerSchema(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	client := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
@@ -132,11 +132,11 @@ func TestOpenTableLoadsServerSchema(t *testing.T) {
 	}), nil)
 	client.versions[fmsg.APIKeyGetTableInfo] = 0
 	client.versions[fmsg.APIKeyGetTableSchema] = 0
-	table, err := client.OpenTable(context.Background(), path)
+	table, err := client.GetTable(context.Background(), path)
 	if err != nil || table.ID != 9 || table.SchemaID != 3 || table.Kind != PrimaryKeyTable ||
 		table.BucketCount != 4 || len(table.Schema.BucketKey) != 1 ||
 		table.Properties["table.merge-engine"] != "aggregation" {
-		t.Fatalf("OpenTable() = %#v, %v", table, err)
+		t.Fatalf("GetTable() = %#v, %v", table, err)
 	}
 }
 

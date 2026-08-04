@@ -148,7 +148,7 @@ func TestClientCloseRejectsPublicOperationsAndResourceConstruction(t *testing.T)
 	}
 	request, _ := fmsg.NewRequest(fmsg.APIKeyApiVersions, 0)
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	bucket := testTableBucket(table)
 	checks := map[string]func() error{
 		"request": func() error {
@@ -156,7 +156,7 @@ func TestClientCloseRejectsPublicOperationsAndResourceConstruction(t *testing.T)
 			return err
 		},
 		"request to": func() error {
-			_, err := client.RequestTo(context.Background(), Node{Address: "server:9123", Role: Coordinator}, request)
+			_, err := client.RequestTo(context.Background(), ServerNode{Address: "server:9123", ServerType: Coordinator}, request)
 			return err
 		},
 		"request coordinator": func() error {
@@ -168,27 +168,27 @@ func TestClientCloseRejectsPublicOperationsAndResourceConstruction(t *testing.T)
 			return err
 		},
 		"open table": func() error {
-			_, err := client.OpenTable(context.Background(), path.TablePath)
+			_, err := client.GetTable(context.Background(), path.TablePath)
 			return err
 		},
 		"resolve buckets": func() error {
 			_, err := client.ResolveTableBuckets(context.Background(), path)
 			return err
 		},
-		"log writer": func() error {
-			_, err := client.NewLogWriter(context.Background(), logWriterTable())
+		"append writer": func() error {
+			_, err := client.NewAppendWriter(context.Background(), appendWriterTable())
 			return err
 		},
-		"KV writer": func() error {
-			_, err := client.NewKVWriter(context.Background(), table)
+		"upsert writer": func() error {
+			_, err := client.NewUpsertWriter(context.Background(), table)
 			return err
 		},
 		"lookup": func() error {
-			_, err := client.NewLookupClient(context.Background(), table)
+			_, err := client.NewLookuper(context.Background(), table)
 			return err
 		},
 		"log scanner": func() error {
-			_, err := client.NewLogScanner(context.Background(), logWriterTable(), AtOffset(0))
+			_, err := client.NewLogScanner(context.Background(), appendWriterTable(), AtOffset(0))
 			return err
 		},
 		"batch scanner": func() error {
@@ -214,8 +214,8 @@ func TestClientCloseRejectsPublicOperationsAndResourceConstruction(t *testing.T)
 
 func TestClientOptions(t *testing.T) {
 	var cfg config
-	if err := WithSeedBrokers("a:1", "b:2")(&cfg); err != nil || len(cfg.seeds) != 2 {
-		t.Fatalf("WithSeedBrokers() = %#v, %v", cfg, err)
+	if err := WithBootstrapServers("a:1", "b:2")(&cfg); err != nil || len(cfg.bootstrapServers) != 2 {
+		t.Fatalf("WithBootstrapServers() = %#v, %v", cfg, err)
 	}
 	if err := WithClientIdentity("client", "1")(&cfg); err != nil || cfg.name != "client" {
 		t.Fatalf("WithClientIdentity() = %#v, %v", cfg, err)
@@ -247,7 +247,7 @@ func TestClientOptions(t *testing.T) {
 func TestClientOptionsRejectInvalidValues(t *testing.T) {
 	var cfg config
 	for _, option := range []Option{
-		WithSeedBrokers(),
+		WithBootstrapServers(),
 		WithClientIdentity("", ""),
 		WithDialContext(nil),
 		WithTLSConfig(nil),
@@ -283,22 +283,22 @@ func TestClientRequestErrors(t *testing.T) {
 		t.Fatalf("Request(nil) error = %v, want ErrInvalidArgument", err)
 	}
 	if _, err := client.RequestTo(
-		context.Background(), Node{Address: "tablet:9123", Role: TabletServer}, request,
+		context.Background(), ServerNode{Address: "tablet:9123", ServerType: TabletServer}, request,
 	); !errors.Is(err, ErrClosed) {
 		t.Fatalf("RequestTo() unmanaged error = %v, want ErrClosed", err)
 	}
 }
 
 func TestClientRequestUsesManagedConnection(t *testing.T) {
-	node := Node{ID: 2, Address: "tablet:9123", Role: TabletServer}
+	node := ServerNode{ID: 2, Address: "tablet:9123", ServerType: TabletServer}
 	tablet := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		return fmsg.NewResponse(request.APIKey(), request.Version())
 	}), nil)
 	tablet.versions[fmsg.APIKeyApiVersions] = 0
 	manager := newConnectionManager(config{})
-	manager.clients[connectionKey{id: node.ID, address: node.Address, role: node.Role}] = tablet
+	manager.clients[connectionKey{id: node.ID, address: node.Address, serverType: node.ServerType}] = tablet
 	client := &Client{
-		manager: manager, serverID: node.ID, address: node.Address, role: node.Role,
+		manager: manager, serverID: node.ID, address: node.Address, serverType: node.ServerType,
 	}
 	request := apiVersionsRequestForClient(t)
 	if _, err := client.Request(context.Background(), request); err != nil {
@@ -481,8 +481,8 @@ func TestOpenNegotiatesOverTransport(t *testing.T) {
 		key := int32(fmsg.APIKeyApiVersions)
 		minimum := int32(0)
 		maximum := int32(0)
-		role := int32(Coordinator)
-		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ServerType: &role, ApiVersions: []*fmsg.PbApiVersion{{
+		serverType := int32(Coordinator)
+		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ServerType: &serverType, ApiVersions: []*fmsg.PbApiVersion{{
 			ApiKey: &key, MinVersion: &minimum, MaxVersion: &maximum,
 		}}})
 		if err != nil {
@@ -492,7 +492,7 @@ func TestOpenNegotiatesOverTransport(t *testing.T) {
 		writeTransportResponse(t, serverConn, id, body)
 	}()
 	client, err := Open(context.Background(),
-		WithSeedBrokers("seed:9123"),
+		WithBootstrapServers("seed:9123"),
 		WithClientIdentity("coverage-test", "1.0"),
 		WithDialContext(func(context.Context, string, string) (net.Conn, error) { return clientConn, nil }),
 	)
@@ -517,8 +517,8 @@ func TestOpenAuthenticatesWithPlain(t *testing.T) {
 		apiKey := int32(fmsg.APIKeyApiVersions)
 		minimum, maximum := int32(0), int32(0)
 		authenticateKey := int32(fmsg.APIKeyAuthenticate)
-		role := int32(Coordinator)
-		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ServerType: &role, ApiVersions: []*fmsg.PbApiVersion{
+		serverType := int32(Coordinator)
+		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{ServerType: &serverType, ApiVersions: []*fmsg.PbApiVersion{
 			{ApiKey: &apiKey, MinVersion: &minimum, MaxVersion: &maximum},
 			{ApiKey: &authenticateKey, MinVersion: &minimum, MaxVersion: &maximum},
 		}})
@@ -544,7 +544,7 @@ func TestOpenAuthenticatesWithPlain(t *testing.T) {
 		writeTransportResponse(t, serverConn, id, nil)
 	}()
 	client, err := Open(context.Background(),
-		WithSeedBrokers("seed:9123"),
+		WithBootstrapServers("seed:9123"),
 		WithDialContext(func(context.Context, string, string) (net.Conn, error) { return clientConn, nil }),
 		WithAuthenticator(func() (Authenticator, error) {
 			auth = &testAuthenticator{protocol: "PLAIN", initial: true, tokens: [][]byte{[]byte("\x00alice\x00secret")}, completeAfter: 1}
@@ -563,7 +563,7 @@ func TestOpenAuthenticatesWithPlain(t *testing.T) {
 }
 
 func TestOpenDialFailure(t *testing.T) {
-	_, err := Open(context.Background(), WithSeedBrokers("seed:9123"), WithDialContext(func(context.Context, string, string) (net.Conn, error) {
+	_, err := Open(context.Background(), WithBootstrapServers("seed:9123"), WithDialContext(func(context.Context, string, string) (net.Conn, error) {
 		return nil, errors.New("dial failure")
 	}))
 	if err == nil {

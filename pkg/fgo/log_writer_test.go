@@ -29,10 +29,10 @@ type producedLog struct {
 	acks        int32
 }
 
-type fakeLogWriterBackend struct {
+type fakeAppendWriterBackend struct {
 	mu          sync.Mutex
 	physicalID  int64
-	locations   map[int32]Node
+	locations   map[int32]ServerNode
 	writerID    int64
 	metadataErr error
 	initErr     error
@@ -42,15 +42,15 @@ type fakeLogWriterBackend struct {
 	calls       []producedLog
 }
 
-func (b *fakeLogWriterBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error) {
+func (b *fakeAppendWriterBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
 	return b.physicalID, b.locations, b.metadataErr
 }
 
-func (b *fakeLogWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
+func (b *fakeAppendWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
 	return b.writerID, b.initErr
 }
 
-func (b *fakeLogWriterBackend) produce(
+func (b *fakeAppendWriterBackend) produce(
 	ctx context.Context,
 	input logProduceRequest,
 ) (int64, error) {
@@ -80,13 +80,13 @@ func (b *fakeLogWriterBackend) produce(
 	return int64(len(b.calls) * 10), nil
 }
 
-func (b *fakeLogWriterBackend) produced() []producedLog {
+func (b *fakeAppendWriterBackend) produced() []producedLog {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return append([]producedLog(nil), b.calls...)
 }
 
-func logWriterTable() Table {
+func appendWriterTable() Table {
 	return Table{
 		ID: 9, SchemaID: 3, Path: TablePath{Database: "db", Table: "events"}, Kind: LogTable,
 		BucketCount: 1,
@@ -97,12 +97,12 @@ func logWriterTable() Table {
 	}
 }
 
-func logBackend(bucketIDs ...int32) *fakeLogWriterBackend {
-	locations := make(map[int32]Node, len(bucketIDs))
+func logBackend(bucketIDs ...int32) *fakeAppendWriterBackend {
+	locations := make(map[int32]ServerNode, len(bucketIDs))
 	for _, id := range bucketIDs {
-		locations[id] = Node{ID: id + 10, Address: "tablet", Role: TabletServer}
+		locations[id] = ServerNode{ID: id + 10, Address: "tablet", ServerType: TabletServer}
 	}
-	return &fakeLogWriterBackend{physicalID: 9, locations: locations, writerID: 42}
+	return &fakeAppendWriterBackend{physicalID: 9, locations: locations, writerID: 42}
 }
 
 func TestFlussBucketMatchesJava091(t *testing.T) {
@@ -126,16 +126,16 @@ func TestFlussBucketMatchesJava091(t *testing.T) {
 	if _, err := sortedBuckets(nil); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("empty buckets error = %v", err)
 	}
-	if _, err := sortedBuckets(map[int32]Node{-1: {}}); !errors.Is(err, ErrMetadata) {
+	if _, err := sortedBuckets(map[int32]ServerNode{-1: {}}); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("negative bucket error = %v", err)
 	}
 }
 
-func TestLogWriterBatchesRowsAndAdvancesSequences(t *testing.T) {
+func TestAppendWriterBatchesRowsAndAdvancesSequences(t *testing.T) {
 	backend := logBackend(0)
-	writer, err := newLogWriter(
-		context.Background(), backend, logWriterTable(),
-		WithLogBatchLimits(1<<20, 2), WithLogBuffer(8), WithLogLinger(time.Hour), WithLogRequest(time.Second, 1),
+	writer, err := newAppendWriter(
+		context.Background(), backend, appendWriterTable(),
+		WithAppendBatchLimits(1<<20, 2), WithAppendBuffer(8), WithAppendLinger(time.Hour), WithAppendRequest(time.Second, 1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +171,7 @@ func assertLogBatchCalls(t *testing.T, calls []producedLog) {
 		t.Fatalf("produce calls = %d, want 3", len(calls))
 	}
 	for index, call := range calls {
-		batch, err := DecodeLogBatchRows(logWriterTable().Schema, call.records, true)
+		batch, err := DecodeLogBatchRows(appendWriterTable().Schema, call.records, true)
 		if err != nil || batch.WriterID != 42 || batch.BatchSequence != int32(index) {
 			t.Fatalf("batch %d = %#v, %v", index, batch, err)
 		}
@@ -181,13 +181,13 @@ func assertLogBatchCalls(t *testing.T, calls []producedLog) {
 	}
 }
 
-func TestLogWriterAssignmentsAndLinger(t *testing.T) {
-	table := logWriterTable()
+func TestAppendWriterAssignmentsAndLinger(t *testing.T) {
+	table := appendWriterTable()
 	table.BucketCount = 3
 	backend := logBackend(7, 2, 4)
-	writer, err := newLogWriter(
+	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithLogBucketAssignment(AssignmentRoundRobin), WithLogLinger(time.Millisecond),
+		WithAppendBucketAssignment(AssignmentRoundRobin), WithAppendLinger(time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func TestLogWriterAssignmentsAndLinger(t *testing.T) {
 
 	table.Schema.BucketKey = []string{"id"}
 	backend = logBackend(0, 1, 2)
-	writer, err = newLogWriter(context.Background(), backend, table, WithLogLinger(0))
+	writer, err = newAppendWriter(context.Background(), backend, table, WithAppendLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,11 +224,11 @@ func TestLogWriterAssignmentsAndLinger(t *testing.T) {
 	_ = writer.Close(context.Background())
 }
 
-func TestLogWriterFlushWaitsAndCancellationCompletes(t *testing.T) {
+func TestAppendWriterFlushWaitsAndCancellationCompletes(t *testing.T) {
 	release := make(chan struct{})
 	backend := logBackend(0)
 	backend.block = release
-	writer, err := newLogWriter(context.Background(), backend, logWriterTable(), WithLogLinger(0))
+	writer, err := newAppendWriter(context.Background(), backend, appendWriterTable(), WithAppendLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,10 +261,10 @@ func TestLogWriterFlushWaitsAndCancellationCompletes(t *testing.T) {
 	}
 }
 
-func TestLogWriterFailurePoisonsOnlyBucket(t *testing.T) {
+func TestAppendWriterFailurePoisonsOnlyBucket(t *testing.T) {
 	backend := logBackend(0)
 	backend.produceErr = errors.New("ambiguous transport failure")
-	writer, err := newLogWriter(context.Background(), backend, logWriterTable(), WithLogLinger(0))
+	writer, err := newAppendWriter(context.Background(), backend, appendWriterTable(), WithAppendLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestLogWriterFailurePoisonsOnlyBucket(t *testing.T) {
 	}
 }
 
-func TestLogWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
+func TestAppendWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 	backend := logBackend(0)
 	backend.produceErrs = []error{
 		responseServerError(
@@ -289,9 +289,9 @@ func TestLogWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 		),
 		nil,
 	}
-	writer, err := newLogWriter(
-		context.Background(), backend, logWriterTable(), WithLogLinger(0),
-		WithLogRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
+	writer, err := newAppendWriter(
+		context.Background(), backend, appendWriterTable(), WithAppendLinger(0),
+		WithAppendRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -305,7 +305,7 @@ func TestLogWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 	if len(calls) != 2 || !bytes.Equal(calls[0].records, calls[1].records) {
 		t.Fatalf("produce attempts = %#v", calls)
 	}
-	first, err := DecodeLogBatchRows(logWriterTable().Schema, calls[0].records, true)
+	first, err := DecodeLogBatchRows(appendWriterTable().Schema, calls[0].records, true)
 	if err != nil || first.WriterID != 42 || first.BatchSequence != 0 {
 		t.Fatalf("retried batch = %#v, %v", first, err)
 	}
@@ -314,33 +314,33 @@ func TestLogWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 	}
 }
 
-func TestLogWriterRowFormats(t *testing.T) {
+func TestAppendWriterRowFormats(t *testing.T) {
 	for _, test := range []struct {
-		format    LogWriteFormat
+		format    LogFormat
 		compacted bool
 	}{
-		{LogWriteFormatCompacted, true},
-		{LogWriteFormatIndexed, false},
+		{LogFormatCompacted, true},
+		{LogFormatIndexed, false},
 	} {
 		t.Run(string(test.format), func(t *testing.T) {
-			testLogWriterRowFormat(t, test.format, test.compacted)
+			testAppendWriterRowFormat(t, test.format, test.compacted)
 		})
 	}
-	config, err := logWriterConfig(nil)
-	if err != nil || config.Format != LogWriteFormatAuto ||
+	config, err := appendWriterConfig(nil)
+	if err != nil || config.Format != LogFormatAuto ||
 		config.ArrowCompression != ArrowCompressionNone {
 		t.Fatalf("default format config = %#v, %v", config, err)
 	}
 }
 
-func testLogWriterRowFormat(t *testing.T, format LogWriteFormat, compacted bool) {
+func testAppendWriterRowFormat(t *testing.T, format LogFormat, compacted bool) {
 	t.Helper()
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.Properties = map[string]string{"table.log.format": strings.ToUpper(string(format))}
 	backend := logBackend(0)
-	writer, err := newLogWriter(
+	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithLogWriteFormat(format), WithLogLinger(0),
+		WithAppendLogFormat(format), WithAppendLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -359,8 +359,8 @@ func testLogWriterRowFormat(t *testing.T, format LogWriteFormat, compacted bool)
 	}
 }
 
-func TestLogWriterArrowAndPartition(t *testing.T) {
-	table := logWriterTable()
+func TestAppendWriterArrowAndPartition(t *testing.T) {
+	table := appendWriterTable()
 	table.BucketCount = 2
 	backend := logBackend(1, 3)
 	backend.physicalID = 88
@@ -374,10 +374,10 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 	builder.Release()
 	defer record.Release()
 
-	writer, err := newLogWriter(
+	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithLogPartition("day=1"), WithLogLinger(0),
-		WithLogWriteFormat(LogWriteFormatArrow), WithLogArrowCompression(ArrowCompressionLZ4),
+		WithAppendPartition("day=1"), WithAppendLinger(0),
+		WithAppendLogFormat(LogFormatArrow), WithAppendArrowCompression(ArrowCompressionLZ4),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -403,9 +403,9 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rowWriter, err := newLogWriter(
+	rowWriter, err := newAppendWriter(
 		context.Background(), logBackend(1, 3), table,
-		WithLogWriteFormat(LogWriteFormatIndexed),
+		WithAppendLogFormat(LogFormatIndexed),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -420,7 +420,7 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 	badRecord := badBuilder.NewRecordBatch()
 	badBuilder.Release()
 	defer badRecord.Release()
-	autoWriter, err := newLogWriter(context.Background(), logBackend(1, 3), table)
+	autoWriter, err := newAppendWriter(context.Background(), logBackend(1, 3), table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,8 +432,8 @@ func TestLogWriterArrowAndPartition(t *testing.T) {
 	_ = autoWriter.Close(context.Background())
 }
 
-func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
-	table := logWriterTable()
+func TestAppendWriterRejectsInvalidConfiguration(t *testing.T) {
+	table := appendWriterTable()
 	primary := table
 	primary.Kind = PrimaryKeyTable
 	arrowTable := table
@@ -441,35 +441,35 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		table   Table
-		backend *fakeLogWriterBackend
-		options []LogWriterOption
+		backend *fakeAppendWriterBackend
+		options []AppendWriterOption
 		target  error
 	}{
 		{"primary", primary, logBackend(0), nil, ErrTableKind},
-		{"nil option", table, logBackend(0), []LogWriterOption{nil}, ErrInvalidConfig},
-		{"bad limits", table, logBackend(0), []LogWriterOption{WithLogBatchLimits(1, 0)}, ErrInvalidConfig},
-		{"bad buffer", table, logBackend(0), []LogWriterOption{WithLogBuffer(0)}, ErrInvalidConfig},
-		{"bad concurrency", table, logBackend(0), []LogWriterOption{WithLogConcurrency(0)}, ErrInvalidConfig},
-		{"bad linger", table, logBackend(0), []LogWriterOption{WithLogLinger(-1)}, ErrInvalidConfig},
-		{"bad request", table, logBackend(0), []LogWriterOption{WithLogRequest(0, 2)}, ErrInvalidConfig},
+		{"nil option", table, logBackend(0), []AppendWriterOption{nil}, ErrInvalidConfig},
+		{"bad limits", table, logBackend(0), []AppendWriterOption{WithAppendBatchLimits(1, 0)}, ErrInvalidConfig},
+		{"bad buffer", table, logBackend(0), []AppendWriterOption{WithAppendBuffer(0)}, ErrInvalidConfig},
+		{"bad concurrency", table, logBackend(0), []AppendWriterOption{WithAppendConcurrency(0)}, ErrInvalidConfig},
+		{"bad linger", table, logBackend(0), []AppendWriterOption{WithAppendLinger(-1)}, ErrInvalidConfig},
+		{"bad request", table, logBackend(0), []AppendWriterOption{WithAppendRequest(0, 2)}, ErrInvalidConfig},
 		{
 			"request timeout overflow", table, logBackend(0),
-			[]LogWriterOption{WithLogRequest((time.Duration(math.MaxInt32)+1)*time.Millisecond, 1)},
+			[]AppendWriterOption{WithAppendRequest((time.Duration(math.MaxInt32)+1)*time.Millisecond, 1)},
 			ErrInvalidConfig,
 		},
-		{"bad assignment", table, logBackend(0), []LogWriterOption{WithLogBucketAssignment("random")}, ErrInvalidConfig},
-		{"bad format", table, logBackend(0), []LogWriterOption{WithLogWriteFormat("unknown")}, ErrInvalidConfig},
-		{"bad compression", table, logBackend(0), []LogWriterOption{WithLogArrowCompression(ArrowCompression(99))}, ErrInvalidConfig},
-		{"row compression", table, logBackend(0), []LogWriterOption{WithLogWriteFormat(LogWriteFormatIndexed), WithLogArrowCompression(ArrowCompressionZSTD)}, ErrInvalidConfig},
-		{"table format", arrowTable, logBackend(0), []LogWriterOption{WithLogWriteFormat(LogWriteFormatCompacted)}, ErrInvalidConfig},
+		{"bad assignment", table, logBackend(0), []AppendWriterOption{WithAppendBucketAssignment("random")}, ErrInvalidConfig},
+		{"bad format", table, logBackend(0), []AppendWriterOption{WithAppendLogFormat("unknown")}, ErrInvalidConfig},
+		{"bad compression", table, logBackend(0), []AppendWriterOption{WithAppendArrowCompression(ArrowCompression(99))}, ErrInvalidConfig},
+		{"row compression", table, logBackend(0), []AppendWriterOption{WithAppendLogFormat(LogFormatIndexed), WithAppendArrowCompression(ArrowCompressionZSTD)}, ErrInvalidConfig},
+		{"table format", arrowTable, logBackend(0), []AppendWriterOption{WithAppendLogFormat(LogFormatCompacted)}, ErrInvalidConfig},
 		{"no buckets", table, logBackend(), nil, ErrMetadata},
-		{"metadata error", table, &fakeLogWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
-		{"init error", table, &fakeLogWriterBackend{physicalID: 9, locations: logBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
+		{"metadata error", table, &fakeAppendWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
+		{"init error", table, &fakeAppendWriterBackend{physicalID: 9, locations: logBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := newLogWriter(context.Background(), test.backend, test.table, test.options...)
+			_, err := newAppendWriter(context.Background(), test.backend, test.table, test.options...)
 			if !errors.Is(err, test.target) {
-				t.Fatalf("newLogWriter() error = %v, want %v", err, test.target)
+				t.Fatalf("newAppendWriter() error = %v, want %v", err, test.target)
 			}
 		})
 	}
@@ -478,10 +478,10 @@ func TestLogWriterRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
-func TestLogWriterRejectsInvalidOperations(t *testing.T) {
-	table := logWriterTable()
-	writer, err := newLogWriter(
-		context.Background(), logBackend(0), table, WithLogLinger(time.Hour),
+func TestAppendWriterRejectsInvalidOperations(t *testing.T) {
+	table := appendWriterTable()
+	writer, err := newAppendWriter(
+		context.Background(), logBackend(0), table, WithAppendLinger(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -533,12 +533,12 @@ func TestLogWriterRejectsInvalidOperations(t *testing.T) {
 	}
 }
 
-func TestLogWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
+func TestAppendWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	release := make(chan struct{})
 	backend := logBackend(0)
 	backend.block = release
-	writer, err := newLogWriter(
-		context.Background(), backend, logWriterTable(), WithLogLinger(0),
+	writer, err := newAppendWriter(
+		context.Background(), backend, appendWriterTable(), WithAppendLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -563,12 +563,12 @@ func TestLogWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	}
 }
 
-func TestLogWriterRequestTimeoutTerminatesClose(t *testing.T) {
+func TestAppendWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	backend := logBackend(0)
 	backend.block = make(chan struct{})
-	writer, err := newLogWriter(
-		context.Background(), backend, logWriterTable(),
-		WithLogLinger(time.Hour), WithLogRequest(20*time.Millisecond, -1),
+	writer, err := newAppendWriter(
+		context.Background(), backend, appendWriterTable(),
+		WithAppendLinger(time.Hour), WithAppendRequest(20*time.Millisecond, -1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -591,13 +591,13 @@ func TestLogWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	}
 }
 
-func TestLogWriterClosePreservesTerminalFailure(t *testing.T) {
+func TestAppendWriterClosePreservesTerminalFailure(t *testing.T) {
 	release := make(chan struct{})
 	backend := logBackend(0)
 	backend.block = release
 	backend.produceErr = errWriterTerminal
-	writer, err := newLogWriter(
-		context.Background(), backend, logWriterTable(), WithLogLinger(time.Hour),
+	writer, err := newAppendWriter(
+		context.Background(), backend, appendWriterTable(), WithAppendLinger(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -617,11 +617,11 @@ func TestLogWriterClosePreservesTerminalFailure(t *testing.T) {
 	}
 }
 
-func TestLogWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
+func TestAppendWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
 	backend := logBackend(0)
 	backend.produceErr = errWriterTerminal
-	writer, err := newLogWriter(
-		context.Background(), backend, logWriterTable(), WithLogLinger(time.Hour),
+	writer, err := newAppendWriter(
+		context.Background(), backend, appendWriterTable(), WithAppendLinger(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -639,14 +639,14 @@ func TestLogWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
 	}
 }
 
-func TestLogWriterMovesStickyBatchAfterSizeBoundary(t *testing.T) {
+func TestAppendWriterMovesStickyBatchAfterSizeBoundary(t *testing.T) {
 	backend := logBackend(0, 1)
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.BucketCount = 2
-	writer, err := newLogWriter(
+	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithLogLinger(time.Hour),
-		WithLogBatchLimits(logBatchV0HeaderSize+1, 100),
+		WithAppendLinger(time.Hour),
+		WithAppendBatchLimits(logBatchV0HeaderSize+1, 100),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -669,7 +669,7 @@ func TestLogWriterMovesStickyBatchAfterSizeBoundary(t *testing.T) {
 	}
 }
 
-func TestClientLogWriterBackendUsesFluss091Messages(t *testing.T) {
+func TestClientAppendWriterBackendUsesFluss091Messages(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	var produced *fmsg.ProduceLogRequest
 	client := routedWriterClient(t,
@@ -703,8 +703,8 @@ func TestClientLogWriterBackendUsesFluss091Messages(t *testing.T) {
 			return response, nil
 		},
 	)
-	table := logWriterTable()
-	writer, err := client.NewLogWriter(context.Background(), table, WithLogLinger(0))
+	table := appendWriterTable()
+	writer, err := client.NewAppendWriter(context.Background(), table, WithAppendLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -723,7 +723,7 @@ func TestClientLogWriterBackendUsesFluss091Messages(t *testing.T) {
 	_ = writer.Close(context.Background())
 }
 
-func TestClientLogWriterBackendResponseErrors(t *testing.T) {
+func TestClientAppendWriterBackendResponseErrors(t *testing.T) {
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
 	client := routedWriterClient(t,
 		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
@@ -745,7 +745,7 @@ func TestClientLogWriterBackendResponseErrors(t *testing.T) {
 			return response, nil
 		},
 	)
-	backend := clientLogWriterBackend{client: client}
+	backend := clientAppendWriterBackend{client: client}
 	if _, err := backend.produce(context.Background(), logProduceRequest{
 		path: path, tableID: 9, partitionID: -1, records: []byte{1}, timeout: time.Second, acks: 1,
 	}); !errors.Is(err, ErrMetadata) {
@@ -758,7 +758,7 @@ func TestClientLogWriterBackendResponseErrors(t *testing.T) {
 		t.Fatalf("timeout error = %v", err)
 	}
 
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
+	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.requester = requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
 		return response, nil
@@ -784,14 +784,14 @@ func TestClientLogWriterBackendResponseErrors(t *testing.T) {
 	}
 }
 
-func TestClientLogWriterBackendMetadataFailures(t *testing.T) {
+func TestClientAppendWriterBackendMetadataFailures(t *testing.T) {
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
 	client := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
 		return response, nil
 	}), nil)
 	client.versions[fmsg.APIKeyGetMetadata] = 0
-	backend := clientLogWriterBackend{client: client}
+	backend := clientAppendWriterBackend{client: client}
 	if _, _, err := backend.metadata(context.Background(), path); err == nil {
 		t.Fatal("unexpected metadata response succeeded")
 	}
@@ -803,18 +803,18 @@ func routedWriterClient(
 	tabletHandler requesterFunc,
 ) *Client {
 	t.Helper()
-	coordinatorNode := Node{ID: 1, Address: "coordinator:9123", Role: Coordinator}
-	tabletNode := Node{ID: 2, Address: "tablet:9123", Role: TabletServer}
+	coordinatorNode := ServerNode{ID: 1, Address: "coordinator:9123", ServerType: Coordinator}
+	tabletNode := ServerNode{ID: 2, Address: "tablet:9123", ServerType: TabletServer}
 	coordinator := newClient(coordinatorHandler, nil)
-	coordinator.serverID, coordinator.address, coordinator.role = 1, coordinatorNode.Address, Coordinator
+	coordinator.serverID, coordinator.address, coordinator.serverType = 1, coordinatorNode.Address, Coordinator
 	coordinator.versions[fmsg.APIKeyGetMetadata] = 0
 	tablet := newClient(tabletHandler, nil)
-	tablet.serverID, tablet.address, tablet.role = 2, tabletNode.Address, TabletServer
+	tablet.serverID, tablet.address, tablet.serverType = 2, tabletNode.Address, TabletServer
 	tablet.versions[fmsg.APIKeyInitWriter] = 0
 	tablet.versions[fmsg.APIKeyProduceLog] = 0
 	manager := newConnectionManager(config{})
-	manager.clients[connectionKey{id: 1, address: coordinatorNode.Address, role: Coordinator}] = coordinator
-	manager.clients[connectionKey{id: 2, address: tabletNode.Address, role: TabletServer}] = tablet
+	manager.clients[connectionKey{id: 1, address: coordinatorNode.Address, serverType: Coordinator}] = coordinator
+	manager.clients[connectionKey{id: 2, address: tabletNode.Address, serverType: TabletServer}] = tablet
 	client := newClient(nil, nil)
 	client.manager = manager
 	client.router = NewRouter(coordinatorNode, client.fetchTableMetadata).

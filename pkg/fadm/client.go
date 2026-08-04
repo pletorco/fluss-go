@@ -16,7 +16,7 @@ import (
 type requester interface {
 	RequestCoordinator(context.Context, fmsg.Request) (fmsg.Response, error)
 	RequestBucket(context.Context, fgo.PhysicalTablePath, int32, fmsg.Request) (fmsg.Response, error)
-	OpenTable(context.Context, fgo.TablePath) (fgo.Table, error)
+	GetTable(context.Context, fgo.TablePath) (fgo.Table, error)
 }
 
 // Client performs administrative operations through a shared fgo client.
@@ -33,8 +33,8 @@ func New(client *fgo.Client) (*Client, error) {
 
 func newClient(requester requester) *Client { return &Client{requester: requester} }
 
-// Database is the server-reported metadata for one database.
-type Database struct {
+// DatabaseInfo is the server-reported metadata for one database.
+type DatabaseInfo struct {
 	// Name is the logical database name.
 	Name string
 	// Comment is optional user metadata.
@@ -49,8 +49,8 @@ type Database struct {
 	TableCount int32
 }
 
-// DatabaseDefinition contains optional metadata used when creating a database.
-type DatabaseDefinition struct {
+// DatabaseDescriptor contains optional metadata used when creating a database.
+type DatabaseDescriptor struct {
 	// Comment is optional user metadata.
 	Comment string
 	// Properties contains custom database properties.
@@ -58,7 +58,7 @@ type DatabaseDefinition struct {
 }
 
 // CreateDatabase creates name, optionally succeeding when it already exists.
-func (c *Client) CreateDatabase(ctx context.Context, name string, definition DatabaseDefinition, ignoreIfExists bool) error {
+func (c *Client) CreateDatabase(ctx context.Context, name string, definition DatabaseDescriptor, ignoreIfExists bool) error {
 	if err := validateName("database", name); err != nil {
 		return err
 	}
@@ -101,8 +101,8 @@ func (c *Client) DropDatabase(ctx context.Context, name string, ignoreIfNotExist
 	return err
 }
 
-// ListDatabases returns databases in server order.
-func (c *Client) ListDatabases(ctx context.Context) ([]Database, error) {
+// ListDatabaseSummaries returns databases in server order.
+func (c *Client) ListDatabaseSummaries(ctx context.Context) ([]DatabaseInfo, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyListDatabases, 0)
 	if err != nil {
 		return nil, err
@@ -116,17 +116,17 @@ func (c *Client) ListDatabases(ctx context.Context) ([]Database, error) {
 	if !ok {
 		return nil, unexpected("list databases", response)
 	}
-	databases := make([]Database, 0, max(len(message.GetDatabaseName()), len(message.GetDatabaseSummary())))
+	databases := make([]DatabaseInfo, 0, max(len(message.GetDatabaseName()), len(message.GetDatabaseSummary())))
 	if len(message.GetDatabaseSummary()) != 0 {
 		for _, summary := range message.GetDatabaseSummary() {
-			databases = append(databases, Database{
+			databases = append(databases, DatabaseInfo{
 				Name: summary.GetDatabaseName(), CreatedAt: millis(summary.GetCreatedTime()),
 				TableCount: summary.GetTableCount(),
 			})
 		}
 	} else {
 		for _, name := range message.GetDatabaseName() {
-			databases = append(databases, Database{Name: name})
+			databases = append(databases, DatabaseInfo{Name: name})
 		}
 	}
 	return databases, nil
@@ -153,39 +153,39 @@ func (c *Client) DatabaseExists(ctx context.Context, name string) (bool, error) 
 	return message.GetExists(), nil
 }
 
-// DescribeDatabase returns authoritative metadata for name.
-func (c *Client) DescribeDatabase(ctx context.Context, name string) (Database, error) {
+// GetDatabaseInfo returns authoritative metadata for name.
+func (c *Client) GetDatabaseInfo(ctx context.Context, name string) (DatabaseInfo, error) {
 	if err := validateName("database", name); err != nil {
-		return Database{}, err
+		return DatabaseInfo{}, err
 	}
 	request, err := fmsg.NewRequest(fmsg.APIKeyGetDatabaseInfo, 0)
 	if err != nil {
-		return Database{}, err
+		return DatabaseInfo{}, err
 	}
 	request.Message().(*fmsg.GetDatabaseInfoRequest).DatabaseName = proto.String(name)
 	response, err := c.requester.RequestCoordinator(ctx, request)
 	if err != nil {
-		return Database{}, err
+		return DatabaseInfo{}, err
 	}
 	message, ok := response.Message().(*fmsg.GetDatabaseInfoResponse)
 	if !ok {
-		return Database{}, unexpected("describe database", response)
+		return DatabaseInfo{}, unexpected("describe database", response)
 	}
 	var definition struct {
 		Comment          string            `json:"comment"`
 		CustomProperties map[string]string `json:"custom_properties"`
 	}
 	if err := json.Unmarshal(message.GetDatabaseJson(), &definition); err != nil {
-		return Database{}, fmt.Errorf("%w: invalid database descriptor: %v", fgo.ErrValidation, err)
+		return DatabaseInfo{}, fmt.Errorf("%w: invalid database descriptor: %v", fgo.ErrValidation, err)
 	}
-	return Database{
+	return DatabaseInfo{
 		Name: name, Comment: definition.Comment, Properties: definition.CustomProperties,
 		CreatedAt: millis(message.GetCreatedTime()), ModifiedAt: millis(message.GetModifiedTime()),
 	}, nil
 }
 
-// TableDefinition contains the schema and properties used to create a table.
-type TableDefinition struct {
+// TableDescriptor contains the schema and properties used to create a table.
+type TableDescriptor struct {
 	// Schema defines columns, keys, and logical types.
 	Schema fgo.Schema
 	// Comment is optional user metadata.
@@ -199,7 +199,7 @@ type TableDefinition struct {
 }
 
 // JSON validates and encodes a Fluss table definition.
-func (d TableDefinition) JSON() ([]byte, error) {
+func (d TableDescriptor) JSON() ([]byte, error) {
 	if err := d.Schema.Validate(); err != nil {
 		return nil, err
 	}
@@ -227,7 +227,7 @@ func (d TableDefinition) JSON() ([]byte, error) {
 }
 
 // CreateTable creates path from definition.
-func (c *Client) CreateTable(ctx context.Context, path fgo.TablePath, definition TableDefinition, ignoreIfExists bool) error {
+func (c *Client) CreateTable(ctx context.Context, path fgo.TablePath, definition TableDescriptor, ignoreIfExists bool) error {
 	if err := path.Validate(); err != nil {
 		return err
 	}
@@ -308,16 +308,16 @@ func (c *Client) TableExists(ctx context.Context, path fgo.TablePath) (bool, err
 	return message.GetExists(), nil
 }
 
-// DescribeTable returns authoritative table metadata and schema.
-func (c *Client) DescribeTable(ctx context.Context, path fgo.TablePath) (fgo.Table, error) {
+// GetTableInfo returns authoritative table metadata and schema.
+func (c *Client) GetTableInfo(ctx context.Context, path fgo.TablePath) (fgo.Table, error) {
 	if err := path.Validate(); err != nil {
 		return fgo.Table{}, err
 	}
-	return c.requester.OpenTable(ctx, path)
+	return c.requester.GetTable(ctx, path)
 }
 
-// TableSchema returns one schema version for path.
-func (c *Client) TableSchema(ctx context.Context, path fgo.TablePath, schemaID int32) (fgo.Schema, error) {
+// GetTableSchema returns one schema version for path.
+func (c *Client) GetTableSchema(ctx context.Context, path fgo.TablePath, schemaID int32) (fgo.Schema, error) {
 	if err := path.Validate(); err != nil {
 		return fgo.Schema{}, err
 	}
@@ -341,25 +341,25 @@ func (c *Client) TableSchema(ctx context.Context, path fgo.TablePath, schemaID i
 	return fgo.ParseSchemaJSON(schema.GetSchemaJson())
 }
 
-// ConfigOp identifies a table or cluster configuration mutation.
-type ConfigOp int32
+// AlterConfigOpType identifies a table or cluster configuration mutation.
+type AlterConfigOpType int32
 
 // Supported configuration mutation operations.
 const (
-	ConfigSet ConfigOp = iota
+	ConfigSet AlterConfigOpType = iota
 	ConfigDelete
 	ConfigAppend
 	ConfigSubtract
 )
 
-// ConfigChange applies one operation to a configuration key.
-type ConfigChange struct {
+// AlterConfig applies one operation to a configuration key.
+type AlterConfig struct {
 	// Key identifies the table configuration entry.
 	Key string
 	// Value is required except for [ConfigDelete].
 	Value *string
 	// Op selects set, delete, append, or subtract semantics.
-	Op ConfigOp
+	Op AlterConfigOpType
 }
 
 // AddColumn describes a column appended or inserted by an alter-table request.
@@ -385,7 +385,7 @@ type RenameColumn struct {
 // AlterTable groups configuration and schema changes into one request.
 type AlterTable struct {
 	// Config contains configuration operations.
-	Config []ConfigChange
+	Config []AlterConfig
 	// Add contains columns to create.
 	Add []AddColumn
 	// Drop contains existing column names to remove.
@@ -408,7 +408,7 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 	}
 	message := request.Message().(*fmsg.AlterTableRequest)
 	message.TablePath, message.IgnoreIfNotExists = pbTablePath(path), proto.Bool(ignoreIfNotExists)
-	if err := appendConfigChanges(message, changes.Config); err != nil {
+	if err := appendAlterConfigs(message, changes.Config); err != nil {
 		return err
 	}
 	if err := appendAddedColumns(message, changes.Add); err != nil {
@@ -424,7 +424,7 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 	return err
 }
 
-func appendConfigChanges(message *fmsg.AlterTableRequest, changes []ConfigChange) error {
+func appendAlterConfigs(message *fmsg.AlterTableRequest, changes []AlterConfig) error {
 	for _, change := range changes {
 		if change.Key == "" || change.Op < ConfigSet || change.Op > ConfigSubtract {
 			return fmt.Errorf("%w: invalid table config change", fgo.ErrInvalidConfig)
@@ -514,8 +514,8 @@ func (p PartitionSpec) proto() *fmsg.PbPartitionSpec {
 	return spec
 }
 
-// Partition is one named physical partition and its server identity.
-type Partition struct {
+// PartitionInfo is one named physical partition and its server identity.
+type PartitionInfo struct {
 	// ID is the server-assigned physical partition identifier.
 	ID int64
 	// Spec contains partition-key names and canonical values.
@@ -560,8 +560,8 @@ func (c *Client) DropPartition(ctx context.Context, path fgo.TablePath, spec Par
 	return err
 }
 
-// ListPartitions returns partitions matching partial.
-func (c *Client) ListPartitions(ctx context.Context, path fgo.TablePath, partial PartitionSpec) ([]Partition, error) {
+// ListPartitionInfos returns partitions matching partial.
+func (c *Client) ListPartitionInfos(ctx context.Context, path fgo.TablePath, partial PartitionSpec) ([]PartitionInfo, error) {
 	if err := path.Validate(); err != nil {
 		return nil, err
 	}
@@ -585,9 +585,9 @@ func (c *Client) ListPartitions(ctx context.Context, path fgo.TablePath, partial
 	if !ok {
 		return nil, unexpected("list partitions", response)
 	}
-	partitions := make([]Partition, len(list.GetPartitionsInfo()))
+	partitions := make([]PartitionInfo, len(list.GetPartitionsInfo()))
 	for index, item := range list.GetPartitionsInfo() {
-		partitions[index] = Partition{ID: item.GetPartitionId(), Spec: partitionSpec(item.GetPartitionSpec())}
+		partitions[index] = PartitionInfo{ID: item.GetPartitionId(), Spec: partitionSpec(item.GetPartitionSpec())}
 	}
 	return partitions, nil
 }

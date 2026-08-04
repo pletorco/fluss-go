@@ -115,7 +115,7 @@ func (o *Observer) ObserveMetric(event fgo.MetricEvent) {
 		attribute.Int64("fluss.operation", int64(event.Operation)),
 		attribute.Int64("fluss.error.class", int64(event.ErrorClass)),
 		attribute.Int64("fluss.api.key", int64(event.APIKey)),
-		attribute.Int64("fluss.server.role", int64(event.ServerRole)),
+		attribute.Int64("fluss.server.type", int64(event.ServerType)),
 		attribute.Bool("fluss.failed", event.Failed),
 	))
 	o.events.Add(ctx, 1, attributes)

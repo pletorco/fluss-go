@@ -22,7 +22,7 @@ The client does not guess defaults or perform numeric or temporal coercion.
 ## Reader lifecycle
 
 The target result schema is the `fgo.Table.Schema` supplied when a lookup or
-scanner is created. After `ALTER_TABLE`, call `OpenTable` until it returns a
+scanner is created. After `ALTER_TABLE`, call `GetTable` until it returns a
 different schema ID, then create new writers and readers from that refreshed
 `Table`. Existing readers keep their original result shape and do not silently
 change columns while in use.

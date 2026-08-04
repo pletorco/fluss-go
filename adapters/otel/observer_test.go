@@ -170,7 +170,7 @@ func TestObserverMapsBoundedMetricsAndAttributes(t *testing.T) {
 	}
 	observer.ObserveMetric(fgo.MetricEvent{
 		Kind: fgo.MetricWriteBatch, Operation: fgo.MetricOperationKVWrite,
-		APIKey: fmsg.APIKeyPutKv, ServerRole: fgo.TabletServer,
+		APIKey: fmsg.APIKeyPutKv, ServerType: fgo.TabletServer,
 		Duration: 2 * time.Second, QueueTime: 500 * time.Millisecond,
 		Attempt: 2, QueueSize: 3, Records: 4, Bytes: 5, Lag: -1,
 		Failed: true, ErrorClass: fgo.MetricErrorTimeout,
@@ -220,7 +220,7 @@ func assertMeasurements(
 		for _, item := range attributes {
 			switch string(item.Key) {
 			case "fluss.event.kind", "fluss.operation", "fluss.error.class",
-				"fluss.api.key", "fluss.server.role", "fluss.failed":
+				"fluss.api.key", "fluss.server.type", "fluss.failed":
 			default:
 				t.Fatalf("unexpected attribute %q", item.Key)
 			}

@@ -52,15 +52,15 @@ resolution. The initial call counts toward `MaxAttempts`, backoff observes the
 caller context, and cancellation stops further attempts.
 
 Point and prefix lookups, log fetches, and mutations are not retried by this
-client-wide policy. `LookupClient` has a separate bounded read-only policy;
+client-wide policy. `Lookuper` has a separate bounded read-only policy;
 insert-if-not-exists rejects more than one attempt. Bucket requests may
 invalidate stale metadata and
 reroute once after a server metadata error. The metadata response indicates
 that the addressed server could not perform the operation; this is separate
 from retrying an ambiguous transport failure.
 
-Log and KV writers have a separate, default-disabled retry policy configured
-with `WithLogRetryPolicy` or `WithKVRetryPolicy`. More than one attempt requires
+Log and upsert writers have a separate, default-disabled retry policy configured
+with `WithAppendRetryPolicy` or `WithUpsertRetryPolicy`. More than one attempt requires
 `acks=-1`. A retry reuses the exact encoded bytes, writer ID, and per-bucket
 sequence, is bounded by the original request timeout, and occurs only for
 typed retriable server errors or connection failures. A duplicate-sequence
@@ -124,6 +124,6 @@ original key, prefix, ACL, or bucket identity in application diagnostics.
 Contexts bound waiting and request work; they do not provide a distributed
 transaction rollback. If cancellation races with a mutation, classify the
 outcome as uncertain until the API or application state proves otherwise.
-Close child writers, scanners, and lookup clients before closing the shared
+Close child writers, scanners, and lookupers before closing the shared
 client. `Client.Close` is idempotent and prevents new requests, but it cannot
 revoke a mutation already accepted by the server.

@@ -12,24 +12,24 @@ import (
 	"github.com/pletorco/fluss-go/pkg/fmsg"
 )
 
-// ServerRole identifies a Fluss RPC server advertised by ApiVersions.
-type ServerRole int32
+// ServerType identifies a Fluss RPC server advertised by ApiVersions.
+type ServerType int32
 
-// Fluss server roles reported during API negotiation.
+// Fluss server types reported during API negotiation.
 const (
-	// UnknownServerRole represents an unrecognized server role.
-	UnknownServerRole ServerRole = -1
-	Coordinator       ServerRole = 1
-	TabletServer      ServerRole = 2
+	// UnknownServerType represents an unrecognized server type.
+	UnknownServerType ServerType = -1
+	Coordinator       ServerType = 1
+	TabletServer      ServerType = 2
 )
 
-// ErrServerRole reports that a connection negotiated an unexpected server role.
-var ErrServerRole = errors.New("fgo: unexpected server role")
+// ErrServerType reports that a connection negotiated an unexpected server type.
+var ErrServerType = errors.New("fgo: unexpected server type")
 
 type connectionKey struct {
-	id      int32
-	address string
-	role    ServerRole
+	id         int32
+	address    string
+	serverType ServerType
 }
 
 type connectionManager struct {
@@ -57,7 +57,7 @@ func newConnectionManager(cfg config) *connectionManager {
 
 func (m *connectionManager) bootstrap(ctx context.Context) (*Client, error) {
 	var failures []error
-	for _, address := range m.cfg.seeds {
+	for _, address := range m.cfg.bootstrapServers {
 		client, err := m.get(ctx, address, Coordinator)
 		if err == nil {
 			return client, nil
@@ -70,19 +70,19 @@ func (m *connectionManager) bootstrap(ctx context.Context) (*Client, error) {
 	return nil, fmt.Errorf("fgo: bootstrap coordinator: %w", errors.Join(failures...))
 }
 
-func (m *connectionManager) get(ctx context.Context, address string, role ServerRole) (*Client, error) {
-	return m.getNode(ctx, Node{ID: -1, Address: address, Role: role})
+func (m *connectionManager) get(ctx context.Context, address string, serverType ServerType) (*Client, error) {
+	return m.getNode(ctx, ServerNode{ID: -1, Address: address, ServerType: serverType})
 }
 
-func (m *connectionManager) getNode(ctx context.Context, node Node) (*Client, error) {
-	address, role := node.Address, node.Role
+func (m *connectionManager) getNode(ctx context.Context, node ServerNode) (*Client, error) {
+	address, serverType := node.Address, node.ServerType
 	if address == "" {
 		return nil, fmt.Errorf("%w: empty server address", ErrInvalidConfig)
 	}
-	if _, err := serverRole(int32(role)); err != nil {
+	if _, err := parseServerType(int32(serverType)); err != nil {
 		return nil, err
 	}
-	key := connectionKey{id: node.ID, address: address, role: role}
+	key := connectionKey{id: node.ID, address: address, serverType: serverType}
 	if client, found, err := m.cachedClient(key); found || err != nil {
 		return client, err
 	}
@@ -111,7 +111,7 @@ func (m *connectionManager) openManagedConnection(
 	if client, found, err := m.cachedClient(key); found || err != nil {
 		return client, err
 	}
-	client, err := m.open(ctx, key.address, key.role)
+	client, err := m.open(ctx, key.address, key.serverType)
 	m.mu.Lock()
 	if m.closed && err == nil {
 		err = ErrClosed
@@ -127,11 +127,11 @@ func (m *connectionManager) openManagedConnection(
 	return client, err
 }
 
-func (m *connectionManager) open(ctx context.Context, address string, expectedRole ServerRole) (*Client, error) {
+func (m *connectionManager) open(ctx context.Context, address string, expectedServerType ServerType) (*Client, error) {
 	started := metricStart(m.cfg.observer)
 	conn, err := m.cfg.dialContext(ctx, "tcp", address)
 	observeMetric(m.cfg.observer, MetricEvent{
-		Kind: MetricRemoteIO, Operation: MetricOperationDial, ServerRole: expectedRole,
+		Kind: MetricRemoteIO, Operation: MetricOperationDial, ServerType: expectedServerType,
 		Duration: metricDuration(started), Failed: err != nil, ErrorClass: metricErrorClass(err),
 	})
 	if err != nil {
@@ -156,16 +156,16 @@ func (m *connectionManager) open(ctx context.Context, address string, expectedRo
 		_ = client.shutdown()
 		return nil, err
 	}
-	role, err := serverRole(client.serverType)
+	serverType, err := parseServerType(client.serverTypeID)
 	if err != nil {
 		_ = client.shutdown()
 		return nil, err
 	}
-	if role != expectedRole {
+	if serverType != expectedServerType {
 		_ = client.shutdown()
-		return nil, fmt.Errorf("%w: %s advertised %s, need %s", ErrServerRole, address, role, expectedRole)
+		return nil, fmt.Errorf("%w: %s advertised %s, need %s", ErrServerType, address, serverType, expectedServerType)
 	}
-	client.address, client.role = address, role
+	client.address, client.serverType = address, serverType
 	if m.cfg.authFactory == nil {
 		return client, nil
 	}
@@ -182,8 +182,8 @@ func (m *connectionManager) open(ctx context.Context, address string, expectedRo
 	return client, nil
 }
 
-func (m *connectionManager) remove(address string, role ServerRole, client *Client) {
-	key := connectionKey{id: client.serverID, address: address, role: role}
+func (m *connectionManager) remove(address string, serverType ServerType, client *Client) {
+	key := connectionKey{id: client.serverID, address: address, serverType: serverType}
 	m.mu.Lock()
 	if m.clients[key] == client {
 		delete(m.clients, key)
@@ -191,7 +191,7 @@ func (m *connectionManager) remove(address string, role ServerRole, client *Clie
 	m.mu.Unlock()
 }
 
-func (m *connectionManager) request(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
+func (m *connectionManager) request(ctx context.Context, node ServerNode, request fmsg.Request) (fmsg.Response, error) {
 	for attempt := 1; attempt <= m.cfg.retry.MaxAttempts; attempt++ {
 		client, err := m.getNode(ctx, node)
 		if err != nil {
@@ -200,17 +200,17 @@ func (m *connectionManager) request(ctx context.Context, node Node, request fmsg
 		response, err := client.request(ctx, request)
 		if err == nil || !m.shouldRetry(ctx, request.APIKey(), err, attempt) {
 			if shouldReplaceConnection(err) {
-				m.remove(node.Address, node.Role, client)
+				m.remove(node.Address, node.ServerType, client)
 				_ = client.shutdown()
 			}
 			return response, err
 		}
-		m.remove(node.Address, node.Role, client)
+		m.remove(node.Address, node.ServerType, client)
 		_ = client.shutdown()
 		delay := m.cfg.retry.Backoff(attempt)
 		observeMetric(m.cfg.observer, MetricEvent{
 			Kind: MetricRetry, Operation: MetricOperationRPC, APIKey: request.APIKey(),
-			ServerRole: node.Role, Duration: delay, Attempt: attempt + 1,
+			ServerType: node.ServerType, Duration: delay, Attempt: attempt + 1,
 			Failed: true, ErrorClass: metricErrorClass(err),
 		})
 		if err := waitRetry(ctx, delay); err != nil {
@@ -276,16 +276,16 @@ func (m *connectionManager) Close() error {
 	return result
 }
 
-func serverRole(value int32) (ServerRole, error) {
-	role := ServerRole(value)
-	if role != Coordinator && role != TabletServer {
-		return UnknownServerRole, fmt.Errorf("%w: %d", ErrServerRole, value)
+func parseServerType(value int32) (ServerType, error) {
+	serverType := ServerType(value)
+	if serverType != Coordinator && serverType != TabletServer {
+		return UnknownServerType, fmt.Errorf("%w: %d", ErrServerType, value)
 	}
-	return role, nil
+	return serverType, nil
 }
 
-// String returns a stable human-readable server role.
-func (r ServerRole) String() string {
+// String returns a stable human-readable server type.
+func (r ServerType) String() string {
 	switch r {
 	case Coordinator:
 		return "coordinator"

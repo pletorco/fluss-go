@@ -12,7 +12,7 @@ type Codec[T any] interface {
 }
 ```
 
-`NewTypedLogWriter`, `NewTypedKVWriter`, `NewTypedLookupClient`,
+`NewTypedAppendWriter`, `NewTypedUpsertWriter`, `NewTypedLookuper`,
 `NewTypedLogScanner`, `NewTypedBatchScanner`, and
 `NewTypedSnapshotBatchScanner` delegate batching, context cancellation,
 errors, flush, close, and retry behavior to their row-oriented counterparts.

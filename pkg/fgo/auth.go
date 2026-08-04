@@ -5,9 +5,9 @@ import (
 	"fmt"
 )
 
-// PlainAuthenticator returns a factory for the SASL PLAIN mechanism supported by Fluss 0.9.1.
+// SASLPlainAuthenticator returns a factory for the SASL PLAIN mechanism supported by Fluss 0.9.1.
 // Each connection receives its own credentials buffer, which is cleared when the connection closes.
-func PlainAuthenticator(username, password string) AuthenticatorFactory {
+func SASLPlainAuthenticator(username, password string) AuthenticatorFactory {
 	return func() (Authenticator, error) {
 		if username == "" || password == "" {
 			return nil, fmt.Errorf("%w: SASL PLAIN username and password are required", ErrInvalidConfig)

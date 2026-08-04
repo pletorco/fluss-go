@@ -234,7 +234,7 @@ type scannerFetch struct {
 }
 
 type logScannerBackend interface {
-	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
+	metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error)
 	listOffset(context.Context, PhysicalTablePath, int32, int64, int64, ScanOffset) (int64, error)
 	fetch(context.Context, logFetchRequest) (scannerFetch, error)
 }
@@ -258,7 +258,7 @@ type logFetchRequest struct {
 	config      LogScannerConfig
 }
 
-func (b clientLogScannerBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
+func (b clientLogScannerBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]ServerNode, error) {
 	if path.Partition == "" {
 		table, err := b.client.fetchTableMetadata(ctx, path.TablePath)
 		return table.ID, table.Buckets, err
@@ -469,7 +469,7 @@ func newLogScanner(
 	if provider, ok := backend.(schemaResolverProvider); ok && provider.schemaResolver() == nil {
 		scanner.dynamic = false
 	}
-	if strings.EqualFold(strings.TrimSpace(table.Properties["table.log.format"]), string(LogWriteFormatIndexed)) {
+	if strings.EqualFold(strings.TrimSpace(table.Properties["table.log.format"]), string(LogFormatIndexed)) {
 		scanner.compacted = false
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background())

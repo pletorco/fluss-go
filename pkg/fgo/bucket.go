@@ -7,7 +7,7 @@ import (
 	"sort"
 )
 
-func sortedBuckets(buckets map[int32]Node) ([]int32, error) {
+func sortedBuckets(buckets map[int32]ServerNode) ([]int32, error) {
 	if len(buckets) == 0 {
 		return nil, fmt.Errorf("%w: table has no buckets", ErrMetadata)
 	}

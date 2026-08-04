@@ -27,7 +27,7 @@ func quickStart() {
 	ctx := context.Background()
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers("localhost:9123"),
+		fgo.WithBootstrapServers("localhost:9123"),
 		fgo.WithClientIdentity("example", "1.0.0"),
 	)
 	if err != nil {
@@ -39,7 +39,7 @@ func quickStart() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "fluss",
 		Table:    "events",
 	})
@@ -68,9 +68,9 @@ func tlsAndSASL(ctx context.Context) error {
 	}
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers("coordinator.example:9123"),
+		fgo.WithBootstrapServers("coordinator.example:9123"),
 		fgo.WithTLSConfig(tlsConfig),
-		fgo.WithAuthenticator(fgo.PlainAuthenticator(
+		fgo.WithAuthenticator(fgo.SASLPlainAuthenticator(
 			os.Getenv("FLUSS_SASL_USERNAME"),
 			os.Getenv("FLUSS_SASL_PASSWORD"),
 		)),
@@ -124,7 +124,7 @@ func tokenRefresh() {
 
 	client, err := fgo.Open(
 		context.Background(),
-		fgo.WithSeedBrokers("coordinator:9123"),
+		fgo.WithBootstrapServers("coordinator:9123"),
 		fgo.WithFileSystemSecurityTokenRefresh(
 			fgo.FileSystemSecurityTokenRefreshConfig{},
 			receiver,
@@ -159,7 +159,7 @@ func snapshotComposition(
 
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers("coordinator:9123"),
+		fgo.WithBootstrapServers("coordinator:9123"),
 		fgo.WithRemoteFileReader(reader, fgo.RemoteFileReadConfig{}),
 		fgo.WithSnapshotBatchProvider(provider),
 	)
@@ -174,7 +174,7 @@ func dynamicPartitions(ctx context.Context, table fgo.Table) error {
 	// doc:snippet dynamicPartitions
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers("coordinator:9123"),
+		fgo.WithBootstrapServers("coordinator:9123"),
 		fgo.WithDynamicPartitionCreation(fgo.DynamicPartitionCreationConfig{
 			MetadataAttempts: 3,
 			RetryBackoff:     25 * time.Millisecond,
@@ -185,10 +185,10 @@ func dynamicPartitions(ctx context.Context, table fgo.Table) error {
 	}
 
 	partition := fgo.PartitionSpec{"day": "2026-07-30", "region": "kr"}
-	writer, err := client.NewKVWriter(
+	writer, err := client.NewUpsertWriter(
 		ctx,
 		table,
-		fgo.WithKVPartitionSpec(table.Schema, partition),
+		fgo.WithUpsertPartitionSpec(table.Schema, partition),
 	)
 	// doc:snippet-end dynamicPartitions
 	if err == nil {
@@ -199,10 +199,10 @@ func dynamicPartitions(ctx context.Context, table fgo.Table) error {
 
 func logFormat(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	// doc:snippet logFormat
-	writer, err := client.NewLogWriter(
+	writer, err := client.NewAppendWriter(
 		ctx,
 		table,
-		fgo.WithLogWriteFormat(fgo.LogWriteFormatCompacted),
+		fgo.WithAppendLogFormat(fgo.LogFormatCompacted),
 	)
 	// doc:snippet-end logFormat
 	if err == nil {
@@ -233,10 +233,10 @@ func boundedScan(ctx context.Context, client *fgo.Client, table fgo.Table) error
 
 func kvMerge(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	// doc:snippet kvMerge
-	writer, err := client.NewKVWriter(
+	writer, err := client.NewUpsertWriter(
 		ctx,
 		table,
-		fgo.WithKVMergeMode(fgo.MergeModeOverwrite),
+		fgo.WithUpsertMergeMode(fgo.MergeModeOverwrite),
 	)
 	// doc:snippet-end kvMerge
 	if err == nil {
@@ -247,7 +247,7 @@ func kvMerge(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 
 func lookupInsert(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	// doc:snippet lookupInsert
-	lookup, err := client.NewLookupClient(
+	lookup, err := client.NewLookuper(
 		ctx,
 		table,
 		fgo.WithLookupInsertIfNotExists(5*time.Second, -1),
@@ -261,7 +261,7 @@ func lookupInsert(ctx context.Context, client *fgo.Client, table fgo.Table) erro
 
 func lookupScheduling(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	// doc:snippet lookupScheduling
-	lookup, err := client.NewLookupClient(
+	lookup, err := client.NewLookuper(
 		ctx,
 		table,
 		fgo.WithLookupBatch(256, 8),
@@ -314,7 +314,7 @@ func metricsObserver(ctx context.Context) {
 
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers("coordinator:9123"),
+		fgo.WithBootstrapServers("coordinator:9123"),
 		fgo.WithMetricsObserver(observer),
 	)
 	// doc:snippet-end metricsObserver
@@ -329,7 +329,7 @@ func serverDiscovery(ctx context.Context, client *fgo.Client) error {
 	if err != nil {
 		return err
 	}
-	nodes, err := admin.ServerNodes(ctx)
+	nodes, err := admin.GetServerNodes(ctx)
 	// doc:snippet-end serverDiscovery
 	_ = nodes
 	return err

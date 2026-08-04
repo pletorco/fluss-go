@@ -8,6 +8,17 @@ breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the experimental `fgo` and `fadm` APIs to use Apache Fluss
+  terminology before RC. Append and upsert writers, lookupers, bootstrap
+  servers, server nodes and types, metadata descriptors and info objects, and
+  admin `Get*` operations now follow the pinned Fluss 0.9.1 client vocabulary.
+  This is an intentional breaking change without deprecated aliases; the
+  complete migration table is in `docs/public-api-stability.md`.
+- Kept generated `pkg/fmsg` names unchanged because they follow the pinned
+  `FlussApi.proto` wire contract rather than the hand-written client API.
+
 ## [v0.1.0-beta.9] - 2026-08-01
 
 ### Fixed

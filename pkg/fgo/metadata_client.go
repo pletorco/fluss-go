@@ -98,35 +98,35 @@ func partitionMetadataFromResponse(response *fmsg.MetadataResponse, path Physica
 	return PartitionMetadata{}, fmt.Errorf("%w: %s", ErrUnknownPartition, path)
 }
 
-func metadataServers(response *fmsg.MetadataResponse) (Node, map[int32]Node, error) {
-	tablets := make(map[int32]Node, len(response.GetTabletServers()))
+func metadataServers(response *fmsg.MetadataResponse) (ServerNode, map[int32]ServerNode, error) {
+	tablets := make(map[int32]ServerNode, len(response.GetTabletServers()))
 	for _, server := range response.GetTabletServers() {
 		node, err := nodeFromProto(server, TabletServer)
 		if err != nil {
-			return Node{}, nil, err
+			return ServerNode{}, nil, err
 		}
 		tablets[node.ID] = node
 	}
-	var coordinator Node
+	var coordinator ServerNode
 	if response.GetCoordinatorServer() != nil {
 		var err error
 		coordinator, err = nodeFromProto(response.GetCoordinatorServer(), Coordinator)
 		if err != nil {
-			return Node{}, nil, err
+			return ServerNode{}, nil, err
 		}
 	}
 	return coordinator, tablets, nil
 }
 
-func nodeFromProto(server *fmsg.PbServerNode, role ServerRole) (Node, error) {
+func nodeFromProto(server *fmsg.PbServerNode, serverType ServerType) (ServerNode, error) {
 	if server == nil || server.GetHost() == "" || server.GetPort() <= 0 || server.GetPort() > 65535 {
-		return Node{}, fmt.Errorf("%w: invalid server node", ErrMetadata)
+		return ServerNode{}, fmt.Errorf("%w: invalid server node", ErrMetadata)
 	}
-	return Node{ID: server.GetNodeId(), Address: net.JoinHostPort(server.GetHost(), strconv.Itoa(int(server.GetPort()))), Role: role}, nil
+	return ServerNode{ID: server.GetNodeId(), Address: net.JoinHostPort(server.GetHost(), strconv.Itoa(int(server.GetPort()))), ServerType: serverType}, nil
 }
 
-func bucketLeaders(buckets []*fmsg.PbBucketMetadata, tablets map[int32]Node) (map[int32]Node, error) {
-	result := make(map[int32]Node, len(buckets))
+func bucketLeaders(buckets []*fmsg.PbBucketMetadata, tablets map[int32]ServerNode) (map[int32]ServerNode, error) {
+	result := make(map[int32]ServerNode, len(buckets))
 	for _, bucket := range buckets {
 		if bucket == nil || bucket.LeaderId == nil {
 			return nil, fmt.Errorf("%w: bucket %d", ErrNoBucketLeader, bucket.GetBucketId())

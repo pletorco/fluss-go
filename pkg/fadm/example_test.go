@@ -13,7 +13,7 @@ import (
 
 func ExampleNew() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func ExampleNew() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	databases, err := admin.ListDatabases(ctx)
+	databases, err := admin.ListDatabaseSummaries(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func ExampleNew() {
 
 func ExampleClient_CreateDatabase() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func ExampleClient_CreateDatabase() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = admin.CreateDatabase(ctx, "analytics", fadm.DatabaseDefinition{
+	err = admin.CreateDatabase(ctx, "analytics", fadm.DatabaseDescriptor{
 		Comment: "application analytics",
 		Properties: map[string]string{
 			"owner": "data-platform",
@@ -65,7 +65,7 @@ func ExampleClient_CreateDatabase() {
 
 func ExampleClient_CreateACLs() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func ExampleClient_CreateACLs() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	results, err := admin.CreateACLs(ctx, fadm.ACL{
+	results, err := admin.CreateACLs(ctx, fadm.ACLBinding{
 		ResourceName:  "analytics",
 		ResourceType:  fadm.ACLResourceDatabase,
 		PrincipalName: "alice",
@@ -89,14 +89,14 @@ func ExampleClient_CreateACLs() {
 	}
 	for _, result := range results {
 		if result.Err != nil {
-			log.Printf("create ACL for %s: %v", result.ACL.PrincipalName, result.Err)
+			log.Printf("create ACL binding for %s: %v", result.Binding.PrincipalName, result.Err)
 		}
 	}
 }
 
 func ExampleClient_ListACLs() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func ExampleClient_ListACLs() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	acls, err := admin.ListACLs(ctx, fadm.ACLFilter{
+	acls, err := admin.ListACLs(ctx, fadm.ACLBindingFilter{
 		ResourceType: fadm.ACLResourceAny,
 		Operation:    fadm.ACLOperationAny,
 		Permission:   fadm.ACLPermissionAny,
@@ -126,7 +126,7 @@ func ExampleClient_ListACLs() {
 
 func ExampleClient_DropACLs() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func ExampleClient_DropACLs() {
 	resourceName := "analytics"
 	principalName := "alice"
 	principalType := fadm.ACLPrincipalUser
-	results, err := admin.DropACLs(ctx, fadm.ACLFilter{
+	results, err := admin.DropACLs(ctx, fadm.ACLBindingFilter{
 		ResourceName:  &resourceName,
 		ResourceType:  fadm.ACLResourceDatabase,
 		PrincipalName: &principalName,
@@ -159,7 +159,7 @@ func ExampleClient_DropACLs() {
 
 func ExampleClient_CreateTable() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func ExampleClient_CreateTable() {
 	err = admin.CreateTable(
 		ctx,
 		fgo.TablePath{Database: "production", Table: "customers"},
-		fadm.TableDefinition{
+		fadm.TableDescriptor{
 			Schema: fgo.Schema{
 				Columns: []fgo.Column{
 					{Name: "customer_id", Type: fgo.BigIntType},
@@ -195,7 +195,7 @@ func ExampleClient_CreateTable() {
 
 func ExampleClient_ListOffsets() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func ExampleClient_ListOffsets() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	table, err := client.OpenTable(
+	table, err := client.GetTable(
 		ctx,
 		fgo.TablePath{Database: "production", Table: "events"},
 	)
@@ -235,7 +235,7 @@ func ExampleClient_ListOffsets() {
 
 func ExampleClient_AlterClusterConfigs() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func ExampleClient_AlterClusterConfigs() {
 		log.Fatal(err)
 	}
 	value := "3"
-	err = admin.AlterClusterConfigs(ctx, fadm.ConfigChange{
+	err = admin.AlterClusterConfigs(ctx, fadm.AlterConfig{
 		Key:   "table.default-bucket-number",
 		Value: &value,
 		Op:    fadm.ConfigSet,
@@ -268,7 +268,7 @@ func ExampleClient_AlterClusterConfigs() {
 
 func ExampleClient_WaitRebalance() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func ExampleClient_WaitRebalance() {
 		log.Fatal(err)
 	}
 	goalIDs := []int32{1} // Goal IDs are defined by the target Fluss 0.9.1 cluster.
-	rebalanceID, err := admin.StartRebalance(ctx, goalIDs...)
+	rebalanceID, err := admin.Rebalance(ctx, goalIDs...)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func ExampleClient_WaitRebalance() {
 
 func ExampleClient_RegisterProducerOffsets() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func ExampleClient_RegisterProducerOffsets() {
 
 func ExampleClient_AcquireKVSnapshotLease() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func ExampleClient_AcquireKVSnapshotLease() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	latest, err := admin.LatestKVSnapshots(
+	latest, err := admin.GetLatestKVSnapshots(
 		ctx,
 		fgo.TablePath{Database: "production", Table: "customers"},
 		"",
@@ -353,7 +353,7 @@ func ExampleClient_AcquireKVSnapshotLease() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	requested := exampleSnapshotLeases(latest)
+	requested := exampleKVSnapshotLeases(latest)
 	if len(requested) == 0 {
 		log.Print("no snapshots are currently available")
 		return
@@ -364,12 +364,12 @@ func ExampleClient_AcquireKVSnapshotLease() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer exampleDropSnapshotLease(admin, leaseID)
+	defer exampleDropKVSnapshotLease(admin, leaseID)
 	if err := admin.RenewKVSnapshotLease(ctx, leaseID, 10*time.Minute); err != nil {
 		log.Fatal(err)
 	}
 
-	unavailableSet := make(map[fadm.SnapshotLease]struct{}, len(unavailable))
+	unavailableSet := make(map[fadm.KVSnapshotLease]struct{}, len(unavailable))
 	for _, snapshot := range unavailable {
 		unavailableSet[snapshot] = struct{}{}
 	}
@@ -382,13 +382,13 @@ func ExampleClient_AcquireKVSnapshotLease() {
 	}
 }
 
-func exampleSnapshotLeases(latest fadm.LatestKVSnapshot) []fadm.SnapshotLease {
-	requested := make([]fadm.SnapshotLease, 0, len(latest.Snapshots))
+func exampleKVSnapshotLeases(latest fadm.KVSnapshots) []fadm.KVSnapshotLease {
+	requested := make([]fadm.KVSnapshotLease, 0, len(latest.Snapshots))
 	for _, snapshot := range latest.Snapshots {
 		if !snapshot.Available {
 			continue
 		}
-		requested = append(requested, fadm.SnapshotLease{
+		requested = append(requested, fadm.KVSnapshotLease{
 			TableID: latest.TableID, PartitionID: latest.PartitionID,
 			Bucket: snapshot.Bucket, SnapshotID: snapshot.SnapshotID,
 		})
@@ -396,7 +396,7 @@ func exampleSnapshotLeases(latest fadm.LatestKVSnapshot) []fadm.SnapshotLease {
 	return requested
 }
 
-func exampleDropSnapshotLease(admin *fadm.Client, leaseID string) {
+func exampleDropKVSnapshotLease(admin *fadm.Client, leaseID string) {
 	cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelCleanup()
 	if err := admin.DropKVSnapshotLease(cleanupCtx, leaseID); err != nil {
@@ -404,8 +404,8 @@ func exampleDropSnapshotLease(admin *fadm.Client, leaseID string) {
 	}
 }
 
-func exampleLogSnapshotMetadata(ctx context.Context, admin *fadm.Client, leased fadm.SnapshotLease) {
-	metadata, err := admin.KVSnapshotMetadata(
+func exampleLogSnapshotMetadata(ctx context.Context, admin *fadm.Client, leased fadm.KVSnapshotLease) {
+	metadata, err := admin.GetKVSnapshotMetadata(
 		ctx,
 		leased.TableID,
 		leased.PartitionID,
@@ -419,9 +419,9 @@ func exampleLogSnapshotMetadata(ctx context.Context, admin *fadm.Client, leased 
 	log.Printf("bucket %d has %d snapshot files", leased.Bucket, len(metadata.Files))
 }
 
-func ExampleClient_TableStats() {
+func ExampleClient_GetTableStats() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -431,14 +431,14 @@ func ExampleClient_TableStats() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	table, err := client.OpenTable(
+	table, err := client.GetTable(
 		ctx,
 		fgo.TablePath{Database: "production", Table: "customers"},
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	results := admin.TableStats(
+	results := admin.GetTableStats(
 		ctx,
 		table,
 		fgo.PhysicalTablePath{TablePath: table.Path},
@@ -454,8 +454,8 @@ func ExampleClient_TableStats() {
 	}
 }
 
-func ExampleTableDefinition_JSON() {
-	definition := fadm.TableDefinition{
+func ExampleTableDescriptor_JSON() {
+	definition := fadm.TableDescriptor{
 		Schema: fgo.Schema{
 			Columns: []fgo.Column{
 				{Name: "customer_id", Type: fgo.BigIntType},

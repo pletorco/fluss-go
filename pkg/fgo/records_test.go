@@ -16,7 +16,7 @@ func TestSharedRecordModels(t *testing.T) {
 	if err := record.Validate(schema); err != nil {
 		t.Fatal(err)
 	}
-	if err := (TableBucket{TableID: 1, PartitionID: -1, BucketID: 0, Leader: Node{Address: "tablet:9123", Role: TabletServer}}).Validate(); err != nil {
+	if err := (TableBucket{TableID: 1, PartitionID: -1, BucketID: 0, Leader: ServerNode{Address: "tablet:9123", ServerType: TabletServer}}).Validate(); err != nil {
 		t.Fatal(err)
 	}
 	if err := (PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "t"}, Partition: "day=2026-07-30"}).Validate(); err != nil {

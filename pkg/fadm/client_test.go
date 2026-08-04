@@ -32,7 +32,7 @@ func (f *fakeRequester) RequestBucket(
 	return f.bucket(ctx, path, bucket, request)
 }
 
-func (f *fakeRequester) OpenTable(context.Context, fgo.TablePath) (fgo.Table, error) {
+func (f *fakeRequester) GetTable(context.Context, fgo.TablePath) (fgo.Table, error) {
 	return f.table, f.openErr
 }
 
@@ -214,7 +214,7 @@ func (f *coreAdminFixture) bucket(
 func exerciseDatabaseCatalog(t *testing.T, client *Client) {
 	t.Helper()
 	ctx := context.Background()
-	if err := client.CreateDatabase(ctx, "db", DatabaseDefinition{
+	if err := client.CreateDatabase(ctx, "db", DatabaseDescriptor{
 		Comment: "main", Properties: map[string]string{"owner": "team"},
 	}, true); err != nil {
 		t.Fatal(err)
@@ -222,25 +222,25 @@ func exerciseDatabaseCatalog(t *testing.T, client *Client) {
 	if err := client.DropDatabase(ctx, "db", true, true); err != nil {
 		t.Fatal(err)
 	}
-	databases, err := client.ListDatabases(ctx)
+	databases, err := client.ListDatabaseSummaries(ctx)
 	if err != nil || len(databases) != 1 || databases[0].TableCount != 2 || databases[0].CreatedAt.UnixMilli() != 1000 {
-		t.Fatalf("ListDatabases() = %#v, %v", databases, err)
+		t.Fatalf("ListDatabaseSummaries() = %#v, %v", databases, err)
 	}
 	exists, err := client.DatabaseExists(ctx, "db")
 	if err != nil || !exists {
 		t.Fatalf("DatabaseExists() = %v, %v", exists, err)
 	}
-	database, err := client.DescribeDatabase(ctx, "db")
+	database, err := client.GetDatabaseInfo(ctx, "db")
 	if err != nil || database.Comment != "main" || database.Properties["owner"] != "team" ||
 		database.ModifiedAt.UnixMilli() != 2000 {
-		t.Fatalf("DescribeDatabase() = %#v, %v", database, err)
+		t.Fatalf("GetDatabaseInfo() = %#v, %v", database, err)
 	}
 }
 
 func exerciseTableCatalog(t *testing.T, client *Client, path fgo.TablePath, schema fgo.Schema) fgo.Table {
 	t.Helper()
 	ctx := context.Background()
-	definition := TableDefinition{
+	definition := TableDescriptor{
 		Schema: schema, Comment: "users", BucketCount: 2,
 		Properties: map[string]string{"table.log.format": "COMPACTED"},
 	}
@@ -258,17 +258,17 @@ func exerciseTableCatalog(t *testing.T, client *Client, path fgo.TablePath, sche
 	if err != nil || !exists {
 		t.Fatalf("TableExists() = %v, %v", exists, err)
 	}
-	table, err := client.DescribeTable(ctx, path)
+	table, err := client.GetTableInfo(ctx, path)
 	if err != nil || table.ID != 7 {
-		t.Fatalf("DescribeTable() = %#v, %v", table, err)
+		t.Fatalf("GetTableInfo() = %#v, %v", table, err)
 	}
-	gotSchema, err := client.TableSchema(ctx, path, 2)
+	gotSchema, err := client.GetTableSchema(ctx, path, 2)
 	if err != nil || len(gotSchema.Columns) != 2 {
-		t.Fatalf("TableSchema() = %#v, %v", gotSchema, err)
+		t.Fatalf("GetTableSchema() = %#v, %v", gotSchema, err)
 	}
 	value := "compact"
 	if err := client.AlterTable(ctx, path, AlterTable{
-		Config: []ConfigChange{{Key: "format", Value: &value, Op: ConfigSet}},
+		Config: []AlterConfig{{Key: "format", Value: &value, Op: ConfigSet}},
 		Add: []AddColumn{{
 			Name: "age", Type: fgo.LogicalType{Root: "INTEGER", Nullable: true}, Description: "age", First: true,
 		}},
@@ -289,9 +289,9 @@ func exercisePartitionCatalog(t *testing.T, client *Client, path fgo.TablePath, 
 	if err := client.DropPartition(ctx, path, spec, true); err != nil {
 		t.Fatal(err)
 	}
-	partitions, err := client.ListPartitions(ctx, path, PartitionSpec{"day": "1"})
+	partitions, err := client.ListPartitionInfos(ctx, path, PartitionSpec{"day": "1"})
 	if err != nil || len(partitions) != 1 || partitions[0].ID != 9 || partitions[0].Spec["region"] != "kr" {
-		t.Fatalf("ListPartitions() = %#v, %v", partitions, err)
+		t.Fatalf("ListPartitionInfos() = %#v, %v", partitions, err)
 	}
 	offsets := client.ListOffsets(
 		ctx, table, fgo.PhysicalTablePath{TablePath: path, Partition: "day=1"},
@@ -320,22 +320,22 @@ func TestAdminValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, err := range map[string]error{
-		"create db": client.CreateDatabase(context.Background(), " ", DatabaseDefinition{}, false),
+		"create db": client.CreateDatabase(context.Background(), " ", DatabaseDescriptor{}, false),
 		"drop db":   client.DropDatabase(context.Background(), "", false, false),
 		"db exists": func() error {
 			_, err := client.DatabaseExists(context.Background(), "")
 			return err
 		}(),
 		"describe db": func() error {
-			_, err := client.DescribeDatabase(context.Background(), "")
+			_, err := client.GetDatabaseInfo(context.Background(), "")
 			return err
 		}(),
-		"create table": client.CreateTable(context.Background(), path, TableDefinition{Schema: adminSchema()}, false),
+		"create table": client.CreateTable(context.Background(), path, TableDescriptor{Schema: adminSchema()}, false),
 		"alter empty":  client.AlterTable(context.Background(), path, AlterTable{}, false),
 		"create part":  client.CreatePartition(context.Background(), path, nil, false),
 		"drop part":    client.DropPartition(context.Background(), path, PartitionSpec{"day": ""}, false),
 		"schema": func() error {
-			_, err := client.TableSchema(context.Background(), path, -1)
+			_, err := client.GetTableSchema(context.Background(), path, -1)
 			return err
 		}(),
 	} {
@@ -364,7 +364,7 @@ func TestAdminFallbackNamesAndUnexpectedResponses(t *testing.T) {
 		return response, nil
 	}
 	client := newClient(fake)
-	databases, err := client.ListDatabases(context.Background())
+	databases, err := client.ListDatabaseSummaries(context.Background())
 	if err != nil || len(databases) != 2 || databases[0].Name != "a" {
 		t.Fatalf("fallback databases = %#v, %v", databases, err)
 	}
@@ -392,17 +392,17 @@ func TestAdminRejectsMalformedDescriptorsAndOpenFailures(t *testing.T) {
 			return response, nil
 		},
 	})
-	if _, err := client.DescribeTable(context.Background(), path); !errors.Is(err, sentinel) {
-		t.Fatalf("DescribeTable() error = %v", err)
+	if _, err := client.GetTableInfo(context.Background(), path); !errors.Is(err, sentinel) {
+		t.Fatalf("GetTableInfo() error = %v", err)
 	}
-	if _, err := client.DescribeDatabase(context.Background(), "db"); !errors.Is(err, fgo.ErrValidation) {
-		t.Fatalf("DescribeDatabase() error = %v", err)
+	if _, err := client.GetDatabaseInfo(context.Background(), "db"); !errors.Is(err, fgo.ErrValidation) {
+		t.Fatalf("GetDatabaseInfo() error = %v", err)
 	}
-	if _, err := client.TableSchema(context.Background(), path, 1); err == nil {
-		t.Fatal("TableSchema() malformed JSON error = nil")
+	if _, err := client.GetTableSchema(context.Background(), path, 1); err == nil {
+		t.Fatal("GetTableSchema() malformed JSON error = nil")
 	}
-	if _, err := client.DescribeTable(context.Background(), fgo.TablePath{}); !errors.Is(err, fgo.ErrInvalidConfig) {
-		t.Fatalf("DescribeTable(invalid) error = %v", err)
+	if _, err := client.GetTableInfo(context.Background(), fgo.TablePath{}); !errors.Is(err, fgo.ErrInvalidConfig) {
+		t.Fatalf("GetTableInfo(invalid) error = %v", err)
 	}
 }
 

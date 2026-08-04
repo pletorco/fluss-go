@@ -37,7 +37,7 @@ func TestFluss091Integration(t *testing.T) {
 	saslAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_SASL_COORDINATOR_PORT", "19223"))
 	plainSeeds := []string{"127.0.0.1:1", plainAddress}
 
-	t.Run("protocol negotiation and role", func(t *testing.T) {
+	t.Run("protocol negotiation and server type", func(t *testing.T) {
 		verifyProtocolRegistry(t, protocolEndpoints(plainAddress))
 	})
 
@@ -70,7 +70,7 @@ func TestFluss091Integration(t *testing.T) {
 	t.Run("canceled request isolation", func(t *testing.T) {
 		testCanceledRequestIsolation(t, admin)
 	})
-	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDefinition{
+	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDescriptor{
 		Comment: "fluss-go live integration",
 	}, false); err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestFluss091Integration(t *testing.T) {
 	})
 
 	t.Run("log write formats", func(t *testing.T) {
-		testLogWriteFormats(t, client, admin, database)
+		testLogFormats(t, client, admin, database)
 	})
 
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
@@ -130,12 +130,12 @@ func testCanceledRequestIsolation(t *testing.T, admin *fadm.Client) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := admin.ServerNodes(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("ServerNodes() canceled error = %v", err)
+	if _, err := admin.GetServerNodes(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetServerNodes() canceled error = %v", err)
 	}
 	database := fmt.Sprintf("cancel_repro_%d", time.Now().UnixNano())
 	if err := admin.CreateDatabase(
-		context.Background(), database, fadm.DatabaseDefinition{}, false,
+		context.Background(), database, fadm.DatabaseDescriptor{}, false,
 	); err != nil {
 		t.Fatalf("CreateDatabase() after canceled request = %v", err)
 	}
@@ -146,8 +146,8 @@ func testCanceledRequestIsolation(t *testing.T, admin *fadm.Client) {
 	}
 }
 
-func protocolEndpoints(plainAddress string) map[string]fgo.ServerRole {
-	return map[string]fgo.ServerRole{
+func protocolEndpoints(plainAddress string) map[string]fgo.ServerType {
+	return map[string]fgo.ServerType{
 		plainAddress: fgo.Coordinator,
 		net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_0_PORT", "19124")): fgo.TabletServer,
 		net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_TABLET_1_PORT", "19125")): fgo.TabletServer,
@@ -169,20 +169,20 @@ func testPlaintextBootstrap(t *testing.T, client *fgo.Client) {
 func testSASLPlain(t *testing.T, address string) {
 	t.Helper()
 	username, password := os.Getenv("FLUSS_SASL_USERNAME"), os.Getenv("FLUSS_SASL_PASSWORD")
-	authenticated := openClient(t, []string{address}, fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)))
+	authenticated := openClient(t, []string{address}, fgo.WithAuthenticator(fgo.SASLPlainAuthenticator(username, password)))
 	defer authenticated.Close()
 	admin, err := fadm.New(authenticated)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := admin.ListDatabases(context.Background()); err != nil {
+	if _, err := admin.ListDatabaseSummaries(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err = fgo.Open(ctx,
-		fgo.WithSeedBrokers(address),
-		fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password+"-wrong")),
+		fgo.WithBootstrapServers(address),
+		fgo.WithAuthenticator(fgo.SASLPlainAuthenticator(username, password+"-wrong")),
 	)
 	if !errors.Is(err, fgo.ErrAuthentication) || strings.Contains(fmt.Sprint(err), password) {
 		t.Fatalf("invalid credential error = %v", err)
@@ -212,7 +212,7 @@ func testACLAuthorization(t *testing.T, address string) {
 	deniedBefore := fmt.Sprintf("acl_denied_before_%d", time.Now().UnixNano())
 	requireDatabaseCreateAuthorization(t, ctx, userAdmin, deniedBefore, false)
 
-	acl := fadm.ACL{
+	acl := fadm.ACLBinding{
 		ResourceName:  fadm.ACLClusterResourceName,
 		ResourceType:  fadm.ACLResourceCluster,
 		PrincipalName: username,
@@ -227,7 +227,7 @@ func testACLAuthorization(t *testing.T, address string) {
 	principalName := acl.PrincipalName
 	principalType := acl.PrincipalType
 	host := acl.Host
-	filter := fadm.ACLFilter{
+	filter := fadm.ACLBindingFilter{
 		ResourceName:  &resourceName,
 		ResourceType:  acl.ResourceType,
 		PrincipalName: &principalName,
@@ -271,7 +271,7 @@ func openAuthenticatedAdmin(
 	client := openClient(
 		t,
 		[]string{address},
-		fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)),
+		fgo.WithAuthenticator(fgo.SASLPlainAuthenticator(username, password)),
 	)
 	admin, err := fadm.New(client)
 	if err != nil {
@@ -289,7 +289,7 @@ func requireDatabaseCreateAuthorization(
 	allowed bool,
 ) {
 	t.Helper()
-	err := admin.CreateDatabase(ctx, name, fadm.DatabaseDefinition{}, false)
+	err := admin.CreateDatabase(ctx, name, fadm.DatabaseDescriptor{}, false)
 	if allowed && err != nil {
 		t.Fatalf("CreateDatabase(%q) with ACL: %v", name, err)
 	}
@@ -298,10 +298,10 @@ func requireDatabaseCreateAuthorization(
 	}
 }
 
-func requireCreatedACL(t *testing.T, ctx context.Context, admin *fadm.Client, acl fadm.ACL) {
+func requireCreatedACL(t *testing.T, ctx context.Context, admin *fadm.Client, acl fadm.ACLBinding) {
 	t.Helper()
 	created, err := admin.CreateACLs(ctx, acl)
-	if err != nil || len(created) != 1 || created[0].Err != nil || created[0].ACL != acl {
+	if err != nil || len(created) != 1 || created[0].Err != nil || created[0].Binding != acl {
 		t.Fatalf("CreateACLs() = %#v, %v", created, err)
 	}
 }
@@ -310,8 +310,8 @@ func requireListedACL(
 	t *testing.T,
 	ctx context.Context,
 	admin *fadm.Client,
-	filter fadm.ACLFilter,
-	acl fadm.ACL,
+	filter fadm.ACLBindingFilter,
+	acl fadm.ACLBinding,
 ) {
 	t.Helper()
 	listed, err := admin.ListACLs(ctx, filter)
@@ -324,14 +324,14 @@ func requireDroppedACL(
 	t *testing.T,
 	ctx context.Context,
 	admin *fadm.Client,
-	filter fadm.ACLFilter,
-	acl fadm.ACL,
+	filter fadm.ACLBindingFilter,
+	acl fadm.ACLBinding,
 ) {
 	t.Helper()
 	results, err := admin.DropACLs(ctx, filter)
 	if err != nil || len(results) != 1 || results[0].Err != nil ||
 		len(results[0].Matches) != 1 || results[0].Matches[0].Err != nil ||
-		results[0].Matches[0].ACL != acl {
+		results[0].Matches[0].Binding != acl {
 		t.Fatalf("DropACLs() = %#v, %v", results, err)
 	}
 }
@@ -393,16 +393,16 @@ func requireEnvironment(t *testing.T) {
 	}
 }
 
-func verifyProtocolRegistry(t *testing.T, endpoints map[string]fgo.ServerRole) {
+func verifyProtocolRegistry(t *testing.T, endpoints map[string]fgo.ServerType) {
 	t.Helper()
 	server := make(map[fmsg.APIKey][2]int32)
-	for address, expectedRole := range endpoints {
-		mergeVersions(server, endpointVersions(t, address, expectedRole))
+	for address, expectedServerType := range endpoints {
+		mergeVersions(server, endpointVersions(t, address, expectedServerType))
 	}
 	verifyLocalVersions(t, server)
 }
 
-func endpointVersions(t *testing.T, address string, expectedRole fgo.ServerRole) map[fmsg.APIKey][2]int32 {
+func endpointVersions(t *testing.T, address string, expectedServerType fgo.ServerType) map[fmsg.APIKey][2]int32 {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
 	if err != nil {
@@ -425,8 +425,8 @@ func endpointVersions(t *testing.T, address string, expectedRole fgo.ServerRole)
 		t.Fatal(err)
 	}
 	versions := response.Message().(*fmsg.ApiVersionsResponse)
-	if got := fgo.ServerRole(versions.GetServerType()); got != expectedRole {
-		t.Fatalf("%s server role = %d, want %d", address, got, expectedRole)
+	if got := fgo.ServerType(versions.GetServerType()); got != expectedServerType {
+		t.Fatalf("%s server type = %d, want %d", address, got, expectedServerType)
 	}
 	result := make(map[fmsg.APIKey][2]int32)
 	for _, version := range versions.GetApiVersions() {
@@ -460,7 +460,7 @@ func openClient(t *testing.T, seeds []string, options ...fgo.Option) *fgo.Client
 	var lastErr error
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		all := []fgo.Option{fgo.WithSeedBrokers(seeds...), fgo.WithDialTimeout(3 * time.Second)}
+		all := []fgo.Option{fgo.WithBootstrapServers(seeds...), fgo.WithDialTimeout(3 * time.Second)}
 		all = append(all, options...)
 		client, err := fgo.Open(ctx, all...)
 		cancel()
@@ -480,7 +480,7 @@ func createTables(t *testing.T, admin *fadm.Client, logPath, kvPath fgo.TablePat
 		{Name: "id", Type: fgo.IntType},
 		{Name: "message", Type: fgo.StringType},
 	}}
-	if err := admin.CreateTable(context.Background(), logPath, fadm.TableDefinition{
+	if err := admin.CreateTable(context.Background(), logPath, fadm.TableDescriptor{
 		Schema: logSchema, BucketCount: 3,
 	}, false); err != nil {
 		t.Fatalf("create log table: %v", err)
@@ -494,7 +494,7 @@ func createTables(t *testing.T, admin *fadm.Client, logPath, kvPath fgo.TablePat
 		PrimaryKey: []string{"tenant", "id"},
 		BucketKey:  []string{"tenant"},
 	}
-	if err := admin.CreateTable(context.Background(), kvPath, fadm.TableDefinition{
+	if err := admin.CreateTable(context.Background(), kvPath, fadm.TableDescriptor{
 		Schema: kvSchema, BucketCount: 3,
 	}, false); err != nil {
 		t.Fatalf("create KV table: %v", err)
@@ -508,7 +508,7 @@ func waitForTableReady(t *testing.T, admin *fadm.Client, path fgo.TablePath) {
 	deadline := time.Now().Add(90 * time.Second)
 	var last []fadm.OffsetResult
 	for time.Now().Before(deadline) {
-		table, err := admin.DescribeTable(context.Background(), path)
+		table, err := admin.GetTableInfo(context.Background(), path)
 		if err == nil {
 			buckets := make([]int32, table.BucketCount)
 			for index := range buckets {
@@ -536,11 +536,11 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	table, err := client.OpenTable(ctx, path)
+	table, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer, err := client.NewLogWriter(ctx, table, fgo.WithLogLinger(0))
+	writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,11 +584,11 @@ func testExplicitOffsetInsideBatch(
 ) {
 	t.Helper()
 	const records = 20
-	writer, err := client.NewLogWriter(
+	writer, err := client.NewAppendWriter(
 		ctx,
 		table,
-		fgo.WithLogLinger(time.Hour),
-		fgo.WithLogBucketAssignment(fgo.AssignmentSticky),
+		fgo.WithAppendLinger(time.Hour),
+		fgo.WithAppendBucketAssignment(fgo.AssignmentSticky),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -660,7 +660,7 @@ func testSchemaEvolution(
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	path := fgo.TablePath{Database: database, Table: "schema_evolution"}
-	if err := admin.CreateTable(ctx, path, fadm.TableDefinition{
+	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{
 		Schema: fgo.Schema{Columns: []fgo.Column{
 			{Name: "id", Type: fgo.IntType},
 			{Name: "message", Type: fgo.StringType, Nullable: true},
@@ -670,7 +670,7 @@ func testSchemaEvolution(
 		t.Fatal(err)
 	}
 	waitForTableReady(t, admin, path)
-	oldTable, err := client.OpenTable(ctx, path)
+	oldTable, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -697,7 +697,7 @@ func appendSchemaEvolutionRow(
 	row fgo.Row,
 ) {
 	t.Helper()
-	writer, err := client.NewLogWriter(ctx, table, fgo.WithLogLinger(0))
+	writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,7 +750,7 @@ func waitForSchemaChange(
 ) fgo.Table {
 	t.Helper()
 	for ctx.Err() == nil {
-		table, err := client.OpenTable(ctx, path)
+		table, err := client.GetTable(ctx, path)
 		if err == nil && table.SchemaID != previous {
 			return table
 		}
@@ -773,7 +773,7 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 		},
 		PartitionKey: []string{"region"},
 	}
-	if err := admin.CreateTable(ctx, path, fadm.TableDefinition{
+	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{
 		Schema: schema, BucketCount: 1,
 	}, false); err != nil {
 		t.Fatal(err)
@@ -782,13 +782,13 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 		fgo.DynamicPartitionCreationConfig{MetadataAttempts: 10, RetryBackoff: 100 * time.Millisecond},
 	))
 	defer client.Close()
-	table, err := client.OpenTable(ctx, path)
+	table, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	spec := fgo.PartitionSpec{"region": "kr"}
-	writer, err := client.NewLogWriter(
-		ctx, table, fgo.WithLogPartitionSpec(table.Schema, spec), fgo.WithLogLinger(0),
+	writer, err := client.NewAppendWriter(
+		ctx, table, fgo.WithAppendPartitionSpec(table.Schema, spec), fgo.WithAppendLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -856,7 +856,7 @@ func testBoundedLogScan(t *testing.T, ctx context.Context, client *fgo.Client, t
 	}
 }
 
-func testLogWriteFormats(
+func testLogFormats(
 	t *testing.T,
 	client *fgo.Client,
 	admin *fadm.Client,
@@ -867,48 +867,48 @@ func testLogWriteFormats(
 		{Name: "id", Type: fgo.IntType},
 		{Name: "message", Type: fgo.StringType, Nullable: true},
 	}}
-	for _, format := range []fgo.LogWriteFormat{
-		fgo.LogWriteFormatCompacted,
-		fgo.LogWriteFormatIndexed,
-		fgo.LogWriteFormatArrow,
+	for _, format := range []fgo.LogFormat{
+		fgo.LogFormatCompacted,
+		fgo.LogFormatIndexed,
+		fgo.LogFormatArrow,
 	} {
-		testLogWriteFormat(t, client, admin, database, schema, format)
+		testLogFormat(t, client, admin, database, schema, format)
 	}
 }
 
-func testLogWriteFormat(
+func testLogFormat(
 	t *testing.T,
 	client *fgo.Client,
 	admin *fadm.Client,
 	database string,
 	schema fgo.Schema,
-	format fgo.LogWriteFormat,
+	format fgo.LogFormat,
 ) {
 	t.Helper()
 	path := fgo.TablePath{Database: database, Table: "format_" + string(format)}
-	if err := admin.CreateTable(context.Background(), path, fadm.TableDefinition{
+	if err := admin.CreateTable(context.Background(), path, fadm.TableDescriptor{
 		Schema: schema, BucketCount: 1,
 		Properties: map[string]string{"table.log.format": strings.ToUpper(string(format))},
 	}, false); err != nil {
 		t.Fatalf("create %s table: %v", format, err)
 	}
 	waitForTableReady(t, admin, path)
-	table, err := client.OpenTable(context.Background(), path)
+	table, err := client.GetTable(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := []fgo.LogWriterOption{
-		fgo.WithLogWriteFormat(format),
-		fgo.WithLogLinger(0),
+	options := []fgo.AppendWriterOption{
+		fgo.WithAppendLogFormat(format),
+		fgo.WithAppendLinger(0),
 	}
-	if format == fgo.LogWriteFormatArrow {
-		options = append(options, fgo.WithLogArrowCompression(fgo.ArrowCompressionZSTD))
+	if format == fgo.LogFormatArrow {
+		options = append(options, fgo.WithAppendArrowCompression(fgo.ArrowCompressionZSTD))
 	}
-	writer, err := client.NewLogWriter(context.Background(), table, options...)
+	writer, err := client.NewAppendWriter(context.Background(), table, options...)
 	if err != nil {
 		t.Fatalf("create %s writer: %v", format, err)
 	}
-	if format == fgo.LogWriteFormatArrow {
+	if format == fgo.LogFormatArrow {
 		appendArrowFormatRow(t, writer, table)
 	} else {
 		result := writer.Append(context.Background(), fgo.Row{int32(1), string(format)}).
@@ -921,12 +921,12 @@ func testLogWriteFormat(
 		t.Fatal(err)
 	}
 	assertFormatRow(t, client, table, format)
-	if format == fgo.LogWriteFormatArrow {
+	if format == fgo.LogFormatArrow {
 		testDefaultFetchWithLargeArrowBatch(t, client, table)
 	}
 }
 
-func appendArrowFormatRow(t *testing.T, writer *fgo.LogWriter, table fgo.Table) {
+func appendArrowFormatRow(t *testing.T, writer *fgo.AppendWriter, table fgo.Table) {
 	t.Helper()
 	schema, err := table.Schema.ArrowSchema()
 	if err != nil {
@@ -964,11 +964,11 @@ func testDefaultFetchWithLargeArrowBatch(t *testing.T, client *fgo.Client, table
 	builder.Release()
 	defer record.Release()
 
-	writer, err := client.NewLogWriter(
+	writer, err := client.NewAppendWriter(
 		ctx, table,
-		fgo.WithLogWriteFormat(fgo.LogWriteFormatArrow),
-		fgo.WithLogLinger(0),
-		fgo.WithLogBatchLimits(4<<20, 10),
+		fgo.WithAppendLogFormat(fgo.LogFormatArrow),
+		fgo.WithAppendLinger(0),
+		fgo.WithAppendBatchLimits(4<<20, 10),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1018,7 +1018,7 @@ func assertFormatRow(
 	t *testing.T,
 	client *fgo.Client,
 	table fgo.Table,
-	format fgo.LogWriteFormat,
+	format fgo.LogFormat,
 ) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1050,11 +1050,11 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	table, err := client.OpenTable(ctx, path)
+	table, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer, err := client.NewKVWriter(ctx, table, fgo.WithKVLinger(0))
+	writer, err := client.NewUpsertWriter(ctx, table, fgo.WithUpsertLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1067,7 +1067,7 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	lookup, err := client.NewLookupClient(ctx, table)
+	lookup, err := client.NewLookuper(ctx, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1119,7 +1119,7 @@ func testCurrentBatchScan(
 	}
 }
 
-func upsertRows(t *testing.T, ctx context.Context, writer *fgo.KVWriter, rows []fgo.Row) {
+func upsertRows(t *testing.T, ctx context.Context, writer *fgo.UpsertWriter, rows []fgo.Row) {
 	t.Helper()
 	for index, row := range rows {
 		if result := writer.Upsert(ctx, row).Await(ctx); result.Err != nil {
@@ -1128,7 +1128,7 @@ func upsertRows(t *testing.T, ctx context.Context, writer *fgo.KVWriter, rows []
 	}
 }
 
-func testPointAndPrefixLookup(t *testing.T, ctx context.Context, lookup *fgo.LookupClient) {
+func testPointAndPrefixLookup(t *testing.T, ctx context.Context, lookup *fgo.Lookuper) {
 	t.Helper()
 	points := lookup.Lookup(ctx, fgo.PrimaryKey{"team-a", int32(1)}, fgo.PrimaryKey{"team-b", int32(1)})
 	for index, point := range points {
@@ -1151,10 +1151,10 @@ func deleteLookupRow(
 	ctx context.Context,
 	client *fgo.Client,
 	table fgo.Table,
-	lookup *fgo.LookupClient,
+	lookup *fgo.Lookuper,
 ) {
 	t.Helper()
-	deleteWriter, err := client.NewKVWriter(ctx, table, fgo.WithKVLinger(0))
+	deleteWriter, err := client.NewUpsertWriter(ctx, table, fgo.WithUpsertLinger(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1172,7 +1172,7 @@ func deleteLookupRow(
 
 func testConcurrentInsertLookup(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {
 	t.Helper()
-	lookup, err := client.NewLookupClient(
+	lookup, err := client.NewLookuper(
 		ctx, table, fgo.WithLookupInsertIfNotExists(10*time.Second, -1),
 	)
 	if err != nil {
@@ -1285,7 +1285,7 @@ func testTypedData(t *testing.T, client *fgo.Client, logPath, kvPath fgo.TablePa
 
 func testTypedLogData(t *testing.T, ctx context.Context, client *fgo.Client, path fgo.TablePath) {
 	t.Helper()
-	logTable, err := client.OpenTable(ctx, path)
+	logTable, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1318,8 +1318,8 @@ func writeTypedLogEvents(
 	table fgo.Table,
 ) []typedLogEvent {
 	t.Helper()
-	writer, err := fgo.NewTypedLogWriter(
-		ctx, client, table, logEventCodec(), fgo.WithLogLinger(0),
+	writer, err := fgo.NewTypedAppendWriter(
+		ctx, client, table, logEventCodec(), fgo.WithAppendLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1365,7 +1365,7 @@ func testTypedKVData(
 	path fgo.TablePath,
 ) (fgo.Table, []typedUser) {
 	t.Helper()
-	kvTable, err := client.OpenTable(ctx, path)
+	kvTable, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1374,21 +1374,21 @@ func testTypedKVData(
 		{Tenant: "typed-team", ID: 1, Name: &firstName},
 		{Tenant: "typed-team", ID: 2, Name: &secondName},
 	}
-	kvWriter, err := fgo.NewTypedKVWriter(
-		ctx, client, kvTable, userCodec(), userKeyCodec(), fgo.WithKVLinger(0),
+	upsertWriter, err := fgo.NewTypedUpsertWriter(
+		ctx, client, kvTable, userCodec(), userKeyCodec(), fgo.WithUpsertLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, user := range users {
-		if result := kvWriter.Upsert(ctx, user).Await(ctx); result.Err != nil {
+		if result := upsertWriter.Upsert(ctx, user).Await(ctx); result.Err != nil {
 			t.Fatalf("typed upsert %#v: %v", user, result.Err)
 		}
 	}
-	if err := kvWriter.Close(ctx); err != nil {
+	if err := upsertWriter.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	lookup, err := fgo.NewTypedLookupClient(ctx, client, kvTable, userCodec(), userKeyCodec())
+	lookup, err := fgo.NewTypedLookuper(ctx, client, kvTable, userCodec(), userKeyCodec())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1479,7 +1479,7 @@ func testPartialUpdatePreservesFields(
 ) {
 	t.Helper()
 	path := fgo.TablePath{Database: database, Table: "partial_users"}
-	if err := admin.CreateTable(ctx, path, fadm.TableDefinition{
+	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{
 		Schema: fgo.Schema{
 			Columns: []fgo.Column{
 				{Name: "tenant", Type: fgo.StringType},
@@ -1495,19 +1495,19 @@ func testPartialUpdatePreservesFields(
 		t.Fatal(err)
 	}
 	waitForTableReady(t, admin, path)
-	table, err := client.OpenTable(ctx, path)
+	table, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeKVOperation(t, ctx, client, table, []fgo.KVWriterOption{fgo.WithKVLinger(0)}, func(writer *fgo.KVWriter) *fgo.WriteFuture {
+	writeKVOperation(t, ctx, client, table, []fgo.UpsertWriterOption{fgo.WithUpsertLinger(0)}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
 		return writer.Upsert(ctx, fgo.Row{"partial", int32(1), "before", "preserved"})
 	})
-	writeKVOperation(t, ctx, client, table, []fgo.KVWriterOption{fgo.WithKVLinger(0)}, func(writer *fgo.KVWriter) *fgo.WriteFuture {
+	writeKVOperation(t, ctx, client, table, []fgo.UpsertWriterOption{fgo.WithUpsertLinger(0)}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
 		return writer.PartialUpsert(
 			ctx, []string{"tenant", "id", "name"}, fgo.Row{"partial", int32(1), "after"},
 		)
 	})
-	lookup, err := client.NewLookupClient(ctx, table)
+	lookup, err := client.NewLookuper(ctx, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1528,7 +1528,7 @@ func testKVMergeModes(
 ) {
 	t.Helper()
 	overwritePath := fgo.TablePath{Database: database, Table: "overwrite_users"}
-	if err := admin.CreateTable(ctx, overwritePath, fadm.TableDefinition{
+	if err := admin.CreateTable(ctx, overwritePath, fadm.TableDescriptor{
 		Schema: fgo.Schema{
 			Columns: []fgo.Column{
 				{Name: "tenant", Type: fgo.StringType},
@@ -1544,20 +1544,20 @@ func testKVMergeModes(
 		t.Fatal(err)
 	}
 	waitForTableReady(t, admin, overwritePath)
-	overwriteTable, err := client.OpenTable(ctx, overwritePath)
+	overwriteTable, err := client.GetTable(ctx, overwritePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeOverwrite := func(mode fgo.MergeMode, name string) {
-		writeKVOperation(t, ctx, client, overwriteTable, []fgo.KVWriterOption{
-			fgo.WithKVLinger(0), fgo.WithKVMergeMode(mode),
-		}, func(writer *fgo.KVWriter) *fgo.WriteFuture {
+		writeKVOperation(t, ctx, client, overwriteTable, []fgo.UpsertWriterOption{
+			fgo.WithUpsertLinger(0), fgo.WithUpsertMergeMode(mode),
+		}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
 			return writer.Upsert(ctx, fgo.Row{"merge", int32(1), name})
 		})
 	}
 	writeOverwrite(fgo.MergeModeDefault, "first")
 	writeOverwrite(fgo.MergeModeDefault, "ignored")
-	overwriteLookup, err := client.NewLookupClient(ctx, overwriteTable)
+	overwriteLookup, err := client.NewLookuper(ctx, overwriteTable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1578,11 +1578,11 @@ func writeKVOperation(
 	ctx context.Context,
 	client *fgo.Client,
 	table fgo.Table,
-	options []fgo.KVWriterOption,
-	operation func(*fgo.KVWriter) *fgo.WriteFuture,
+	options []fgo.UpsertWriterOption,
+	operation func(*fgo.UpsertWriter) *fgo.WriteFuture,
 ) {
 	t.Helper()
-	writer, err := client.NewKVWriter(ctx, table, options...)
+	writer, err := client.NewUpsertWriter(ctx, table, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1603,22 +1603,22 @@ func testAdvancedAdmin(
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	testClusterConfigAndNodes(t, ctx, admin)
+	testConfigEntryAndNodes(t, ctx, admin)
 	testProducerOffsets(t, ctx, client, admin, logPath)
 	testTableStatistics(t, ctx, client, admin, kvPath)
-	testSnapshotLease(t, ctx, client, admin, kvPath)
+	testKVSnapshotLease(t, ctx, client, admin, kvPath)
 	testLakeSnapshotError(t, ctx, admin, kvPath)
 }
 
-func testClusterConfigAndNodes(t *testing.T, ctx context.Context, admin *fadm.Client) {
+func testConfigEntryAndNodes(t *testing.T, ctx context.Context, admin *fadm.Client) {
 	t.Helper()
 	configs, err := admin.DescribeClusterConfigs(ctx)
 	if err != nil || len(configs) == 0 {
 		t.Fatalf("DescribeClusterConfigs() = %#v, %v", configs, err)
 	}
-	nodes, err := admin.ServerNodes(ctx)
+	nodes, err := admin.GetServerNodes(ctx)
 	if err != nil || len(nodes) != 4 {
-		t.Fatalf("ServerNodes() = %#v, %v", nodes, err)
+		t.Fatalf("GetServerNodes() = %#v, %v", nodes, err)
 	}
 }
 
@@ -1630,7 +1630,7 @@ func testProducerOffsets(
 	path fgo.TablePath,
 ) {
 	t.Helper()
-	logTable, err := client.OpenTable(ctx, path)
+	logTable, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1684,7 +1684,7 @@ func testTableStatistics(
 	path fgo.TablePath,
 ) {
 	t.Helper()
-	kvTable, err := client.OpenTable(ctx, path)
+	kvTable, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1692,20 +1692,20 @@ func testTableStatistics(
 	for index := range bucketIDs {
 		bucketIDs[index] = int32(index)
 	}
-	stats := admin.TableStats(
+	stats := admin.GetTableStats(
 		ctx, kvTable, fgo.PhysicalTablePath{TablePath: path}, -1, bucketIDs,
 	)
 	if len(stats) != len(bucketIDs) {
-		t.Fatalf("TableStats() count = %d, want %d", len(stats), len(bucketIDs))
+		t.Fatalf("GetTableStats() count = %d, want %d", len(stats), len(bucketIDs))
 	}
 	for index, stat := range stats {
 		if stat.Err != nil || stat.Bucket != bucketIDs[index] || stat.RowCount < 0 {
-			t.Fatalf("TableStats()[%d] = %#v", index, stat)
+			t.Fatalf("GetTableStats()[%d] = %#v", index, stat)
 		}
 	}
 }
 
-func testSnapshotLease(
+func testKVSnapshotLease(
 	t *testing.T,
 	ctx context.Context,
 	client *fgo.Client,
@@ -1713,31 +1713,31 @@ func testSnapshotLease(
 	path fgo.TablePath,
 ) {
 	t.Helper()
-	kvTable, err := client.OpenTable(ctx, path)
+	kvTable, err := client.GetTable(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	latest := waitForKVSnapshots(t, ctx, admin, path, kvTable.BucketCount)
-	leases := availableSnapshotLeases(latest)
+	leases := availableKVSnapshotLeases(latest)
 	if len(leases) == 0 {
 		t.Fatalf("available snapshot leases = %#v", leases)
 	}
-	metadata, err := admin.KVSnapshotMetadata(
+	metadata, err := admin.GetKVSnapshotMetadata(
 		ctx, leases[0].TableID, leases[0].PartitionID, leases[0].Bucket, leases[0].SnapshotID,
 	)
 	if err != nil || metadata.LogOffset < 0 || len(metadata.Files) == 0 {
-		t.Fatalf("KVSnapshotMetadata() = %#v, %v", metadata, err)
+		t.Fatalf("GetKVSnapshotMetadata() = %#v, %v", metadata, err)
 	}
-	testSnapshotLeaseLifecycle(t, ctx, admin, leases)
+	testKVSnapshotLeaseLifecycle(t, ctx, admin, leases)
 }
 
-func availableSnapshotLeases(latest fadm.LatestKVSnapshot) []fadm.SnapshotLease {
-	var leases []fadm.SnapshotLease
+func availableKVSnapshotLeases(latest fadm.KVSnapshots) []fadm.KVSnapshotLease {
+	var leases []fadm.KVSnapshotLease
 	for _, snapshot := range latest.Snapshots {
 		if !snapshot.Available {
 			continue
 		}
-		leases = append(leases, fadm.SnapshotLease{
+		leases = append(leases, fadm.KVSnapshotLease{
 			TableID: latest.TableID, PartitionID: latest.PartitionID,
 			Bucket: snapshot.Bucket, SnapshotID: snapshot.SnapshotID,
 		})
@@ -1745,11 +1745,11 @@ func availableSnapshotLeases(latest fadm.LatestKVSnapshot) []fadm.SnapshotLease 
 	return leases
 }
 
-func testSnapshotLeaseLifecycle(
+func testKVSnapshotLeaseLifecycle(
 	t *testing.T,
 	ctx context.Context,
 	admin *fadm.Client,
-	leases []fadm.SnapshotLease,
+	leases []fadm.KVSnapshotLease,
 ) {
 	t.Helper()
 	leaseID := fmt.Sprintf("fluss-go-integration-lease-%d", time.Now().UnixNano())
@@ -1772,7 +1772,7 @@ func testSnapshotLeaseLifecycle(
 	}
 	bucket := fgo.TableBucket{
 		TableID: leases[0].TableID, PartitionID: leases[0].PartitionID, BucketID: leases[0].Bucket,
-		Leader: fgo.Node{Address: "lease-only", Role: fgo.TabletServer},
+		Leader: fgo.ServerNode{Address: "lease-only", ServerType: fgo.TabletServer},
 	}
 	if err := admin.ReleaseKVSnapshotLease(ctx, leaseID, []fgo.TableBucket{bucket}); err != nil {
 		t.Fatal(err)
@@ -1790,10 +1790,10 @@ func testLakeSnapshotError(
 	path fgo.TablePath,
 ) {
 	t.Helper()
-	if _, err := admin.LakeSnapshot(ctx, path, nil, true); err == nil {
-		t.Fatal("LakeSnapshot() without lake storage error = nil")
+	if _, err := admin.GetReadableLakeSnapshot(ctx, path); err == nil {
+		t.Fatal("GetReadableLakeSnapshot() without lake storage error = nil")
 	} else if !errors.Is(err, fgo.ErrStorage) && !errors.Is(err, fgo.ErrValidation) {
-		t.Fatalf("LakeSnapshot() unsupported environment error = %v", err)
+		t.Fatalf("GetReadableLakeSnapshot() unsupported environment error = %v", err)
 	}
 }
 
@@ -1803,11 +1803,11 @@ func waitForKVSnapshots(
 	admin *fadm.Client,
 	path fgo.TablePath,
 	bucketCount int,
-) fadm.LatestKVSnapshot {
+) fadm.KVSnapshots {
 	t.Helper()
-	var latest fadm.LatestKVSnapshot
+	var latest fadm.KVSnapshots
 	err := waitForCondition(ctx, 500*time.Millisecond, func() (bool, error) {
-		candidate, snapshotErr := admin.LatestKVSnapshots(ctx, path, "")
+		candidate, snapshotErr := admin.GetLatestKVSnapshots(ctx, path, "")
 		if snapshotErr != nil {
 			return false, nil
 		}
@@ -1841,11 +1841,11 @@ func testLeaderFailover(
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	logTable, err := client.OpenTable(ctx, logPath)
+	logTable, err := client.GetTable(ctx, logPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kvTable, err := client.OpenTable(ctx, kvPath)
+	kvTable, err := client.GetTable(ctx, kvPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1883,17 +1883,17 @@ func testLeaderFailover(
 
 	canceled, stop := context.WithCancel(ctx)
 	stop()
-	if _, err := client.OpenTable(canceled, logPath); !errors.Is(err, context.Canceled) {
-		t.Fatalf("OpenTable() canceled after failover = %v", err)
+	if _, err := client.GetTable(canceled, logPath); !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetTable() canceled after failover = %v", err)
 	}
-	if _, err := client.OpenTable(ctx, logPath); err != nil {
-		t.Fatalf("OpenTable() after canceled failover request = %v", err)
+	if _, err := client.GetTable(ctx, logPath); err != nil {
+		t.Fatalf("GetTable() after canceled failover request = %v", err)
 	}
-	if _, err := client.NewLogWriter(
+	if _, err := client.NewAppendWriter(
 		ctx,
 		logTable,
-		fgo.WithLogRequest(5*time.Second, 1),
-		fgo.WithLogRetryPolicy(fgo.WriterRetryPolicy{MaxAttempts: 2}),
+		fgo.WithAppendRequest(5*time.Second, 1),
+		fgo.WithAppendRetryPolicy(fgo.WriterRetryPolicy{MaxAttempts: 2}),
 	); !errors.Is(err, fgo.ErrInvalidConfig) {
 		t.Fatalf("unsafe mutation retry configuration error = %v", err)
 	}
@@ -1911,7 +1911,7 @@ func appendFailoverLogRows(
 	retry bool,
 ) map[int32][]expectedLogWrite {
 	t.Helper()
-	writer := openFailoverLogWriter(t, ctx, client, table, retry)
+	writer := openFailoverAppendWriter(t, ctx, client, table, retry)
 	expected := make(map[int32][]expectedLogWrite, table.BucketCount)
 	for index := range table.BucketCount {
 		id := base + int32(index)
@@ -1930,44 +1930,44 @@ func appendFailoverLogRows(
 	return expected
 }
 
-func openFailoverLogWriter(
+func openFailoverAppendWriter(
 	t *testing.T,
 	ctx context.Context,
 	client *fgo.Client,
 	table fgo.Table,
 	retry bool,
-) *fgo.LogWriter {
+) *fgo.AppendWriter {
 	t.Helper()
-	options := []fgo.LogWriterOption{
-		fgo.WithLogLinger(0),
-		fgo.WithLogBucketAssignment(fgo.AssignmentRoundRobin),
-		fgo.WithLogBatchLimits(1<<20, 1),
-		fgo.WithLogRequest(10*time.Second, -1),
+	options := []fgo.AppendWriterOption{
+		fgo.WithAppendLinger(0),
+		fgo.WithAppendBucketAssignment(fgo.AssignmentRoundRobin),
+		fgo.WithAppendBatchLimits(1<<20, 1),
+		fgo.WithAppendRequest(10*time.Second, -1),
 	}
 	if retry {
-		options = append(options, fgo.WithLogRetryPolicy(fgo.WriterRetryPolicy{
+		options = append(options, fgo.WithAppendRetryPolicy(fgo.WriterRetryPolicy{
 			MaxAttempts: 5,
 			Backoff: func(int) time.Duration {
 				return 100 * time.Millisecond
 			},
 		}))
 	}
-	var writer *fgo.LogWriter
+	var writer *fgo.AppendWriter
 	var err error
 	for attempt := 1; attempt <= 5; attempt++ {
-		writer, err = client.NewLogWriter(ctx, table, options...)
+		writer, err = client.NewAppendWriter(ctx, table, options...)
 		if err == nil {
 			break
 		}
 		if !retry || !isTransientConnectionFailure(err) {
-			t.Fatalf("create failover log writer: %v", err)
+			t.Fatalf("create failover append writer: %v", err)
 		}
 		if waitErr := waitRetryInterval(ctx, 100*time.Millisecond); waitErr != nil {
-			t.Fatalf("retry failover log writer: %v (last error: %v)", waitErr, err)
+			t.Fatalf("retry failover append writer: %v (last error: %v)", waitErr, err)
 		}
 	}
 	if writer == nil {
-		t.Fatalf("create failover log writer after retries: %v", err)
+		t.Fatalf("create failover append writer after retries: %v", err)
 	}
 	return writer
 }
@@ -1985,8 +1985,8 @@ func seedFailoverKVRows(
 	table fgo.Table,
 ) map[int32]fgo.PrimaryKey {
 	t.Helper()
-	writer, err := client.NewKVWriter(
-		ctx, table, fgo.WithKVLinger(0), fgo.WithKVBatchLimits(1<<20, 1),
+	writer, err := client.NewUpsertWriter(
+		ctx, table, fgo.WithUpsertLinger(0), fgo.WithUpsertBatchLimits(1<<20, 1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2019,7 +2019,7 @@ func updateAndVerifyFailoverKVRows(
 	keys map[int32]fgo.PrimaryKey,
 ) {
 	t.Helper()
-	writer := openFailoverKVWriter(t, ctx, client, table)
+	writer := openFailoverUpsertWriter(t, ctx, client, table)
 	ordered := updateFailoverKVRows(t, ctx, writer, table, keys)
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
@@ -2027,40 +2027,40 @@ func updateAndVerifyFailoverKVRows(
 	verifyFailoverKVLookups(t, ctx, client, table, ordered)
 }
 
-func openFailoverKVWriter(
+func openFailoverUpsertWriter(
 	t *testing.T,
 	ctx context.Context,
 	client *fgo.Client,
 	table fgo.Table,
-) *fgo.KVWriter {
+) *fgo.UpsertWriter {
 	t.Helper()
-	options := []fgo.KVWriterOption{
-		fgo.WithKVLinger(0),
-		fgo.WithKVBatchLimits(1<<20, 1),
-		fgo.WithKVRequest(10*time.Second, -1),
-		fgo.WithKVRetryPolicy(fgo.WriterRetryPolicy{
+	options := []fgo.UpsertWriterOption{
+		fgo.WithUpsertLinger(0),
+		fgo.WithUpsertBatchLimits(1<<20, 1),
+		fgo.WithUpsertRequest(10*time.Second, -1),
+		fgo.WithUpsertRetryPolicy(fgo.WriterRetryPolicy{
 			MaxAttempts: 5,
 			Backoff: func(int) time.Duration {
 				return 100 * time.Millisecond
 			},
 		}),
 	}
-	var writer *fgo.KVWriter
+	var writer *fgo.UpsertWriter
 	var err error
 	for attempt := 1; attempt <= 5; attempt++ {
-		writer, err = client.NewKVWriter(ctx, table, options...)
+		writer, err = client.NewUpsertWriter(ctx, table, options...)
 		if err == nil {
 			break
 		}
 		if !isTransientConnectionFailure(err) {
-			t.Fatalf("create failover KV writer: %v", err)
+			t.Fatalf("create failover upsert writer: %v", err)
 		}
 		if waitErr := waitRetryInterval(ctx, 100*time.Millisecond); waitErr != nil {
-			t.Fatalf("retry failover KV writer: %v (last error: %v)", waitErr, err)
+			t.Fatalf("retry failover upsert writer: %v (last error: %v)", waitErr, err)
 		}
 	}
 	if writer == nil {
-		t.Fatalf("create failover KV writer after retries: %v", err)
+		t.Fatalf("create failover upsert writer after retries: %v", err)
 	}
 	return writer
 }
@@ -2068,7 +2068,7 @@ func openFailoverKVWriter(
 func updateFailoverKVRows(
 	t *testing.T,
 	ctx context.Context,
-	writer *fgo.KVWriter,
+	writer *fgo.UpsertWriter,
 	table fgo.Table,
 	keys map[int32]fgo.PrimaryKey,
 ) []fgo.PrimaryKey {
@@ -2096,7 +2096,7 @@ func verifyFailoverKVLookups(
 	ordered []fgo.PrimaryKey,
 ) {
 	t.Helper()
-	lookup, err := client.NewLookupClient(ctx, table)
+	lookup, err := client.NewLookuper(ctx, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2264,7 +2264,7 @@ func testCoordinatorRecovery(
 		t.Fatal(err)
 	}
 	failureCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_, failure := admin.ServerNodes(failureCtx)
+	_, failure := admin.GetServerNodes(failureCtx)
 	cancel()
 	if failure == nil || !isTransientConnectionFailure(failure) {
 		t.Fatalf("stopped coordinator error = %v, want transient connection failure", failure)
@@ -2275,21 +2275,21 @@ func testCoordinatorRecovery(
 	ctx, stop := context.WithTimeout(context.Background(), 45*time.Second)
 	defer stop()
 	if err := waitForCondition(ctx, 250*time.Millisecond, func() (bool, error) {
-		nodes, nodesErr := admin.ServerNodes(ctx)
+		nodes, nodesErr := admin.GetServerNodes(ctx)
 		if nodesErr != nil {
 			return false, nil
 		}
-		_, tableErr := client.OpenTable(ctx, path)
+		_, tableErr := client.GetTable(ctx, path)
 		return len(nodes) == 4 && tableErr == nil, nil
 	}); err != nil {
 		t.Fatalf("long-lived client did not recover after coordinator restart: %v", err)
 	}
 	canceled, cancelRequest := context.WithCancel(ctx)
 	cancelRequest()
-	if _, err := admin.ServerNodes(canceled); !errors.Is(err, context.Canceled) {
+	if _, err := admin.GetServerNodes(canceled); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled recovered admin request = %v", err)
 	}
-	if _, err := admin.ServerNodes(ctx); err != nil {
+	if _, err := admin.GetServerNodes(ctx); err != nil {
 		t.Fatalf("admin request after cancellation = %v", err)
 	}
 }

@@ -33,13 +33,13 @@ func ExampleOpen_tlsAndSASL() {
 
 	client, err := fgo.Open(
 		context.Background(),
-		fgo.WithSeedBrokers("coordinator.example:9123"),
+		fgo.WithBootstrapServers("coordinator.example:9123"),
 		fgo.WithTLSConfig(&tls.Config{
 			MinVersion: tls.VersionTLS12,
 			RootCAs:    roots,
 			ServerName: serverName,
 		}),
-		fgo.WithAuthenticator(fgo.PlainAuthenticator(username, password)),
+		fgo.WithAuthenticator(fgo.SASLPlainAuthenticator(username, password)),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -120,7 +120,7 @@ func ExampleOpen() {
 	ctx := context.Background()
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers("coordinator.example:9123"),
+		fgo.WithBootstrapServers("coordinator.example:9123"),
 		fgo.WithClientIdentity("orders-service", "1.0.0"),
 	)
 	if err != nil {
@@ -132,7 +132,7 @@ func ExampleOpen() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "orders",
 	})
@@ -142,9 +142,9 @@ func ExampleOpen() {
 	log.Printf("opened %s with %d buckets", table.Path, table.BucketCount)
 }
 
-func ExampleClient_NewLogWriter() {
+func ExampleClient_NewAppendWriter() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -154,25 +154,25 @@ func ExampleClient_NewLogWriter() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "events",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	writer, err := client.NewLogWriter(
+	writer, err := client.NewAppendWriter(
 		ctx,
 		table,
-		fgo.WithLogBatchLimits(1<<20, 500),
-		fgo.WithLogLinger(5*time.Millisecond),
+		fgo.WithAppendBatchLimits(1<<20, 500),
+		fgo.WithAppendLinger(5*time.Millisecond),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func() {
 		if err := writer.Close(ctx); err != nil {
-			log.Printf("close KV writer: %v", err)
+			log.Printf("close upsert writer: %v", err)
 		}
 	}()
 
@@ -185,7 +185,7 @@ func ExampleClient_NewLogWriter() {
 
 func ExampleClient_NewLogScanner() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func ExampleClient_NewLogScanner() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "events",
 	})
@@ -229,7 +229,7 @@ func ExampleClient_NewLogScanner() {
 	}
 }
 
-func ExampleNewTypedLogWriter() {
+func ExampleNewTypedAppendWriter() {
 	type event struct {
 		ID   int64
 		Kind string
@@ -245,20 +245,20 @@ func ExampleNewTypedLogWriter() {
 	}
 
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer client.Close()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "events",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	writer, err := fgo.NewTypedLogWriter(ctx, client, table, codec)
+	writer, err := fgo.NewTypedAppendWriter(ctx, client, table, codec)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func ExampleWithFileSystemSecurityTokenRefresh() {
 
 	client, err := fgo.Open(
 		context.Background(),
-		fgo.WithSeedBrokers("coordinator.example:9123"),
+		fgo.WithBootstrapServers("coordinator.example:9123"),
 		fgo.WithRemoteFileReader(reader, fgo.RemoteFileReadConfig{}),
 		fgo.WithFileSystemSecurityTokenRefresh(
 			fgo.FileSystemSecurityTokenRefreshConfig{},
@@ -299,9 +299,9 @@ func ExampleWithFileSystemSecurityTokenRefresh() {
 	defer client.Close()
 }
 
-func ExampleClient_NewKVWriter() {
+func ExampleClient_NewUpsertWriter() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -311,25 +311,25 @@ func ExampleClient_NewKVWriter() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "customers",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	writer, err := client.NewKVWriter(
+	writer, err := client.NewUpsertWriter(
 		ctx,
 		table,
-		fgo.WithKVBatchLimits(1<<20, 500),
-		fgo.WithKVMergeMode(fgo.MergeModeOverwrite),
+		fgo.WithUpsertBatchLimits(1<<20, 500),
+		fgo.WithUpsertMergeMode(fgo.MergeModeOverwrite),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func() {
 		if err := writer.Close(ctx); err != nil {
-			log.Printf("close KV writer: %v", err)
+			log.Printf("close upsert writer: %v", err)
 		}
 	}()
 
@@ -346,9 +346,9 @@ func ExampleClient_NewKVWriter() {
 	}
 }
 
-func ExampleClient_NewLookupClient() {
+func ExampleClient_NewLookuper() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -358,20 +358,20 @@ func ExampleClient_NewLookupClient() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "customers",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	lookup, err := client.NewLookupClient(ctx, table, fgo.WithLookupBatch(100, 4))
+	lookup, err := client.NewLookuper(ctx, table, fgo.WithLookupBatch(100, 4))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func() {
 		if err := lookup.Close(); err != nil {
-			log.Printf("close lookup client: %v", err)
+			log.Printf("close lookuper: %v", err)
 		}
 	}()
 
@@ -394,7 +394,7 @@ func ExampleClient_NewLookupClient() {
 
 func ExampleClient_NewBatchScanner() {
 	ctx := context.Background()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers("coordinator.example:9123"))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -404,7 +404,7 @@ func ExampleClient_NewBatchScanner() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "customers",
 	})
@@ -465,7 +465,7 @@ func ExampleClient_NewSnapshotBatchScanner() {
 	)
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers("coordinator.example:9123"),
+		fgo.WithBootstrapServers("coordinator.example:9123"),
 		fgo.WithSnapshotBatchProvider(provider),
 	)
 	if err != nil {
@@ -477,7 +477,7 @@ func ExampleClient_NewSnapshotBatchScanner() {
 		}
 	}()
 
-	table, err := client.OpenTable(ctx, fgo.TablePath{
+	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "customers",
 	})

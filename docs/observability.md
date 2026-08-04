@@ -11,7 +11,7 @@ OpenTelemetry counters and histograms. It depends only on the stable metrics
 API. The application provides a `metric.MeterProvider` and owns all SDK,
 resource, view, reader, exporter, force-flush, and shutdown decisions.
 
-Close Fluss writers, scanners, lookup clients, and the shared `fgo.Client`
+Close Fluss writers, scanners, lookupers, and the shared `fgo.Client`
 before flushing and shutting down the application provider. The adapter does
 not start goroutines and does not perform exporter I/O. Export intervals,
 timeouts, queues, and collector availability therefore remain under the

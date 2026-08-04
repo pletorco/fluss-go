@@ -70,48 +70,48 @@ func validateTypedKeyCodec[K any](codec KeyCodec[K]) error {
 	return nil
 }
 
-// TypedLogWriter encodes application values before appending them.
-type TypedLogWriter[T any] struct {
-	writer *LogWriter
+// TypedAppendWriter encodes application values before appending them.
+type TypedAppendWriter[T any] struct {
+	writer *AppendWriter
 	codec  Codec[T]
 }
 
-// NewTypedLogWriter opens a log writer that encodes application values with codec.
-func NewTypedLogWriter[T any](
+// NewTypedAppendWriter opens a append writer that encodes application values with codec.
+func NewTypedAppendWriter[T any](
 	ctx context.Context,
 	client *Client,
 	table Table,
 	codec Codec[T],
-	options ...LogWriterOption,
-) (*TypedLogWriter[T], error) {
+	options ...AppendWriterOption,
+) (*TypedAppendWriter[T], error) {
 	if client == nil {
 		return nil, fmt.Errorf("%w: nil client", ErrInvalidConfig)
 	}
 	if err := validateTypedCodec(codec); err != nil {
 		return nil, err
 	}
-	writer, err := client.NewLogWriter(ctx, table, options...)
+	writer, err := client.NewAppendWriter(ctx, table, options...)
 	if err != nil {
 		return nil, err
 	}
-	return &TypedLogWriter[T]{writer: writer, codec: codec}, nil
+	return &TypedAppendWriter[T]{writer: writer, codec: codec}, nil
 }
 
-func wrapTypedLogWriter[T any](writer *LogWriter, codec Codec[T]) (*TypedLogWriter[T], error) {
+func wrapTypedAppendWriter[T any](writer *AppendWriter, codec Codec[T]) (*TypedAppendWriter[T], error) {
 	if writer == nil {
-		return nil, fmt.Errorf("%w: nil log writer", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: nil append writer", ErrInvalidConfig)
 	}
 	if err := validateTypedCodec(codec); err != nil {
 		return nil, err
 	}
-	return &TypedLogWriter[T]{writer: writer, codec: codec}, nil
+	return &TypedAppendWriter[T]{writer: writer, codec: codec}, nil
 }
 
 // Append encodes value and queues it using the wrapped writer.
 // Encoding failures are returned through the completed future.
-func (w *TypedLogWriter[T]) Append(ctx context.Context, value T) *WriteFuture {
+func (w *TypedAppendWriter[T]) Append(ctx context.Context, value T) *WriteFuture {
 	if w == nil || w.writer == nil {
-		return completedWriteError(fmt.Errorf("%w: nil typed log writer", ErrInvalidConfig))
+		return completedWriteError(fmt.Errorf("%w: nil typed append writer", ErrInvalidConfig))
 	}
 	row, err := w.codec.Encode(value)
 	if err != nil {
@@ -121,38 +121,38 @@ func (w *TypedLogWriter[T]) Append(ctx context.Context, value T) *WriteFuture {
 }
 
 // Flush waits until all values accepted before the call have completed.
-func (w *TypedLogWriter[T]) Flush(ctx context.Context) error {
+func (w *TypedAppendWriter[T]) Flush(ctx context.Context) error {
 	if w == nil || w.writer == nil {
-		return fmt.Errorf("%w: nil typed log writer", ErrInvalidConfig)
+		return fmt.Errorf("%w: nil typed append writer", ErrInvalidConfig)
 	}
 	return w.writer.Flush(ctx)
 }
 
 // Close flushes accepted values and closes the wrapped writer.
-func (w *TypedLogWriter[T]) Close(ctx context.Context) error {
+func (w *TypedAppendWriter[T]) Close(ctx context.Context) error {
 	if w == nil || w.writer == nil {
 		return nil
 	}
 	return w.writer.Close(ctx)
 }
 
-// TypedKVWriter encodes application values and delete keys for a primary-key
+// TypedUpsertWriter encodes application values and delete keys for a primary-key
 // table.
-type TypedKVWriter[T, K any] struct {
-	writer   *KVWriter
+type TypedUpsertWriter[T, K any] struct {
+	writer   *UpsertWriter
 	codec    Codec[T]
 	keyCodec KeyCodec[K]
 }
 
-// NewTypedKVWriter opens a primary-key writer that encodes values and delete keys.
-func NewTypedKVWriter[T, K any](
+// NewTypedUpsertWriter opens a primary-key writer that encodes values and delete keys.
+func NewTypedUpsertWriter[T, K any](
 	ctx context.Context,
 	client *Client,
 	table Table,
 	codec Codec[T],
 	keyCodec KeyCodec[K],
-	options ...KVWriterOption,
-) (*TypedKVWriter[T, K], error) {
+	options ...UpsertWriterOption,
+) (*TypedUpsertWriter[T, K], error) {
 	if client == nil {
 		return nil, fmt.Errorf("%w: nil client", ErrInvalidConfig)
 	}
@@ -162,20 +162,20 @@ func NewTypedKVWriter[T, K any](
 	if err := validateTypedKeyCodec(keyCodec); err != nil {
 		return nil, err
 	}
-	writer, err := client.NewKVWriter(ctx, table, options...)
+	writer, err := client.NewUpsertWriter(ctx, table, options...)
 	if err != nil {
 		return nil, err
 	}
-	return &TypedKVWriter[T, K]{writer: writer, codec: codec, keyCodec: keyCodec}, nil
+	return &TypedUpsertWriter[T, K]{writer: writer, codec: codec, keyCodec: keyCodec}, nil
 }
 
-func wrapTypedKVWriter[T, K any](
-	writer *KVWriter,
+func wrapTypedUpsertWriter[T, K any](
+	writer *UpsertWriter,
 	codec Codec[T],
 	keyCodec KeyCodec[K],
-) (*TypedKVWriter[T, K], error) {
+) (*TypedUpsertWriter[T, K], error) {
 	if writer == nil {
-		return nil, fmt.Errorf("%w: nil KV writer", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: nil upsert writer", ErrInvalidConfig)
 	}
 	if err := validateTypedCodec(codec); err != nil {
 		return nil, err
@@ -183,14 +183,14 @@ func wrapTypedKVWriter[T, K any](
 	if err := validateTypedKeyCodec(keyCodec); err != nil {
 		return nil, err
 	}
-	return &TypedKVWriter[T, K]{writer: writer, codec: codec, keyCodec: keyCodec}, nil
+	return &TypedUpsertWriter[T, K]{writer: writer, codec: codec, keyCodec: keyCodec}, nil
 }
 
 // Upsert encodes value and queues a primary-key upsert.
 // Encoding failures are returned through the completed future.
-func (w *TypedKVWriter[T, K]) Upsert(ctx context.Context, value T) *WriteFuture {
+func (w *TypedUpsertWriter[T, K]) Upsert(ctx context.Context, value T) *WriteFuture {
 	if w == nil || w.writer == nil {
-		return completedWriteError(fmt.Errorf("%w: nil typed KV writer", ErrInvalidConfig))
+		return completedWriteError(fmt.Errorf("%w: nil typed upsert writer", ErrInvalidConfig))
 	}
 	row, err := w.codec.Encode(value)
 	if err != nil {
@@ -201,9 +201,9 @@ func (w *TypedKVWriter[T, K]) Upsert(ctx context.Context, value T) *WriteFuture 
 
 // Delete encodes key and queues a primary-key delete.
 // Encoding failures are returned through the completed future.
-func (w *TypedKVWriter[T, K]) Delete(ctx context.Context, key K) *WriteFuture {
+func (w *TypedUpsertWriter[T, K]) Delete(ctx context.Context, key K) *WriteFuture {
 	if w == nil || w.writer == nil {
-		return completedWriteError(fmt.Errorf("%w: nil typed KV writer", ErrInvalidConfig))
+		return completedWriteError(fmt.Errorf("%w: nil typed upsert writer", ErrInvalidConfig))
 	}
 	primaryKey, err := w.keyCodec.EncodeKey(key)
 	if err != nil {
@@ -213,15 +213,15 @@ func (w *TypedKVWriter[T, K]) Delete(ctx context.Context, key K) *WriteFuture {
 }
 
 // Flush waits until all mutations accepted before the call have completed.
-func (w *TypedKVWriter[T, K]) Flush(ctx context.Context) error {
+func (w *TypedUpsertWriter[T, K]) Flush(ctx context.Context) error {
 	if w == nil || w.writer == nil {
-		return fmt.Errorf("%w: nil typed KV writer", ErrInvalidConfig)
+		return fmt.Errorf("%w: nil typed upsert writer", ErrInvalidConfig)
 	}
 	return w.writer.Flush(ctx)
 }
 
 // Close flushes accepted mutations and closes the wrapped writer.
-func (w *TypedKVWriter[T, K]) Close(ctx context.Context) error {
+func (w *TypedUpsertWriter[T, K]) Close(ctx context.Context) error {
 	if w == nil || w.writer == nil {
 		return nil
 	}
@@ -256,22 +256,22 @@ type TypedPrefixLookupResult[K, T any] struct {
 	Err error
 }
 
-// TypedLookupClient encodes application keys and decodes returned rows.
-type TypedLookupClient[T, K any] struct {
-	lookup   *LookupClient
+// TypedLookuper encodes application keys and decodes returned rows.
+type TypedLookuper[T, K any] struct {
+	lookup   *Lookuper
 	codec    Codec[T]
 	keyCodec KeyCodec[K]
 }
 
-// NewTypedLookupClient opens a lookup client that encodes keys and decodes rows.
-func NewTypedLookupClient[T, K any](
+// NewTypedLookuper opens a lookuper that encodes keys and decodes rows.
+func NewTypedLookuper[T, K any](
 	ctx context.Context,
 	client *Client,
 	table Table,
 	codec Codec[T],
 	keyCodec KeyCodec[K],
 	options ...LookupOption,
-) (*TypedLookupClient[T, K], error) {
+) (*TypedLookuper[T, K], error) {
 	if client == nil {
 		return nil, fmt.Errorf("%w: nil client", ErrInvalidConfig)
 	}
@@ -281,20 +281,20 @@ func NewTypedLookupClient[T, K any](
 	if err := validateTypedKeyCodec(keyCodec); err != nil {
 		return nil, err
 	}
-	lookup, err := client.NewLookupClient(ctx, table, options...)
+	lookup, err := client.NewLookuper(ctx, table, options...)
 	if err != nil {
 		return nil, err
 	}
-	return &TypedLookupClient[T, K]{lookup: lookup, codec: codec, keyCodec: keyCodec}, nil
+	return &TypedLookuper[T, K]{lookup: lookup, codec: codec, keyCodec: keyCodec}, nil
 }
 
-func wrapTypedLookupClient[T, K any](
-	lookup *LookupClient,
+func wrapTypedLookuper[T, K any](
+	lookup *Lookuper,
 	codec Codec[T],
 	keyCodec KeyCodec[K],
-) (*TypedLookupClient[T, K], error) {
+) (*TypedLookuper[T, K], error) {
 	if lookup == nil {
-		return nil, fmt.Errorf("%w: nil lookup client", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: nil lookuper", ErrInvalidConfig)
 	}
 	if err := validateTypedCodec(codec); err != nil {
 		return nil, err
@@ -302,17 +302,17 @@ func wrapTypedLookupClient[T, K any](
 	if err := validateTypedKeyCodec(keyCodec); err != nil {
 		return nil, err
 	}
-	return &TypedLookupClient[T, K]{lookup: lookup, codec: codec, keyCodec: keyCodec}, nil
+	return &TypedLookuper[T, K]{lookup: lookup, codec: codec, keyCodec: keyCodec}, nil
 }
 
 // Lookup returns one result per input key in input order.
 // A failure for one key does not discard results for other keys.
-func (c *TypedLookupClient[T, K]) Lookup(ctx context.Context, keys ...K) []TypedLookupResult[K, T] {
+func (c *TypedLookuper[T, K]) Lookup(ctx context.Context, keys ...K) []TypedLookupResult[K, T] {
 	results := make([]TypedLookupResult[K, T], len(keys))
 	if c == nil || c.lookup == nil {
 		for index, key := range keys {
 			results[index] = TypedLookupResult[K, T]{
-				Key: key, Err: fmt.Errorf("%w: nil typed lookup client", ErrInvalidConfig),
+				Key: key, Err: fmt.Errorf("%w: nil typed lookuper", ErrInvalidConfig),
 			}
 		}
 		return results
@@ -342,7 +342,7 @@ func (c *TypedLookupClient[T, K]) Lookup(ctx context.Context, keys ...K) []Typed
 
 // PrefixLookup returns one result per input prefix in input order.
 // A failure for one prefix does not discard results for other prefixes.
-func (c *TypedLookupClient[T, K]) PrefixLookup(
+func (c *TypedLookuper[T, K]) PrefixLookup(
 	ctx context.Context,
 	prefixes ...K,
 ) []TypedPrefixLookupResult[K, T] {
@@ -350,7 +350,7 @@ func (c *TypedLookupClient[T, K]) PrefixLookup(
 	if c == nil || c.lookup == nil {
 		for index, prefix := range prefixes {
 			results[index] = TypedPrefixLookupResult[K, T]{
-				Prefix: prefix, Err: fmt.Errorf("%w: nil typed lookup client", ErrInvalidConfig),
+				Prefix: prefix, Err: fmt.Errorf("%w: nil typed lookuper", ErrInvalidConfig),
 			}
 		}
 		return results
@@ -385,7 +385,7 @@ func (c *TypedLookupClient[T, K]) PrefixLookup(
 }
 
 // Close prevents new lookups and releases wrapped client resources.
-func (c *TypedLookupClient[T, K]) Close() error {
+func (c *TypedLookuper[T, K]) Close() error {
 	if c == nil || c.lookup == nil {
 		return nil
 	}

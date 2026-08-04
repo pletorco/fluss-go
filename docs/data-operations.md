@@ -14,7 +14,7 @@ refresh is bounded by `MetadataAttempts`.
 ```go
 client, err := fgo.Open(
 	ctx,
-	fgo.WithSeedBrokers("coordinator:9123"),
+	fgo.WithBootstrapServers("coordinator:9123"),
 	fgo.WithDynamicPartitionCreation(fgo.DynamicPartitionCreationConfig{
 		MetadataAttempts: 3,
 		RetryBackoff:     25 * time.Millisecond,
@@ -25,30 +25,30 @@ if err != nil {
 }
 
 partition := fgo.PartitionSpec{"day": "2026-07-30", "region": "kr"}
-writer, err := client.NewKVWriter(
+writer, err := client.NewUpsertWriter(
 	ctx,
 	table,
-	fgo.WithKVPartitionSpec(table.Schema, partition),
+	fgo.WithUpsertPartitionSpec(table.Schema, partition),
 )
 ```
 
 `Schema.PartitionName` always follows the schema's partition-key order.
 `PartitionNames` validates, deduplicates, and sorts multiple specs. Automatic
-creation applies only to log and KV writers configured with a partition; reads
+creation applies only to log and upsert writers configured with a partition; reads
 never create server state.
 
 ## Writer concurrency and shutdown
 
-Log and KV writers default to four active requests across distinct buckets.
-Use `WithLogConcurrency` or `WithKVConcurrency` to choose a value from 1
+Log and upsert writers default to four active requests across distinct buckets.
+Use `WithAppendConcurrency` or `WithUpsertConcurrency` to choose a value from 1
 through 64. Requests for one bucket remain strictly ordered, so concurrency
 does not change per-bucket sequence or mutation order. A slow bucket does not
 prevent another bucket in the same writer from making progress while a request
 slot is available.
 
-`WithLogBuffer` and `WithKVBuffer` bound every accepted record that has not
+`WithAppendBuffer` and `WithUpsertBuffer` bound every accepted record that has not
 reached a terminal result, including queued, batched, and in-flight records.
-`WithLogRequest` and `WithKVRequest` set one timeout for both the server
+`WithAppendRequest` and `WithUpsertRequest` set one timeout for both the server
 operation and its client-side network call. The timeout is therefore also the
 upper bound for an accepted request when the backend stays responsive at the
 socket level.
@@ -69,10 +69,10 @@ Select an explicit format only when it agrees with the table's advertised
 
 <!-- go-source: internal/docexamples/snippets_test.go logFormat -->
 ```go
-writer, err := client.NewLogWriter(
+writer, err := client.NewAppendWriter(
 	ctx,
 	table,
-	fgo.WithLogWriteFormat(fgo.LogWriteFormatCompacted),
+	fgo.WithAppendLogFormat(fgo.LogFormatCompacted),
 )
 ```
 
@@ -115,7 +115,7 @@ column additions, incompatible type changes, and null values mapped to a
 required column return `fgo.ErrInvalidSchema`; the client does not invent
 defaults or coerce values.
 
-After altering a table, call `OpenTable` until it returns the new schema ID and
+After altering a table, call `GetTable` until it returns the new schema ID and
 construct new writers and readers from that refreshed `Table`. Existing
 readers intentionally retain the result shape they were created with. See the
 [schema-evolution guide](schema-evolution.md) for the complete compatibility,
@@ -135,20 +135,20 @@ column, and every omitted non-key column must be nullable.
 
 <!-- go-source: internal/docexamples/snippets_test.go kvMerge -->
 ```go
-writer, err := client.NewKVWriter(
+writer, err := client.NewUpsertWriter(
 	ctx,
 	table,
-	fgo.WithKVMergeMode(fgo.MergeModeOverwrite),
+	fgo.WithUpsertMergeMode(fgo.MergeModeOverwrite),
 )
 ```
 
-Lookup clients can request Fluss to atomically insert a missing primary-key row
+Lookupers can request Fluss to atomically insert a missing primary-key row
 before returning it. Fluss fills auto-increment columns and sets nullable
 non-key columns to null.
 
 <!-- go-source: internal/docexamples/snippets_test.go lookupInsert -->
 ```go
-lookup, err := client.NewLookupClient(
+lookup, err := client.NewLookuper(
 	ctx,
 	table,
 	fgo.WithLookupInsertIfNotExists(5*time.Second, -1),
@@ -164,7 +164,7 @@ timeout, and read-only retries are independently bounded:
 
 <!-- go-source: internal/docexamples/snippets_test.go lookupScheduling -->
 ```go
-lookup, err := client.NewLookupClient(
+lookup, err := client.NewLookuper(
 	ctx,
 	table,
 	fgo.WithLookupBatch(256, 8),
@@ -175,7 +175,7 @@ lookup, err := client.NewLookupClient(
 ```
 
 Canceling one caller does not cancel work still needed by another caller in the
-same protocol request. Close the lookup client to cancel active work and
+same protocol request. Close the lookuper to cancel active work and
 complete queued callers. See [lookup scheduling](lookup-scheduling.md) for the
 invariants and benchmark evidence.
 
@@ -231,7 +231,7 @@ observer := fgo.MetricsObserverFunc(func(event fgo.MetricEvent) {
 
 client, err := fgo.Open(
 	ctx,
-	fgo.WithSeedBrokers("coordinator:9123"),
+	fgo.WithBootstrapServers("coordinator:9123"),
 	fgo.WithMetricsObserver(observer),
 )
 ```
@@ -252,8 +252,8 @@ admin, err := fadm.New(client)
 if err != nil {
 	return err
 }
-nodes, err := admin.ServerNodes(ctx)
+nodes, err := admin.GetServerNodes(ctx)
 ```
 
-Close writers, scanners, and lookup clients before closing the shared
+Close writers, scanners, and lookupers before closing the shared
 `fgo.Client`.

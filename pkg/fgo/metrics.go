@@ -59,8 +59,8 @@ type MetricEvent struct {
 	Operation MetricOperation
 	// APIKey is set for RPC events and zero otherwise.
 	APIKey fmsg.APIKey
-	// ServerRole is set for server-bound events.
-	ServerRole ServerRole
+	// ServerType is set for server-bound events.
+	ServerType ServerType
 	// Duration is the completed operation duration.
 	Duration time.Duration
 	// QueueTime is time spent waiting before execution.

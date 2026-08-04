@@ -19,7 +19,7 @@ type schedulingBackendControl struct {
 
 type schedulingLogBackend struct {
 	mu           sync.Mutex
-	locations    map[int32]Node
+	locations    map[int32]ServerNode
 	nextWriterID int64
 	controls     map[int64]*schedulingBackendControl
 	delay        time.Duration
@@ -28,10 +28,10 @@ type schedulingLogBackend struct {
 }
 
 func newSchedulingLogBackend(bucketCount int) *schedulingLogBackend {
-	locations := make(map[int32]Node, bucketCount)
+	locations := make(map[int32]ServerNode, bucketCount)
 	for bucket := range bucketCount {
-		locations[int32(bucket)] = Node{
-			ID: int32(bucket + 1), Address: "shared-tablet", Role: TabletServer,
+		locations[int32(bucket)] = ServerNode{
+			ID: int32(bucket + 1), Address: "shared-tablet", ServerType: TabletServer,
 		}
 	}
 	return &schedulingLogBackend{
@@ -43,8 +43,8 @@ func newSchedulingLogBackend(bucketCount int) *schedulingLogBackend {
 func (b *schedulingLogBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]Node, error) {
-	return logWriterTable().ID, b.locations, nil
+) (int64, map[int32]ServerNode, error) {
+	return appendWriterTable().ID, b.locations, nil
 }
 
 func (b *schedulingLogBackend) initWriter(
@@ -103,7 +103,7 @@ func (b *schedulingLogBackend) controlFor(records []byte) (*schedulingBackendCon
 	if !hasControls {
 		return nil, nil
 	}
-	batch, err := DecodeLogBatchRows(logWriterTable().Schema, records, true)
+	batch, err := DecodeLogBatchRows(appendWriterTable().Schema, records, true)
 	if err != nil {
 		return nil, err
 	}
@@ -125,8 +125,8 @@ type schedulingKVBackend struct {
 func (b schedulingKVBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]Node, error) {
-	return kvWriterTable().ID, b.schedule.locations, nil
+) (int64, map[int32]ServerNode, error) {
+	return upsertWriterTable().ID, b.schedule.locations, nil
 }
 
 func (b schedulingKVBackend) initWriter(
@@ -206,14 +206,14 @@ func (p *bucketExecutionProbe) bucketSequences(bucket int32) []int32 {
 
 type bucketIsolationLogBackend struct {
 	probe     *bucketExecutionProbe
-	locations map[int32]Node
+	locations map[int32]ServerNode
 }
 
 func (b bucketIsolationLogBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]Node, error) {
-	return logWriterTable().ID, b.locations, nil
+) (int64, map[int32]ServerNode, error) {
+	return appendWriterTable().ID, b.locations, nil
 }
 
 func (bucketIsolationLogBackend) initWriter(
@@ -228,7 +228,7 @@ func (b bucketIsolationLogBackend) produce(
 	ctx context.Context,
 	request logProduceRequest,
 ) (int64, error) {
-	batch, err := DecodeLogBatchRows(logWriterTable().Schema, request.records, true)
+	batch, err := DecodeLogBatchRows(appendWriterTable().Schema, request.records, true)
 	if err != nil {
 		return 0, err
 	}
@@ -237,14 +237,14 @@ func (b bucketIsolationLogBackend) produce(
 
 type bucketIsolationKVBackend struct {
 	probe     *bucketExecutionProbe
-	locations map[int32]Node
+	locations map[int32]ServerNode
 }
 
 func (b bucketIsolationKVBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]Node, error) {
-	return kvWriterTable().ID, b.locations, nil
+) (int64, map[int32]ServerNode, error) {
+	return upsertWriterTable().ID, b.locations, nil
 }
 
 func (bucketIsolationKVBackend) initWriter(
@@ -266,23 +266,23 @@ func (b bucketIsolationKVBackend) put(
 	return b.probe.execute(ctx, request.bucket, batch.BatchSequence)
 }
 
-func twoBucketLocations() map[int32]Node {
-	return map[int32]Node{
-		0: {ID: 1, Address: "tablet-0", Role: TabletServer},
-		1: {ID: 2, Address: "tablet-1", Role: TabletServer},
+func twoBucketLocations() map[int32]ServerNode {
+	return map[int32]ServerNode{
+		0: {ID: 1, Address: "tablet-0", ServerType: TabletServer},
+		1: {ID: 2, Address: "tablet-1", ServerType: TabletServer},
 	}
 }
 
-func newSchedulingLogWriter(
+func newSchedulingAppendWriter(
 	t testing.TB,
-	backend logWriterBackend,
+	backend appendWriterBackend,
 	bucketCount int,
-	options ...LogWriterOption,
-) *LogWriter {
+	options ...AppendWriterOption,
+) *AppendWriter {
 	t.Helper()
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.BucketCount = bucketCount
-	writer, err := newLogWriter(context.Background(), backend, table, options...)
+	writer, err := newAppendWriter(context.Background(), backend, table, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,10 +295,10 @@ func TestWriterSchedulingIsolatesSaturationAndShutdown(t *testing.T) {
 	started := make(chan struct{})
 	backend.setControl(1, &schedulingBackendControl{block: release, started: started})
 
-	slow := newSchedulingLogWriter(
-		t, backend, 1, WithLogLinger(0), WithLogBuffer(2),
+	slow := newSchedulingAppendWriter(
+		t, backend, 1, WithAppendLinger(0), WithAppendBuffer(2),
 	)
-	fast := newSchedulingLogWriter(t, backend, 1, WithLogLinger(0))
+	fast := newSchedulingAppendWriter(t, backend, 1, WithAppendLinger(0))
 
 	first := slow.Append(context.Background(), Row{int32(1), "slow"})
 	select {
@@ -348,8 +348,8 @@ func TestWriterSchedulingIsolatesAmbiguousFailure(t *testing.T) {
 	backend := newSchedulingLogBackend(1)
 	failure := errors.New("ambiguous server failure")
 	backend.setControl(1, &schedulingBackendControl{err: failure})
-	failing := newSchedulingLogWriter(t, backend, 1, WithLogLinger(0))
-	healthy := newSchedulingLogWriter(t, backend, 1, WithLogLinger(0))
+	failing := newSchedulingAppendWriter(t, backend, 1, WithAppendLinger(0))
+	healthy := newSchedulingAppendWriter(t, backend, 1, WithAppendLinger(0))
 
 	if result := failing.Append(
 		context.Background(), Row{int32(1), "failing"},
@@ -375,20 +375,20 @@ func TestWriterSchedulingIsolatesAmbiguousFailure(t *testing.T) {
 	}
 }
 
-func TestKVWriterSchedulingIsolatesSlowWriter(t *testing.T) {
+func TestUpsertWriterSchedulingIsolatesSlowWriter(t *testing.T) {
 	schedule := newSchedulingLogBackend(1)
 	release := make(chan struct{})
 	started := make(chan struct{})
 	schedule.setControl(1, &schedulingBackendControl{block: release, started: started})
 	backend := schedulingKVBackend{schedule: schedule}
-	slow, err := newKVWriter(
-		context.Background(), backend, kvWriterTable(), WithKVLinger(0),
+	slow, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	healthy, err := newKVWriter(
-		context.Background(), backend, kvWriterTable(), WithKVLinger(0),
+	healthy, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -398,14 +398,14 @@ func TestKVWriterSchedulingIsolatesSlowWriter(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("slow KV writer did not reach backend")
+		t.Fatal("slow upsert writer did not reach backend")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if result := healthy.Upsert(
 		ctx, Row{int32(2), "healthy", nil},
 	).Await(ctx); result.Err != nil {
-		t.Fatalf("healthy KV writer was blocked: %v", result.Err)
+		t.Fatalf("healthy upsert writer was blocked: %v", result.Err)
 	}
 	close(release)
 	if result := slowResult.Await(context.Background()); result.Err != nil {
@@ -419,13 +419,13 @@ func TestKVWriterSchedulingIsolatesSlowWriter(t *testing.T) {
 	}
 }
 
-func TestLogWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
+func TestAppendWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
 	release := make(chan struct{})
 	probe := newBucketExecutionProbe(0, release)
 	backend := bucketIsolationLogBackend{probe: probe, locations: twoBucketLocations()}
-	writer := newSchedulingLogWriter(
-		t, backend, 2, WithLogLinger(0), WithLogConcurrency(2),
-		WithLogBucketAssignment(AssignmentRoundRobin),
+	writer := newSchedulingAppendWriter(
+		t, backend, 2, WithAppendLinger(0), WithAppendConcurrency(2),
+		WithAppendBucketAssignment(AssignmentRoundRobin),
 	)
 	first := writer.Append(context.Background(), Row{int32(1), "blocked"})
 	select {
@@ -463,15 +463,15 @@ func TestLogWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
 	}
 }
 
-func TestKVWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
+func TestUpsertWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
 	release := make(chan struct{})
 	probe := newBucketExecutionProbe(0, release)
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	table.BucketCount = 2
 	backend := bucketIsolationKVBackend{probe: probe, locations: twoBucketLocations()}
-	writer, err := newKVWriter(
+	writer, err := newUpsertWriter(
 		context.Background(), backend, table,
-		WithKVLinger(0), WithKVConcurrency(2),
+		WithUpsertLinger(0), WithUpsertConcurrency(2),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -569,7 +569,7 @@ func benchmarkFailingWriterLifecycle(b *testing.B) {
 	for index := range b.N {
 		backend := newSchedulingLogBackend(1)
 		backend.err = failure
-		writer := newSchedulingLogWriter(b, backend, 1, WithLogLinger(0))
+		writer := newSchedulingAppendWriter(b, backend, 1, WithAppendLinger(0))
 		result := writer.Append(
 			context.Background(), Row{int32(index), "failure"},
 		).Await(context.Background())
@@ -586,10 +586,10 @@ func benchmarkWriterLifecycle(b *testing.B, count int) {
 	b.ReportAllocs()
 	for range b.N {
 		backend := newSchedulingLogBackend(8)
-		writers := make([]*LogWriter, count)
+		writers := make([]*AppendWriter, count)
 		for index := range writers {
-			writers[index] = newSchedulingLogWriter(
-				b, backend, 8, WithLogLinger(0), WithLogBuffer(64),
+			writers[index] = newSchedulingAppendWriter(
+				b, backend, 8, WithAppendLinger(0), WithAppendBuffer(64),
 			)
 		}
 		for _, writer := range writers {
@@ -610,11 +610,11 @@ func BenchmarkWriterBatching(b *testing.B) {
 
 func benchmarkWriterBatchSize(b *testing.B, records int) {
 	backend := newSchedulingLogBackend(1)
-	writer := newSchedulingLogWriter(
+	writer := newSchedulingAppendWriter(
 		b, backend, 1,
-		WithLogBatchLimits(1<<20, records),
-		WithLogBuffer(records),
-		WithLogLinger(time.Hour),
+		WithAppendBatchLimits(1<<20, records),
+		WithAppendBuffer(records),
+		WithAppendLinger(time.Hour),
 	)
 	b.Cleanup(func() {
 		if err := writer.Close(context.Background()); err != nil {
@@ -656,13 +656,13 @@ func benchmarkParallelWriters(
 ) {
 	backend := newSchedulingLogBackend(bucketCount)
 	backend.delay = delay
-	writers := make([]*LogWriter, writerCount)
+	writers := make([]*AppendWriter, writerCount)
 	for index := range writers {
-		writers[index] = newSchedulingLogWriter(
+		writers[index] = newSchedulingAppendWriter(
 			b, backend, bucketCount,
-			WithLogLinger(0),
-			WithLogBuffer(64),
-			WithLogBucketAssignment(AssignmentRoundRobin),
+			WithAppendLinger(0),
+			WithAppendBuffer(64),
+			WithAppendBucketAssignment(AssignmentRoundRobin),
 		)
 	}
 	b.Cleanup(func() {

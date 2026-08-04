@@ -39,7 +39,7 @@ type LookupConfig struct {
 	Acks int32
 }
 
-// LookupOption configures a [LookupClient].
+// LookupOption configures a [Lookuper].
 type LookupOption func(*LookupConfig) error
 
 // WithLookupBatch sets the maximum keys per request and concurrent requests.
@@ -140,7 +140,7 @@ type PrefixLookupResult struct {
 }
 
 type lookupBackend interface {
-	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
+	metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error)
 	lookup(context.Context, lookupRequest) ([][]byte, error)
 	prefixLookup(context.Context, PhysicalTablePath, int32, int64, int64, [][]byte) ([][][]byte, error)
 }
@@ -165,8 +165,8 @@ type lookupRequest struct {
 	acks             int32
 }
 
-func (b clientLookupBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
-	return (clientLogWriterBackend{client: b.client}).metadata(ctx, path)
+func (b clientLookupBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]ServerNode, error) {
+	return (clientAppendWriterBackend{client: b.client}).metadata(ctx, path)
 }
 
 func (b clientLookupBackend) lookup(
@@ -274,9 +274,9 @@ func cloneBytesList(values [][]byte) [][]byte {
 	return cloned
 }
 
-// LookupClient performs batched point and prefix lookups for a primary-key
-// table. A LookupClient is safe for concurrent calls and must be closed.
-type LookupClient struct {
+// Lookuper performs batched point and prefix lookups for a primary-key
+// table. A Lookuper is safe for concurrent calls and must be closed.
+type Lookuper struct {
 	table       Table
 	path        PhysicalTablePath
 	backend     lookupBackend
@@ -297,19 +297,19 @@ type LookupClient struct {
 	done   chan struct{}
 }
 
-// NewLookupClient creates a point and prefix lookup client for table.
-func (c *Client) NewLookupClient(ctx context.Context, table Table, options ...LookupOption) (*LookupClient, error) {
+// NewLookuper creates a point and prefix lookuper for table.
+func (c *Client) NewLookuper(ctx context.Context, table Table, options ...LookupOption) (*Lookuper, error) {
 	if err := c.ensureOpen(); err != nil {
 		return nil, err
 	}
-	lookup, err := newLookupClient(ctx, clientLookupBackend{client: c}, table, options...)
+	lookup, err := newLookuper(ctx, clientLookupBackend{client: c}, table, options...)
 	if err == nil {
 		lookup.observer = c.observer
 	}
 	return lookup, err
 }
 
-func newLookupClient(ctx context.Context, backend lookupBackend, table Table, options ...LookupOption) (*LookupClient, error) {
+func newLookuper(ctx context.Context, backend lookupBackend, table Table, options ...LookupOption) (*Lookuper, error) {
 	if err := table.RequirePrimaryKey(); err != nil {
 		return nil, err
 	}
@@ -335,7 +335,7 @@ func newLookupClient(ctx context.Context, backend lookupBackend, table Table, op
 	if err != nil {
 		return nil, err
 	}
-	client := &LookupClient{
+	client := &Lookuper{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, buckets: buckets, resolver: resolverFor(backend, table),
 		queue: make(chan *lookupTask, config.MaxQueuedKeys),
@@ -434,7 +434,7 @@ type lookupBatch struct {
 }
 
 type lookupScheduler struct {
-	client  *LookupClient
+	client  *Lookuper
 	groups  map[lookupGroup][]*lookupTask
 	timer   *time.Timer
 	timerC  <-chan time.Time
@@ -442,7 +442,7 @@ type lookupScheduler struct {
 }
 
 // Lookup returns one result for each input key in input order.
-func (c *LookupClient) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupResult {
+func (c *Lookuper) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupResult {
 	results := make([]LookupResult, len(keys))
 	if len(keys) == 0 {
 		return results
@@ -489,7 +489,7 @@ func (c *LookupClient) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupR
 
 // PrefixLookup returns one result for each leading primary-key prefix in input
 // order.
-func (c *LookupClient) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey) []PrefixLookupResult {
+func (c *Lookuper) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey) []PrefixLookupResult {
 	results := make([]PrefixLookupResult, len(prefixes))
 	if len(prefixes) == 0 {
 		return results
@@ -529,7 +529,7 @@ func (c *LookupClient) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey)
 	return results
 }
 
-func (c *LookupClient) awaitPrefixLookup(
+func (c *Lookuper) awaitPrefixLookup(
 	ctx context.Context,
 	task *lookupTask,
 	result *PrefixLookupResult,
@@ -553,7 +553,7 @@ func (c *LookupClient) awaitPrefixLookup(
 	}
 }
 
-func (c *LookupClient) lookupContextError(ctx context.Context) error {
+func (c *Lookuper) lookupContextError(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
 	}
@@ -566,7 +566,7 @@ func (c *LookupClient) lookupContextError(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (c *LookupClient) enqueueLookup(
+func (c *Lookuper) enqueueLookup(
 	ctx context.Context,
 	mode lookupMode,
 	bucket int32,
@@ -606,7 +606,7 @@ func (c *LookupClient) enqueueLookup(
 	}
 }
 
-func (c *LookupClient) encodePoint(key PrimaryKey) ([]byte, int32, error) {
+func (c *Lookuper) encodePoint(key PrimaryKey) ([]byte, int32, error) {
 	encoded, err := EncodeLookupKey(c.table.Schema, key, 1)
 	if err != nil {
 		return nil, 0, err
@@ -619,7 +619,7 @@ func (c *LookupClient) encodePoint(key PrimaryKey) ([]byte, int32, error) {
 	return encoded, bucket, err
 }
 
-func (c *LookupClient) encodePrefix(prefix PrimaryKey) ([]byte, int32, error) {
+func (c *Lookuper) encodePrefix(prefix PrimaryKey) ([]byte, int32, error) {
 	bucketNames := c.table.Schema.BucketKey
 	if len(bucketNames) == 0 {
 		bucketNames = c.table.Schema.PrimaryKey
@@ -644,7 +644,7 @@ func (c *LookupClient) encodePrefix(prefix PrimaryKey) ([]byte, int32, error) {
 	return encoded, bucket, err
 }
 
-func (c *LookupClient) bucketForValues(values map[string]any) (int32, error) {
+func (c *Lookuper) bucketForValues(values map[string]any) (int32, error) {
 	names := c.table.Schema.BucketKey
 	if len(names) == 0 {
 		names = c.table.Schema.PrimaryKey
@@ -664,7 +664,7 @@ func (c *LookupClient) bucketForValues(values map[string]any) (int32, error) {
 	return c.buckets[int(bucket)], nil
 }
 
-func (c *LookupClient) runScheduler() {
+func (c *Lookuper) runScheduler() {
 	scheduler := &lookupScheduler{
 		client: c, groups: make(map[lookupGroup][]*lookupTask),
 		timer: time.NewTimer(time.Hour),
@@ -771,7 +771,7 @@ func (s *lookupScheduler) shutdown() {
 	}
 }
 
-func (c *LookupClient) runLookupWorker() {
+func (c *Lookuper) runLookupWorker() {
 	for batch := range c.jobs {
 		active := batch.tasks[:0]
 		for _, task := range batch.tasks {
@@ -796,7 +796,7 @@ func (c *LookupClient) runLookupWorker() {
 	}
 }
 
-func (c *LookupClient) runPointAttempts(
+func (c *Lookuper) runPointAttempts(
 	ctx context.Context,
 	bucket int32,
 	tasks []*lookupTask,
@@ -810,7 +810,7 @@ func (c *LookupClient) runPointAttempts(
 	})
 }
 
-func (c *LookupClient) runPrefixAttempts(
+func (c *Lookuper) runPrefixAttempts(
 	ctx context.Context,
 	bucket int32,
 	tasks []*lookupTask,
@@ -937,7 +937,7 @@ func decodeLookupValueWithResolver(
 
 // Close cancels active requests and rejects new lookups.
 // Close is idempotent.
-func (c *LookupClient) Close() error {
+func (c *Lookuper) Close() error {
 	c.mu.Lock()
 	if !c.closed {
 		c.closed = true

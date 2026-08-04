@@ -74,7 +74,7 @@ func (e *AuthenticationError) Is(target error) bool { return target == ErrAuthen
 type Option func(*config) error
 
 type config struct {
-	seeds             []string
+	bootstrapServers  []string
 	name              string
 	version           string
 	dialContext       DialContextFunc
@@ -98,13 +98,13 @@ type RetryPolicy struct {
 	Backoff func(attempt int) time.Duration
 }
 
-// WithSeedBrokers sets coordinator bootstrap addresses.
-func WithSeedBrokers(seeds ...string) Option {
+// WithBootstrapServers sets coordinator bootstrap addresses.
+func WithBootstrapServers(bootstrapServers ...string) Option {
 	return func(c *config) error {
-		if len(seeds) == 0 {
-			return fmt.Errorf("%w: no seed brokers", ErrInvalidConfig)
+		if len(bootstrapServers) == 0 {
+			return fmt.Errorf("%w: no bootstrap servers", ErrInvalidConfig)
 		}
-		c.seeds = append([]string(nil), seeds...)
+		c.bootstrapServers = append([]string(nil), bootstrapServers...)
 		return nil
 	}
 }
@@ -215,7 +215,7 @@ type Client struct {
 	router           *Router
 	serverID         int32
 	address          string
-	role             ServerRole
+	serverType       ServerType
 	observer         MetricsObserver
 	tokenManager     *securityTokenManager
 	partitionCreator *dynamicPartitionCreator
@@ -223,10 +223,10 @@ type Client struct {
 	remoteFiles      remoteFileSettings
 	schemas          *schemaCache
 
-	mu         sync.RWMutex
-	closed     bool
-	versions   map[fmsg.APIKey]int16
-	serverType int32
+	mu           sync.RWMutex
+	closed       bool
+	versions     map[fmsg.APIKey]int16
+	serverTypeID int32
 }
 
 // Open connects to a coordinator, negotiates protocol versions, and returns a
@@ -241,8 +241,8 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 			return nil, err
 		}
 	}
-	if len(cfg.seeds) == 0 {
-		return nil, fmt.Errorf("%w: seed brokers are required", ErrInvalidConfig)
+	if len(cfg.bootstrapServers) == 0 {
+		return nil, fmt.Errorf("%w: bootstrap servers are required", ErrInvalidConfig)
 	}
 	if cfg.dialContext == nil {
 		dialer := net.Dialer{Timeout: cfg.timeout}
@@ -258,11 +258,11 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 	client.manager = manager
 	client.serverID = bootstrap.serverID
 	client.address = bootstrap.address
-	client.role = bootstrap.role
+	client.serverType = bootstrap.serverType
 	client.observer = cfg.observer
 	client.snapshotProvider = cfg.snapshotProvider
 	client.remoteFiles = cfg.remoteFiles
-	client.router = NewRouter(Node{ID: client.serverID, Address: client.address, Role: Coordinator}, client.fetchTableMetadata).
+	client.router = NewRouter(ServerNode{ID: client.serverID, Address: client.address, ServerType: Coordinator}, client.fetchTableMetadata).
 		WithPhysicalMetadataFetcher(client.fetchPartitionMetadata)
 	if cfg.dynamicPartitions != nil {
 		client.partitionCreator = newDynamicPartitionCreator(client, *cfg.dynamicPartitions)
@@ -300,14 +300,14 @@ func (c *Client) Request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 		if err := c.ensureOpen(); err != nil {
 			return nil, err
 		}
-		return c.manager.request(ctx, Node{ID: c.serverID, Address: c.address, Role: c.role}, request)
+		return c.manager.request(ctx, ServerNode{ID: c.serverID, Address: c.address, ServerType: c.serverType}, request)
 	}
 	return c.request(ctx, request)
 }
 
 // RequestTo sends a raw request to the connection for node. It is intended for protocol helpers;
 // higher-level clients select the appropriate coordinator or tablet server from metadata.
-func (c *Client) RequestTo(ctx context.Context, node Node, request fmsg.Request) (fmsg.Response, error) {
+func (c *Client) RequestTo(ctx context.Context, node ServerNode, request fmsg.Request) (fmsg.Response, error) {
 	if request == nil {
 		return nil, fmt.Errorf("%w: nil request", fmsg.ErrInvalidArgument)
 	}
@@ -369,7 +369,7 @@ func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Respon
 		defer func() {
 			observeMetric(c.observer, MetricEvent{
 				Kind: MetricRequest, Operation: MetricOperationRPC, APIKey: request.APIKey(),
-				ServerRole: c.role, Duration: time.Since(started),
+				ServerType: c.serverType, Duration: time.Since(started),
 				Failed: requestErr != nil, ErrorClass: metricErrorClass(requestErr),
 			})
 		}()
@@ -479,7 +479,7 @@ func (c *Client) negotiate(ctx context.Context, name, version string) error {
 	}
 	c.mu.Lock()
 	c.versions = negotiated
-	c.serverType = versions.GetServerType()
+	c.serverTypeID = versions.GetServerType()
 	c.mu.Unlock()
 	return nil
 }

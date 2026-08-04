@@ -32,7 +32,7 @@ receiver := fgo.FileSystemSecurityTokenReceiverFunc(
 
 client, err := fgo.Open(
 	context.Background(),
-	fgo.WithSeedBrokers("coordinator:9123"),
+	fgo.WithBootstrapServers("coordinator:9123"),
 	fgo.WithFileSystemSecurityTokenRefresh(
 		fgo.FileSystemSecurityTokenRefreshConfig{},
 		receiver,
@@ -78,7 +78,7 @@ if err != nil {
 
 client, err := fgo.Open(
 	ctx,
-	fgo.WithSeedBrokers("coordinator:9123"),
+	fgo.WithBootstrapServers("coordinator:9123"),
 	fgo.WithRemoteFileReader(reader, fgo.RemoteFileReadConfig{}),
 	fgo.WithSnapshotBatchProvider(provider),
 )
