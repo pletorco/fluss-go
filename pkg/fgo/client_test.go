@@ -217,11 +217,11 @@ func TestClientOptions(t *testing.T) {
 	if err := WithBootstrapServers("a:1", "b:2")(&cfg); err != nil || len(cfg.bootstrapServers) != 2 {
 		t.Fatalf("WithBootstrapServers() = %#v, %v", cfg, err)
 	}
-	if err := WithClientIdentity("client", "1")(&cfg); err != nil || cfg.name != "client" {
-		t.Fatalf("WithClientIdentity() = %#v, %v", cfg, err)
+	if err := WithClientSoftware("client", "1")(&cfg); err != nil || cfg.name != "client" {
+		t.Fatalf("WithClientSoftware() = %#v, %v", cfg, err)
 	}
-	if err := WithDialTimeout(time.Second)(&cfg); err != nil || cfg.timeout != time.Second {
-		t.Fatalf("WithDialTimeout() = %#v, %v", cfg, err)
+	if err := WithConnectTimeout(time.Second)(&cfg); err != nil || cfg.connectTimeout != time.Second {
+		t.Fatalf("WithConnectTimeout() = %#v, %v", cfg, err)
 	}
 	if err := WithTLSConfig(&tls.Config{ServerName: "example.test"})(&cfg); err != nil || cfg.tlsConfig.ServerName != "example.test" {
 		t.Fatalf("WithTLSConfig() = %#v, %v", cfg, err)
@@ -248,11 +248,11 @@ func TestClientOptionsRejectInvalidValues(t *testing.T) {
 	var cfg config
 	for _, option := range []Option{
 		WithBootstrapServers(),
-		WithClientIdentity("", ""),
+		WithClientSoftware("", ""),
 		WithDialContext(nil),
 		WithTLSConfig(nil),
 		WithAuthenticator(nil),
-		WithDialTimeout(0),
+		WithConnectTimeout(0),
 		WithTransportLimits(transport.Config{MaxFrameSize: 1}),
 		WithTransportLimits(transport.Config{MaxInFlight: -1}),
 		WithRetryPolicy(RetryPolicy{}),
@@ -493,7 +493,7 @@ func TestOpenNegotiatesOverTransport(t *testing.T) {
 	}()
 	client, err := Open(context.Background(),
 		WithBootstrapServers("seed:9123"),
-		WithClientIdentity("coverage-test", "1.0"),
+		WithClientSoftware("coverage-test", "1.0"),
 		WithDialContext(func(context.Context, string, string) (net.Conn, error) { return clientConn, nil }),
 	)
 	if err != nil {

@@ -25,15 +25,15 @@ type UpsertWriterConfig struct {
 	MaxBuffered int
 	// MaxConcurrentRequests bounds active put calls across distinct buckets.
 	MaxConcurrentRequests int
-	// Linger is the maximum delay used to fill a non-full batch.
-	Linger time.Duration
-	// Timeout bounds both the server-side put operation and the client call.
-	Timeout time.Duration
+	// BatchTimeout is the maximum delay used to fill a non-full batch.
+	BatchTimeout time.Duration
+	// RequestTimeout bounds both the server-side put operation and the client call.
+	RequestTimeout time.Duration
 	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
 	Acks int32
-	// Retry controls bounded retries of idempotent batches. More than one
+	// RetryPolicy controls bounded retries of idempotent batches. More than one
 	// attempt requires Acks=-1.
-	Retry WriterRetryPolicy
+	RetryPolicy WriterRetryPolicy
 	// Partition selects one named physical partition; empty selects the table.
 	Partition string
 	// MergeMode selects merge-engine or overwrite semantics.
@@ -102,13 +102,13 @@ func WithUpsertConcurrency(requests int) UpsertWriterOption {
 	}
 }
 
-// WithUpsertLinger sets the maximum delay used to collect a non-full batch.
-func WithUpsertLinger(linger time.Duration) UpsertWriterOption {
+// WithUpsertBatchTimeout sets the maximum delay used to collect a non-full batch.
+func WithUpsertBatchTimeout(timeout time.Duration) UpsertWriterOption {
 	return func(config *UpsertWriterConfig) error {
-		if linger < 0 {
-			return fmt.Errorf("%w: negative KV linger", ErrInvalidConfig)
+		if timeout < 0 {
+			return fmt.Errorf("%w: negative upsert batch timeout", ErrInvalidConfig)
 		}
-		config.Linger = linger
+		config.BatchTimeout = timeout
 		return nil
 	}
 }
@@ -120,7 +120,7 @@ func WithUpsertRequest(timeout time.Duration, acks int32) UpsertWriterOption {
 			(acks != 0 && acks != 1 && acks != -1) {
 			return fmt.Errorf("%w: invalid KV request settings", ErrInvalidConfig)
 		}
-		config.Timeout, config.Acks = timeout, acks
+		config.RequestTimeout, config.Acks = timeout, acks
 		return nil
 	}
 }
@@ -129,7 +129,7 @@ func WithUpsertRequest(timeout time.Duration, acks int32) UpsertWriterOption {
 // Retries preserve the encoded batch, writer ID, and bucket sequence.
 func WithUpsertRetryPolicy(policy WriterRetryPolicy) UpsertWriterOption {
 	return func(config *UpsertWriterConfig) error {
-		config.Retry = policy
+		config.RetryPolicy = policy
 		return nil
 	}
 }
@@ -389,8 +389,8 @@ func upsertWriterConfig(options []UpsertWriterOption) (UpsertWriterConfig, error
 	config := UpsertWriterConfig{
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
 		MaxConcurrentRequests: 4,
-		Linger:                5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
-		Retry: defaultWriterRetryPolicy(),
+		BatchTimeout:          5 * time.Millisecond, RequestTimeout: 30 * time.Second, Acks: -1,
+		RetryPolicy: defaultWriterRetryPolicy(),
 	}
 	for _, option := range options {
 		if option == nil {
@@ -400,7 +400,7 @@ func upsertWriterConfig(options []UpsertWriterOption) (UpsertWriterConfig, error
 			return UpsertWriterConfig{}, err
 		}
 	}
-	if err := validateWriterRetryPolicy(config.Retry, config.Acks); err != nil {
+	if err := validateWriterRetryPolicy(config.RetryPolicy, config.Acks); err != nil {
 		return UpsertWriterConfig{}, err
 	}
 	return config, nil
@@ -682,7 +682,7 @@ func (w *UpsertWriter) Close(ctx context.Context) error {
 
 func (w *UpsertWriter) run() {
 	defer close(w.done)
-	timer := time.NewTimer(w.config.Linger)
+	timer := time.NewTimer(w.config.BatchTimeout)
 	if !timer.Stop() {
 		<-timer.C
 	}
@@ -736,7 +736,7 @@ func (l *upsertWriterLoop) add(item *pendingKVWrite) {
 	batch.items = append(batch.items, item)
 	batch.records = append(batch.records, item.record)
 	batch.bytes += item.size
-	if l.batchFull(batch) || l.writer.config.Linger == 0 {
+	if l.batchFull(batch) || l.writer.config.BatchTimeout == 0 {
 		_ = l.flushBucket(item.bucket)
 		return
 	}
@@ -818,13 +818,13 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 	var result writerAttemptResult
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.Timeout)
+		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.RequestTimeout)
 		result = executeWriterAttempts(
-			requestCtx, l.writer.config.Retry, l.writer.observer, MetricOperationKVWrite,
+			requestCtx, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
 			func(ctx context.Context) (int64, bool, error) {
 				offset, err := l.writer.backend.put(ctx, kvPutRequest{
 					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
-					targets: batch.targets, records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+					targets: batch.targets, records: encoded, timeout: l.writer.config.RequestTimeout, acks: l.writer.config.Acks,
 					mergeMode: l.writer.config.MergeMode,
 				})
 				return offset, err == nil, err
@@ -895,8 +895,8 @@ func (l *upsertWriterLoop) queueAll() error {
 }
 
 func (l *upsertWriterLoop) armTimer() {
-	if l.timerC == nil && l.writer.config.Linger > 0 {
-		l.timer.Reset(l.writer.config.Linger)
+	if l.timerC == nil && l.writer.config.BatchTimeout > 0 {
+		l.timer.Reset(l.writer.config.BatchTimeout)
 		l.timerC = l.timer.C
 	}
 }

@@ -20,21 +20,21 @@ var ErrNotFound = fmt.Errorf("fgo: record not found")
 type LookupConfig struct {
 	// MaxBatchKeys bounds keys in one lookup request.
 	MaxBatchKeys int
-	// MaxConcurrent bounds in-flight lookup requests.
-	MaxConcurrent int
+	// MaxInFlightRequests bounds in-flight lookup requests.
+	MaxInFlightRequests int
 	// MaxQueuedKeys bounds accepted keys awaiting completion across callers.
 	MaxQueuedKeys int
-	// BatchDelay is the maximum time a partial cross-call batch waits.
-	BatchDelay time.Duration
-	// Retry controls safe read-only lookup retries. Insert-if-not-exists
+	// BatchTimeout is the maximum time a partial cross-call batch waits.
+	BatchTimeout time.Duration
+	// RetryPolicy controls safe read-only lookup retries. Insert-if-not-exists
 	// clients require one attempt.
-	Retry RetryPolicy
+	RetryPolicy RetryPolicy
 	// Partition selects one named physical partition; empty selects the table.
 	Partition string
 	// InsertIfNotExists enables atomic insertion for missing full keys.
 	InsertIfNotExists bool
-	// Timeout bounds each lookup request and is sent to insertion requests.
-	Timeout time.Duration
+	// RequestTimeout bounds each lookup request and is sent to insertion requests.
+	RequestTimeout time.Duration
 	// Acks is the insertion acknowledgement mode.
 	Acks int32
 }
@@ -42,25 +42,25 @@ type LookupConfig struct {
 // LookupOption configures a [Lookuper].
 type LookupOption func(*LookupConfig) error
 
-// WithLookupBatch sets the maximum keys per request and concurrent requests.
-func WithLookupBatch(keys, concurrent int) LookupOption {
+// WithLookupBatchLimits sets the maximum keys per request and in-flight requests.
+func WithLookupBatchLimits(keys, inFlightRequests int) LookupOption {
 	return func(config *LookupConfig) error {
-		if keys <= 0 || concurrent <= 0 {
+		if keys <= 0 || inFlightRequests <= 0 {
 			return fmt.Errorf("%w: lookup limits must be positive", ErrInvalidConfig)
 		}
-		config.MaxBatchKeys, config.MaxConcurrent = keys, concurrent
+		config.MaxBatchKeys, config.MaxInFlightRequests = keys, inFlightRequests
 		return nil
 	}
 }
 
-// WithLookupQueue sets the accepted-key limit and partial-batch delay used to
+// WithLookupQueue sets the accepted-key limit and batch timeout used to
 // combine compatible concurrent calls.
-func WithLookupQueue(keys int, delay time.Duration) LookupOption {
+func WithLookupQueue(keys int, batchTimeout time.Duration) LookupOption {
 	return func(config *LookupConfig) error {
-		if keys <= 0 || delay < 0 {
+		if keys <= 0 || batchTimeout < 0 {
 			return fmt.Errorf("%w: invalid lookup queue settings", ErrInvalidConfig)
 		}
-		config.MaxQueuedKeys, config.BatchDelay = keys, delay
+		config.MaxQueuedKeys, config.BatchTimeout = keys, batchTimeout
 		return nil
 	}
 }
@@ -72,18 +72,18 @@ func WithLookupRetryPolicy(policy RetryPolicy) LookupOption {
 		if policy.MaxAttempts < 1 || policy.MaxAttempts > maxWriterAttempts {
 			return fmt.Errorf("%w: lookup retry attempts must be in [1, %d]", ErrInvalidConfig, maxWriterAttempts)
 		}
-		config.Retry = policy
+		config.RetryPolicy = policy
 		return nil
 	}
 }
 
-// WithLookupTimeout sets the client-side timeout for each lookup request.
-func WithLookupTimeout(timeout time.Duration) LookupOption {
+// WithLookupRequestTimeout sets the client-side timeout for each lookup request.
+func WithLookupRequestTimeout(timeout time.Duration) LookupOption {
 	return func(config *LookupConfig) error {
 		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 {
 			return fmt.Errorf("%w: invalid lookup timeout", ErrInvalidConfig)
 		}
-		config.Timeout = timeout
+		config.RequestTimeout = timeout
 		return nil
 	}
 }
@@ -108,7 +108,7 @@ func WithLookupInsertIfNotExists(timeout time.Duration, acks int32) LookupOption
 			(acks != 0 && acks != 1 && acks != -1) {
 			return fmt.Errorf("%w: invalid insert-if-not-exists request settings", ErrInvalidConfig)
 		}
-		config.InsertIfNotExists, config.Timeout, config.Acks = true, timeout, acks
+		config.InsertIfNotExists, config.RequestTimeout, config.Acks = true, timeout, acks
 		return nil
 	}
 }
@@ -339,7 +339,7 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, buckets: buckets, resolver: resolverFor(backend, table),
 		queue: make(chan *lookupTask, config.MaxQueuedKeys),
-		jobs:  make(chan lookupBatch, config.MaxConcurrent),
+		jobs:  make(chan lookupBatch, config.MaxInFlightRequests),
 		slots: make(chan struct{}, config.MaxQueuedKeys),
 		done:  make(chan struct{}),
 	}
@@ -353,10 +353,10 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 
 func lookupConfig(options []LookupOption) (LookupConfig, error) {
 	config := LookupConfig{
-		MaxBatchKeys: 1000, MaxConcurrent: 8,
-		MaxQueuedKeys: 10_000, BatchDelay: time.Millisecond,
-		Retry:   RetryPolicy{MaxAttempts: 1},
-		Timeout: 30 * time.Second, Acks: -1,
+		MaxBatchKeys: 1000, MaxInFlightRequests: 8,
+		MaxQueuedKeys: 10_000, BatchTimeout: time.Millisecond,
+		RetryPolicy:    RetryPolicy{MaxAttempts: 1},
+		RequestTimeout: 30 * time.Second, Acks: -1,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -366,7 +366,7 @@ func lookupConfig(options []LookupOption) (LookupConfig, error) {
 			return LookupConfig{}, err
 		}
 	}
-	if config.InsertIfNotExists && config.Retry.MaxAttempts > 1 {
+	if config.InsertIfNotExists && config.RetryPolicy.MaxAttempts > 1 {
 		return LookupConfig{}, fmt.Errorf(
 			"%w: insert-if-not-exists lookup retries are unsafe",
 			ErrInvalidConfig,
@@ -672,7 +672,7 @@ func (c *Lookuper) runScheduler() {
 	if !scheduler.timer.Stop() {
 		<-scheduler.timer.C
 	}
-	for range c.config.MaxConcurrent {
+	for range c.config.MaxInFlightRequests {
 		scheduler.workers.Add(1)
 		go func() {
 			defer scheduler.workers.Done()
@@ -693,7 +693,7 @@ func (s *lookupScheduler) run() {
 			group := lookupGroup{mode: task.mode, bucket: task.bucket}
 			s.groups[group] = append(s.groups[group], task)
 			if len(s.groups[group]) >= s.client.config.MaxBatchKeys ||
-				s.client.config.BatchDelay == 0 {
+				s.client.config.BatchTimeout == 0 {
 				if !s.dispatchGroup(group) {
 					s.shutdown()
 					return
@@ -718,7 +718,7 @@ func (s *lookupScheduler) run() {
 
 func (s *lookupScheduler) armTimer() {
 	if s.timerC == nil {
-		s.timer.Reset(s.client.config.BatchDelay)
+		s.timer.Reset(s.client.config.BatchTimeout)
 		s.timerC = s.timer.C
 	}
 }
@@ -784,7 +784,7 @@ func (c *Lookuper) runLookupWorker() {
 		if len(active) == 0 {
 			continue
 		}
-		requestCtx, cancel := context.WithTimeout(c.life, c.config.Timeout)
+		requestCtx, cancel := context.WithTimeout(c.life, c.config.RequestTimeout)
 		if batch.group.mode == pointLookupMode {
 			values, err := c.runPointAttempts(requestCtx, batch.group.bucket, active)
 			completePointLookupBatch(active, values, err)
@@ -801,11 +801,11 @@ func (c *Lookuper) runPointAttempts(
 	bucket int32,
 	tasks []*lookupTask,
 ) ([][]byte, error) {
-	return retryLookup(ctx, c.config.Retry, c.observer, c.config.InsertIfNotExists, func() ([][]byte, error) {
+	return retryLookup(ctx, c.config.RetryPolicy, c.observer, c.config.InsertIfNotExists, func() ([][]byte, error) {
 		return c.backend.lookup(ctx, lookupRequest{
 			path: c.path, bucket: bucket, tableID: c.tableID, partitionID: c.partitionID,
 			keys: encodedLookupTasks(tasks), insertIfNotExist: c.config.InsertIfNotExists,
-			timeout: c.config.Timeout, acks: c.config.Acks,
+			timeout: c.config.RequestTimeout, acks: c.config.Acks,
 		})
 	})
 }
@@ -815,7 +815,7 @@ func (c *Lookuper) runPrefixAttempts(
 	bucket int32,
 	tasks []*lookupTask,
 ) ([][][]byte, error) {
-	return retryLookup(ctx, c.config.Retry, c.observer, false, func() ([][][]byte, error) {
+	return retryLookup(ctx, c.config.RetryPolicy, c.observer, false, func() ([][][]byte, error) {
 		return c.backend.prefixLookup(
 			ctx, c.path, bucket, c.tableID, c.partitionID, encodedLookupTasks(tasks),
 		)

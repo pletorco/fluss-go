@@ -13,12 +13,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-// ArrowCompression identifies the Arrow IPC compression codec.
-type ArrowCompression uint8
+// ArrowCompressionType identifies the Arrow IPC compression codec.
+type ArrowCompressionType uint8
 
 // Arrow compression codecs supported by Apache Fluss 0.9.1.
 const (
-	ArrowCompressionNone ArrowCompression = iota
+	ArrowCompressionNone ArrowCompressionType = iota
 	ArrowCompressionLZ4
 	ArrowCompressionZSTD
 )
@@ -67,7 +67,7 @@ func (b *ArrowLogBatch) Release() {
 
 // EncodeArrowLogBatch encodes an Arrow-backed Fluss log batch.
 // The function borrows batch.Record only for the duration of the call.
-func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompression, allocator memory.Allocator) ([]byte, error) {
+func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompressionType, allocator memory.Allocator) ([]byte, error) {
 	if batch.Magic != 0 && batch.Magic != 1 {
 		return nil, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, batch.Magic)
 	}
@@ -303,7 +303,7 @@ func (w *arrowPayloadCapture) WritePayload(payload ipc.Payload) error {
 	return err
 }
 
-func encodeArrowPayload(record arrow.RecordBatch, compression ArrowCompression, allocator memory.Allocator) ([]byte, error) {
+func encodeArrowPayload(record arrow.RecordBatch, compression ArrowCompressionType, allocator memory.Allocator) ([]byte, error) {
 	if record == nil || record.NumRows() == 0 {
 		return nil, nil
 	}

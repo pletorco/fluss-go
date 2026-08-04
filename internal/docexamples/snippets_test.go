@@ -28,7 +28,7 @@ func quickStart() {
 	client, err := fgo.Open(
 		ctx,
 		fgo.WithBootstrapServers("localhost:9123"),
-		fgo.WithClientIdentity("example", "1.0.0"),
+		fgo.WithClientSoftware("example", "1.0.0"),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -264,9 +264,9 @@ func lookupScheduling(ctx context.Context, client *fgo.Client, table fgo.Table) 
 	lookup, err := client.NewLookuper(
 		ctx,
 		table,
-		fgo.WithLookupBatch(256, 8),
+		fgo.WithLookupBatchLimits(256, 8),
 		fgo.WithLookupQueue(4_096, time.Millisecond),
-		fgo.WithLookupTimeout(5*time.Second),
+		fgo.WithLookupRequestTimeout(5*time.Second),
 		fgo.WithLookupRetryPolicy(fgo.RetryPolicy{MaxAttempts: 3}),
 	)
 	// doc:snippet-end lookupScheduling

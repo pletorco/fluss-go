@@ -81,14 +81,14 @@ type LogScannerConfig struct {
 	Projection []string
 	// Partition selects one named physical partition; empty selects the table.
 	Partition string
-	// MaxBytes bounds aggregate encoded bytes per fetch.
-	MaxBytes int32
-	// MaxBucketBytes bounds encoded bytes per bucket per fetch.
-	MaxBucketBytes int32
-	// MinBytes is the aggregate byte threshold before a fetch may return.
-	MinBytes int32
-	// MaxWait bounds server waiting when MinBytes is not reached.
-	MaxWait time.Duration
+	// FetchMaxBytes bounds aggregate encoded bytes per fetch.
+	FetchMaxBytes int32
+	// FetchMaxBytesForBucket bounds encoded bytes per bucket per fetch.
+	FetchMaxBytesForBucket int32
+	// FetchMinBytes is the aggregate byte threshold before a fetch may return.
+	FetchMinBytes int32
+	// FetchWaitMaxTime bounds server waiting when FetchMinBytes is not reached.
+	FetchWaitMaxTime time.Duration
 	// RowLimit is the total delivered row bound; zero is unbounded.
 	RowLimit int64
 	// StoppingOffsets maps every initial bucket to an exclusive end offset.
@@ -133,14 +133,15 @@ func WithScanPartitionSpec(schema Schema, spec PartitionSpec) LogScannerOption {
 	}
 }
 
-// WithScanLimits sets aggregate and per-bucket fetch byte limits and wait time.
-func WithScanLimits(maxBytes, maxBucketBytes, minBytes int32, maxWait time.Duration) LogScannerOption {
+// WithLogFetchLimits sets aggregate and per-bucket fetch byte limits and wait time.
+func WithLogFetchLimits(maxBytes, maxBytesForBucket, minBytes int32, waitMaxTime time.Duration) LogScannerOption {
 	return func(config *LogScannerConfig) error {
-		if maxBytes <= 0 || maxBucketBytes <= 0 || minBytes < 0 || minBytes > maxBytes ||
-			maxWait < 0 || maxWait/time.Millisecond > math.MaxInt32 {
+		if maxBytes <= 0 || maxBytesForBucket <= 0 || minBytes < 0 || minBytes > maxBytes ||
+			waitMaxTime < 0 || waitMaxTime/time.Millisecond > math.MaxInt32 {
 			return fmt.Errorf("%w: invalid scan limits", ErrInvalidConfig)
 		}
-		config.MaxBytes, config.MaxBucketBytes, config.MinBytes, config.MaxWait = maxBytes, maxBucketBytes, minBytes, maxWait
+		config.FetchMaxBytes, config.FetchMaxBytesForBucket = maxBytes, maxBytesForBucket
+		config.FetchMinBytes, config.FetchWaitMaxTime = minBytes, waitMaxTime
 		return nil
 	}
 }
@@ -325,12 +326,12 @@ func (b clientLogScannerBackend) fetch(
 	}
 	message := request.Message().(*fmsg.FetchLogRequest)
 	message.FollowerServerId = proto.Int32(-1)
-	message.MaxBytes = proto.Int32(input.config.MaxBytes)
-	message.MaxWaitMs = proto.Int32(int32(input.config.MaxWait / time.Millisecond))
-	message.MinBytes = proto.Int32(input.config.MinBytes)
+	message.MaxBytes = proto.Int32(input.config.FetchMaxBytes)
+	message.MaxWaitMs = proto.Int32(int32(input.config.FetchWaitMaxTime / time.Millisecond))
+	message.MinBytes = proto.Int32(input.config.FetchMinBytes)
 	bucketRequest := &fmsg.PbFetchLogReqForBucket{
 		BucketId: proto.Int32(input.bucket), FetchOffset: proto.Int64(input.offset),
-		MaxFetchBytes: proto.Int32(input.config.MaxBucketBytes),
+		MaxFetchBytes: proto.Int32(input.config.FetchMaxBytesForBucket),
 	}
 	if input.partitionID >= 0 {
 		bucketRequest.PartitionId = proto.Int64(input.partitionID)
@@ -491,7 +492,8 @@ func newLogScanner(
 
 func scannerConfig(options []LogScannerOption) (LogScannerConfig, error) {
 	config := LogScannerConfig{
-		MaxBytes: 16 << 20, MaxBucketBytes: 1 << 20, MinBytes: 1, MaxWait: 500 * time.Millisecond,
+		FetchMaxBytes: 16 << 20, FetchMaxBytesForBucket: 1 << 20,
+		FetchMinBytes: 1, FetchWaitMaxTime: 500 * time.Millisecond,
 	}
 	for _, option := range options {
 		if option == nil {

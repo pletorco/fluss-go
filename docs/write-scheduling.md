@@ -10,7 +10,7 @@ The client shares one negotiated connection per server identity through
 - each writer has one bounded FIFO command queue with `MaxBuffered` capacity;
 - each writer has one scheduler and at most `MaxConcurrentRequests` active
   server calls for distinct buckets;
-- pending batches fill dynamically until linger expires or the fixed
+- pending batches fill dynamically until the batch timeout expires or the fixed
   `MaxBatchRecords` or `MaxBatchBytes` cap is reached;
 - `Flush` and `Close` are barriers in that writer's queue;
 - an ambiguous write failure poisons only that writer's affected bucket.
@@ -43,8 +43,8 @@ budget that sum rather than treating `MaxBuffered` as a client-global limit.
   worker. Writers should be closed before the parent client. Closing one writer
   neither flushes nor closes another writer. The context passed to `Close`
   bounds how long that caller waits; it does not shorten the timeout of an
-  already accepted batch. `AppendWriterConfig.Timeout` and
-  `UpsertWriterConfig.Timeout` independently bound both the server operation and
+  already accepted batch. `AppendWriterConfig.RequestTimeout` and
+  `UpsertWriterConfig.RequestTimeout` independently bound both the server operation and
   the client-side network call, so a responsive backend cannot keep the worker
   alive indefinitely. Once shutdown finishes, concurrent and repeated `Close`
   calls return the same terminal flush result. A caller that stopped waiting
@@ -79,7 +79,7 @@ the initial Go client. One active request per bucket remains the explicit
 ordering and idempotence boundary.
 
 Adaptive batch limits are not introduced. The existing writer already fills
-each batch according to arrival rate and linger while fixed record and byte
+each batch according to arrival rate and batch timeout while fixed record and byte
 caps provide predictable request sizes. Measurements show that configuring
 those caps for the workload captures the material allocation and throughput
 benefit without an adaptive controller.

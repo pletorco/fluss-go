@@ -432,7 +432,7 @@ func openReliabilityResources(
 ) (*reliabilityResources, error) {
 	resources := &reliabilityResources{}
 	appendWriter, err := client.NewAppendWriter(
-		ctx, logTable, fgo.WithAppendLinger(0), fgo.WithAppendConcurrency(4),
+		ctx, logTable, fgo.WithAppendBatchTimeout(0), fgo.WithAppendConcurrency(4),
 		fgo.WithAppendRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
@@ -440,7 +440,7 @@ func openReliabilityResources(
 	}
 	resources.appendWriter = appendWriter
 	upsertWriter, err := client.NewUpsertWriter(
-		ctx, kvTable, fgo.WithUpsertLinger(0), fgo.WithUpsertConcurrency(4),
+		ctx, kvTable, fgo.WithUpsertBatchTimeout(0), fgo.WithUpsertConcurrency(4),
 		fgo.WithUpsertRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
@@ -449,7 +449,7 @@ func openReliabilityResources(
 	}
 	resources.upsertWriter = upsertWriter
 	lookup, err := client.NewLookuper(
-		ctx, kvTable, fgo.WithLookupBatch(64, 4),
+		ctx, kvTable, fgo.WithLookupBatchLimits(64, 4),
 		fgo.WithLookupRetryPolicy(fgo.RetryPolicy{MaxAttempts: 3, Backoff: reliabilityBackoff}),
 	)
 	if err != nil {
@@ -616,7 +616,7 @@ func (w reliabilityWorker) run() {
 func reliabilityScanOnce(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(), fgo.WithScanRowLimit(16),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
 	)
 	if err != nil {
 		return err
@@ -658,7 +658,7 @@ func runSoakCycle(
 	address string,
 	logPath, kvPath fgo.TablePath,
 ) (resultErr error) {
-	client, err := fgo.Open(ctx, fgo.WithBootstrapServers(address), fgo.WithDialTimeout(3*time.Second))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers(address), fgo.WithConnectTimeout(3*time.Second))
 	if err != nil {
 		return err
 	}
@@ -687,7 +687,7 @@ func runSoakCycle(
 	}
 	scanner, err := client.NewLogScanner(
 		ctx, logTable, fgo.Earliest(), fgo.WithScanRowLimit(1),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
 	)
 	if err != nil {
 		return err
@@ -695,7 +695,7 @@ func runSoakCycle(
 	if err := scanner.Close(); err != nil {
 		return err
 	}
-	writer, err := client.NewAppendWriter(ctx, logTable, fgo.WithAppendLinger(0))
+	writer, err := client.NewAppendWriter(ctx, logTable, fgo.WithAppendBatchTimeout(0))
 	if err != nil {
 		return err
 	}
@@ -841,7 +841,7 @@ func verifyReliabilityLog(
 	}
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(), fgo.WithScanStoppingOffsets(ends),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 	)
 	if err != nil {
 		return len(expected), 0, 0, err
@@ -942,7 +942,7 @@ func verifyReliabilityKV(
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	lookup, err := client.NewLookuper(ctx, table, fgo.WithLookupBatch(128, 4))
+	lookup, err := client.NewLookuper(ctx, table, fgo.WithLookupBatchLimits(128, 4))
 	if err != nil {
 		return len(expected), 0, err
 	}

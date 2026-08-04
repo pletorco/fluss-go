@@ -460,7 +460,7 @@ func openClient(t *testing.T, seeds []string, options ...fgo.Option) *fgo.Client
 	var lastErr error
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		all := []fgo.Option{fgo.WithBootstrapServers(seeds...), fgo.WithDialTimeout(3 * time.Second)}
+		all := []fgo.Option{fgo.WithBootstrapServers(seeds...), fgo.WithConnectTimeout(3 * time.Second)}
 		all = append(all, options...)
 		client, err := fgo.Open(ctx, all...)
 		cancel()
@@ -540,7 +540,7 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendLinger(0))
+	writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +553,7 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	scanner, err := client.NewLogScanner(ctx, table, fgo.Earliest(), fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond))
+	scanner, err := client.NewLogScanner(ctx, table, fgo.Earliest(), fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,8 +587,8 @@ func testExplicitOffsetInsideBatch(
 	writer, err := client.NewAppendWriter(
 		ctx,
 		table,
-		fgo.WithAppendLinger(time.Hour),
-		fgo.WithAppendBucketAssignment(fgo.AssignmentSticky),
+		fgo.WithAppendBatchTimeout(time.Hour),
+		fgo.WithAppendNoKeyAssigner(fgo.NoKeyAssignerSticky),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -619,7 +619,7 @@ func testExplicitOffsetInsideBatch(
 		table,
 		fgo.AtOffset(start),
 		fgo.WithScanRowLimit(int64(records-middle)),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -697,7 +697,7 @@ func appendSchemaEvolutionRow(
 	row fgo.Row,
 ) {
 	t.Helper()
-	writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendLinger(0))
+	writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -721,7 +721,7 @@ func scanSchemaEvolutionRows(
 		table,
 		fgo.Earliest(),
 		fgo.WithScanRowLimit(2),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -788,7 +788,7 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 	}
 	spec := fgo.PartitionSpec{"region": "kr"}
 	writer, err := client.NewAppendWriter(
-		ctx, table, fgo.WithAppendPartitionSpec(table.Schema, spec), fgo.WithAppendLinger(0),
+		ctx, table, fgo.WithAppendPartitionSpec(table.Schema, spec), fgo.WithAppendBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -802,7 +802,7 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(),
 		fgo.WithScanPartitionSpec(table.Schema, spec),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -828,7 +828,7 @@ func testBoundedLogScan(t *testing.T, ctx context.Context, client *fgo.Client, t
 	t.Helper()
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 		fgo.WithScanRowLimit(2),
 	)
 	if err != nil {
@@ -899,7 +899,7 @@ func testLogFormat(
 	}
 	options := []fgo.AppendWriterOption{
 		fgo.WithAppendLogFormat(format),
-		fgo.WithAppendLinger(0),
+		fgo.WithAppendBatchTimeout(0),
 	}
 	if format == fgo.LogFormatArrow {
 		options = append(options, fgo.WithAppendArrowCompression(fgo.ArrowCompressionZSTD))
@@ -967,7 +967,7 @@ func testDefaultFetchWithLargeArrowBatch(t *testing.T, client *fgo.Client, table
 	writer, err := client.NewAppendWriter(
 		ctx, table,
 		fgo.WithAppendLogFormat(fgo.LogFormatArrow),
-		fgo.WithAppendLinger(0),
+		fgo.WithAppendBatchTimeout(0),
 		fgo.WithAppendBatchLimits(4<<20, 10),
 	)
 	if err != nil {
@@ -983,7 +983,7 @@ func testDefaultFetchWithLargeArrowBatch(t *testing.T, client *fgo.Client, table
 
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(),
-		fgo.WithScanLimits(16<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(16<<20, 1<<20, 1, 100*time.Millisecond),
 		fgo.WithScanRowLimit(3),
 	)
 	if err != nil {
@@ -1025,7 +1025,7 @@ func assertFormatRow(
 	defer cancel()
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 		fgo.WithScanRowLimit(1),
 	)
 	if err != nil {
@@ -1054,7 +1054,7 @@ func testKVData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer, err := client.NewUpsertWriter(ctx, table, fgo.WithUpsertLinger(0))
+	writer, err := client.NewUpsertWriter(ctx, table, fgo.WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1154,7 +1154,7 @@ func deleteLookupRow(
 	lookup *fgo.Lookuper,
 ) {
 	t.Helper()
-	deleteWriter, err := client.NewUpsertWriter(ctx, table, fgo.WithUpsertLinger(0))
+	deleteWriter, err := client.NewUpsertWriter(ctx, table, fgo.WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1296,7 +1296,7 @@ func testTypedLogData(t *testing.T, ctx context.Context, client *fgo.Client, pat
 		fgo.Latest(),
 		logEventCodec(),
 		fgo.WithScanRowLimit(2),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1319,7 +1319,7 @@ func writeTypedLogEvents(
 ) []typedLogEvent {
 	t.Helper()
 	writer, err := fgo.NewTypedAppendWriter(
-		ctx, client, table, logEventCodec(), fgo.WithAppendLinger(0),
+		ctx, client, table, logEventCodec(), fgo.WithAppendBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1375,7 +1375,7 @@ func testTypedKVData(
 		{Tenant: "typed-team", ID: 2, Name: &secondName},
 	}
 	upsertWriter, err := fgo.NewTypedUpsertWriter(
-		ctx, client, kvTable, userCodec(), userKeyCodec(), fgo.WithUpsertLinger(0),
+		ctx, client, kvTable, userCodec(), userKeyCodec(), fgo.WithUpsertBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1499,10 +1499,10 @@ func testPartialUpdatePreservesFields(
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeKVOperation(t, ctx, client, table, []fgo.UpsertWriterOption{fgo.WithUpsertLinger(0)}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
+	writeKVOperation(t, ctx, client, table, []fgo.UpsertWriterOption{fgo.WithUpsertBatchTimeout(0)}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
 		return writer.Upsert(ctx, fgo.Row{"partial", int32(1), "before", "preserved"})
 	})
-	writeKVOperation(t, ctx, client, table, []fgo.UpsertWriterOption{fgo.WithUpsertLinger(0)}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
+	writeKVOperation(t, ctx, client, table, []fgo.UpsertWriterOption{fgo.WithUpsertBatchTimeout(0)}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
 		return writer.PartialUpsert(
 			ctx, []string{"tenant", "id", "name"}, fgo.Row{"partial", int32(1), "after"},
 		)
@@ -1550,7 +1550,7 @@ func testKVMergeModes(
 	}
 	writeOverwrite := func(mode fgo.MergeMode, name string) {
 		writeKVOperation(t, ctx, client, overwriteTable, []fgo.UpsertWriterOption{
-			fgo.WithUpsertLinger(0), fgo.WithUpsertMergeMode(mode),
+			fgo.WithUpsertBatchTimeout(0), fgo.WithUpsertMergeMode(mode),
 		}, func(writer *fgo.UpsertWriter) *fgo.WriteFuture {
 			return writer.Upsert(ctx, fgo.Row{"merge", int32(1), name})
 		})
@@ -1939,8 +1939,8 @@ func openFailoverAppendWriter(
 ) *fgo.AppendWriter {
 	t.Helper()
 	options := []fgo.AppendWriterOption{
-		fgo.WithAppendLinger(0),
-		fgo.WithAppendBucketAssignment(fgo.AssignmentRoundRobin),
+		fgo.WithAppendBatchTimeout(0),
+		fgo.WithAppendNoKeyAssigner(fgo.NoKeyAssignerRoundRobin),
 		fgo.WithAppendBatchLimits(1<<20, 1),
 		fgo.WithAppendRequest(10*time.Second, -1),
 	}
@@ -1986,7 +1986,7 @@ func seedFailoverKVRows(
 ) map[int32]fgo.PrimaryKey {
 	t.Helper()
 	writer, err := client.NewUpsertWriter(
-		ctx, table, fgo.WithUpsertLinger(0), fgo.WithUpsertBatchLimits(1<<20, 1),
+		ctx, table, fgo.WithUpsertBatchTimeout(0), fgo.WithUpsertBatchLimits(1<<20, 1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2035,7 +2035,7 @@ func openFailoverUpsertWriter(
 ) *fgo.UpsertWriter {
 	t.Helper()
 	options := []fgo.UpsertWriterOption{
-		fgo.WithUpsertLinger(0),
+		fgo.WithUpsertBatchTimeout(0),
 		fgo.WithUpsertBatchLimits(1<<20, 1),
 		fgo.WithUpsertRequest(10*time.Second, -1),
 		fgo.WithUpsertRetryPolicy(fgo.WriterRetryPolicy{
@@ -2177,7 +2177,7 @@ func scanFailoverLogRows(
 		ctx,
 		table,
 		fgo.Earliest(),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 		fgo.WithScanStoppingOffsets(ends),
 	)
 	if err != nil {

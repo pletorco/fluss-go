@@ -80,7 +80,7 @@ type config struct {
 	dialContext       DialContextFunc
 	tlsConfig         *tls.Config
 	authFactory       AuthenticatorFactory
-	timeout           time.Duration
+	connectTimeout    time.Duration
 	limits            transport.Config
 	retry             RetryPolicy
 	observer          MetricsObserver
@@ -109,11 +109,11 @@ func WithBootstrapServers(bootstrapServers ...string) Option {
 	}
 }
 
-// WithClientIdentity sets the name and version sent during API negotiation.
-func WithClientIdentity(name, version string) Option {
+// WithClientSoftware sets the software name and version sent during API negotiation.
+func WithClientSoftware(name, version string) Option {
 	return func(c *config) error {
 		if name == "" || version == "" {
-			return fmt.Errorf("%w: client identity is required", ErrInvalidConfig)
+			return fmt.Errorf("%w: client software name and version are required", ErrInvalidConfig)
 		}
 		c.name, c.version = name, version
 		return nil
@@ -154,13 +154,13 @@ func WithAuthenticator(factory AuthenticatorFactory) Option {
 	}
 }
 
-// WithDialTimeout bounds each connection attempt.
-func WithDialTimeout(timeout time.Duration) Option {
+// WithConnectTimeout bounds each connection attempt.
+func WithConnectTimeout(timeout time.Duration) Option {
 	return func(c *config) error {
 		if timeout <= 0 {
-			return fmt.Errorf("%w: non-positive dial timeout", ErrInvalidConfig)
+			return fmt.Errorf("%w: non-positive connect timeout", ErrInvalidConfig)
 		}
-		c.timeout = timeout
+		c.connectTimeout = timeout
 		return nil
 	}
 }
@@ -232,7 +232,7 @@ type Client struct {
 // Open connects to a coordinator, negotiates protocol versions, and returns a
 // shared client.
 func Open(ctx context.Context, options ...Option) (*Client, error) {
-	cfg := config{name: "fluss-go", version: "dev", timeout: 10 * time.Second, retry: RetryPolicy{MaxAttempts: 1, Backoff: func(int) time.Duration { return 0 }}}
+	cfg := config{name: "fluss-go", version: "dev", connectTimeout: 10 * time.Second, retry: RetryPolicy{MaxAttempts: 1, Backoff: func(int) time.Duration { return 0 }}}
 	for _, option := range options {
 		if option == nil {
 			return nil, fmt.Errorf("%w: nil client option", ErrInvalidConfig)
@@ -245,7 +245,7 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 		return nil, fmt.Errorf("%w: bootstrap servers are required", ErrInvalidConfig)
 	}
 	if cfg.dialContext == nil {
-		dialer := net.Dialer{Timeout: cfg.timeout}
+		dialer := net.Dialer{Timeout: cfg.connectTimeout}
 		cfg.dialContext = dialer.DialContext
 	}
 	manager := newConnectionManager(cfg)

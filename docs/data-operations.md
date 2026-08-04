@@ -159,7 +159,7 @@ The option is rejected when the schema has required non-key values that Fluss
 cannot synthesize.
 
 Concurrent point and prefix calls share compatible physical-table and bucket
-batches. Queue entries, batch delay, keys per request, active requests, request
+batches. Queue entries, batch timeout, keys per request, active requests, request
 timeout, and read-only retries are independently bounded:
 
 <!-- go-source: internal/docexamples/snippets_test.go lookupScheduling -->
@@ -167,9 +167,9 @@ timeout, and read-only retries are independently bounded:
 lookup, err := client.NewLookuper(
 	ctx,
 	table,
-	fgo.WithLookupBatch(256, 8),
+	fgo.WithLookupBatchLimits(256, 8),
 	fgo.WithLookupQueue(4_096, time.Millisecond),
-	fgo.WithLookupTimeout(5*time.Second),
+	fgo.WithLookupRequestTimeout(5*time.Second),
 	fgo.WithLookupRetryPolicy(fgo.RetryPolicy{MaxAttempts: 3}),
 )
 ```

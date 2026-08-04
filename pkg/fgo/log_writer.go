@@ -19,14 +19,13 @@ import (
 // server outcome of a mutation unknown.
 var ErrWriterState = errors.New("fgo: writer state is uncertain")
 
-// BucketAssignment selects how unkeyed log rows are routed to buckets.
-type BucketAssignment string
+// NoKeyAssigner selects how rows without a bucket key are routed to buckets.
+type NoKeyAssigner string
 
-// Bucket assignment strategies supported by [AppendWriter].
+// No-key assigners supported by [AppendWriter].
 const (
-	AssignmentAuto       BucketAssignment = "auto"
-	AssignmentSticky     BucketAssignment = "sticky"
-	AssignmentRoundRobin BucketAssignment = "round-robin"
+	NoKeyAssignerSticky     NoKeyAssigner = "sticky"
+	NoKeyAssignerRoundRobin NoKeyAssigner = "round-robin"
 )
 
 // LogFormat selects the row or Arrow encoding used for log batches.
@@ -51,23 +50,23 @@ type AppendWriterConfig struct {
 	MaxBuffered int
 	// MaxConcurrentRequests bounds active produce calls across distinct buckets.
 	MaxConcurrentRequests int
-	// Linger is the maximum delay used to fill a non-full batch.
-	Linger time.Duration
-	// Timeout bounds both the server-side produce operation and the client call.
-	Timeout time.Duration
+	// BatchTimeout is the maximum delay used to fill a non-full batch.
+	BatchTimeout time.Duration
+	// RequestTimeout bounds both the server-side produce operation and the client call.
+	RequestTimeout time.Duration
 	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
 	Acks int32
-	// Retry controls bounded retries of idempotent batches. More than one
+	// RetryPolicy controls bounded retries of idempotent batches. More than one
 	// attempt requires Acks=-1.
-	Retry WriterRetryPolicy
-	// Assignment selects routing for records without a key.
-	Assignment BucketAssignment
+	RetryPolicy WriterRetryPolicy
+	// NoKeyAssigner selects routing for records without a bucket key.
+	NoKeyAssigner NoKeyAssigner
 	// Partition selects one named physical partition; empty selects the table.
 	Partition string
 	// Format selects row or Arrow encoding.
 	Format LogFormat
-	// ArrowCompression applies only when Format resolves to Arrow.
-	ArrowCompression ArrowCompression
+	// ArrowCompressionType applies only when Format resolves to Arrow.
+	ArrowCompressionType ArrowCompressionType
 
 	arrowCompressionSet bool
 }
@@ -109,13 +108,13 @@ func WithAppendConcurrency(requests int) AppendWriterOption {
 	}
 }
 
-// WithAppendLinger sets the maximum delay used to collect a non-full batch.
-func WithAppendLinger(linger time.Duration) AppendWriterOption {
+// WithAppendBatchTimeout sets the maximum delay used to collect a non-full batch.
+func WithAppendBatchTimeout(timeout time.Duration) AppendWriterOption {
 	return func(config *AppendWriterConfig) error {
-		if linger < 0 {
-			return fmt.Errorf("%w: negative log linger", ErrInvalidConfig)
+		if timeout < 0 {
+			return fmt.Errorf("%w: negative append batch timeout", ErrInvalidConfig)
 		}
-		config.Linger = linger
+		config.BatchTimeout = timeout
 		return nil
 	}
 }
@@ -127,7 +126,7 @@ func WithAppendRequest(timeout time.Duration, acks int32) AppendWriterOption {
 			(acks != 0 && acks != 1 && acks != -1) {
 			return fmt.Errorf("%w: invalid log request settings", ErrInvalidConfig)
 		}
-		config.Timeout, config.Acks = timeout, acks
+		config.RequestTimeout, config.Acks = timeout, acks
 		return nil
 	}
 }
@@ -136,20 +135,20 @@ func WithAppendRequest(timeout time.Duration, acks int32) AppendWriterOption {
 // Retries preserve the encoded batch, writer ID, and bucket sequence.
 func WithAppendRetryPolicy(policy WriterRetryPolicy) AppendWriterOption {
 	return func(config *AppendWriterConfig) error {
-		config.Retry = policy
+		config.RetryPolicy = policy
 		return nil
 	}
 }
 
-// WithAppendBucketAssignment selects routing for rows without a key.
-func WithAppendBucketAssignment(assignment BucketAssignment) AppendWriterOption {
+// WithAppendNoKeyAssigner selects routing for rows without a bucket key.
+func WithAppendNoKeyAssigner(assigner NoKeyAssigner) AppendWriterOption {
 	return func(config *AppendWriterConfig) error {
-		switch assignment {
-		case AssignmentAuto, AssignmentSticky, AssignmentRoundRobin:
-			config.Assignment = assignment
+		switch assigner {
+		case NoKeyAssignerSticky, NoKeyAssignerRoundRobin:
+			config.NoKeyAssigner = assigner
 			return nil
 		default:
-			return fmt.Errorf("%w: unknown bucket assignment %q", ErrInvalidConfig, assignment)
+			return fmt.Errorf("%w: unknown no-key assigner %q", ErrInvalidConfig, assigner)
 		}
 	}
 }
@@ -192,11 +191,11 @@ func WithAppendLogFormat(format LogFormat) AppendWriterOption {
 }
 
 // WithAppendArrowCompression selects the compression for Arrow log batches.
-func WithAppendArrowCompression(compression ArrowCompression) AppendWriterOption {
+func WithAppendArrowCompression(compression ArrowCompressionType) AppendWriterOption {
 	return func(config *AppendWriterConfig) error {
 		switch compression {
 		case ArrowCompressionNone, ArrowCompressionLZ4, ArrowCompressionZSTD:
-			config.ArrowCompression = compression
+			config.ArrowCompressionType = compression
 			config.arrowCompressionSet = true
 			return nil
 		default:
@@ -519,9 +518,9 @@ func appendWriterConfig(options []AppendWriterOption) (AppendWriterConfig, error
 	config := AppendWriterConfig{
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
 		MaxConcurrentRequests: 4,
-		Linger:                5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
-		Retry:      defaultWriterRetryPolicy(),
-		Assignment: AssignmentAuto, Format: LogFormatAuto,
+		BatchTimeout:          5 * time.Millisecond, RequestTimeout: 30 * time.Second, Acks: -1,
+		RetryPolicy: defaultWriterRetryPolicy(),
+		Format:      LogFormatAuto,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -531,7 +530,7 @@ func appendWriterConfig(options []AppendWriterOption) (AppendWriterConfig, error
 			return AppendWriterConfig{}, err
 		}
 	}
-	if err := validateWriterRetryPolicy(config.Retry, config.Acks); err != nil {
+	if err := validateWriterRetryPolicy(config.RetryPolicy, config.Acks); err != nil {
 		return AppendWriterConfig{}, err
 	}
 	return config, nil
@@ -705,7 +704,7 @@ func (w *AppendWriter) Close(ctx context.Context) error {
 
 func (w *AppendWriter) run() {
 	defer close(w.done)
-	timer := time.NewTimer(w.config.Linger)
+	timer := time.NewTimer(w.config.BatchTimeout)
 	if !timer.Stop() {
 		<-timer.C
 	}
@@ -769,9 +768,9 @@ func (l *appendWriterLoop) add(item *pendingWrite) {
 	batch.items = append(batch.items, item)
 	batch.records = append(batch.records, Record{Value: item.row, Change: Append, Offset: -1})
 	batch.bytes += item.size
-	if l.batchFull(batch) || l.writer.config.Linger == 0 {
+	if l.batchFull(batch) || l.writer.config.BatchTimeout == 0 {
 		_ = l.flushBucket(bucket)
-		if l.writer.effectiveAssignment() == AssignmentSticky {
+		if l.writer.effectiveNoKeyAssigner() == NoKeyAssignerSticky {
 			l.writer.advanceSticky()
 		}
 		return
@@ -785,7 +784,7 @@ func (l *appendWriterLoop) availableBatch(bucket int32, item *pendingWrite) (int
 		return bucket, batch, true
 	}
 	_ = l.flushBucket(bucket)
-	if l.writer.effectiveAssignment() != AssignmentSticky {
+	if l.writer.effectiveNoKeyAssigner() != NoKeyAssignerSticky {
 		return bucket, l.batch(bucket), true
 	}
 	l.writer.advanceSticky()
@@ -860,13 +859,13 @@ func (l *appendWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequen
 	var result writerAttemptResult
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.Timeout)
+		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.RequestTimeout)
 		result = executeWriterAttempts(
-			requestCtx, l.writer.config.Retry, l.writer.observer, MetricOperationLogWrite,
+			requestCtx, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationLogWrite,
 			func(ctx context.Context) (int64, bool, error) {
 				offset, err := l.writer.backend.produce(ctx, logProduceRequest{
 					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
-					records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+					records: encoded, timeout: l.writer.config.RequestTimeout, acks: l.writer.config.Acks,
 				})
 				return offset, err == nil, err
 			},
@@ -936,8 +935,8 @@ func (l *appendWriterLoop) queueAll() error {
 }
 
 func (l *appendWriterLoop) armTimer() {
-	if l.timerC == nil && l.writer.config.Linger > 0 {
-		l.timer.Reset(l.writer.config.Linger)
+	if l.timerC == nil && l.writer.config.BatchTimeout > 0 {
+		l.timer.Reset(l.writer.config.BatchTimeout)
 		l.timerC = l.timer.C
 	}
 }
@@ -958,7 +957,7 @@ func (w *AppendWriter) encodeBatch(batch *bucketBatch, sequence int32) ([]byte, 
 		encoded, err := EncodeArrowLogBatch(ArrowLogBatch{
 			Magic: 0, BaseOffset: -1, SchemaID: int16(w.table.SchemaID), WriterID: w.writerID,
 			BatchSequence: sequence, Record: item.arrow, Changes: item.changes,
-		}, w.config.ArrowCompression, memory.DefaultAllocator)
+		}, w.config.ArrowCompressionType, memory.DefaultAllocator)
 		return encoded, len(item.changes), err
 	}
 	encoded, err := (LogBatch{
@@ -991,14 +990,14 @@ func (w *AppendWriter) completeBatch(
 	}
 }
 
-func (w *AppendWriter) effectiveAssignment() BucketAssignment {
+func (w *AppendWriter) effectiveNoKeyAssigner() NoKeyAssigner {
 	if len(w.table.Schema.BucketKey) != 0 {
-		return AssignmentAuto
+		return ""
 	}
-	if w.config.Assignment == AssignmentAuto {
-		return AssignmentSticky
+	if w.config.NoKeyAssigner == "" {
+		return NoKeyAssignerSticky
 	}
-	return w.config.Assignment
+	return w.config.NoKeyAssigner
 }
 
 func (w *AppendWriter) assignBucket(item *pendingWrite) (int32, error) {
@@ -1020,7 +1019,7 @@ func (w *AppendWriter) assignBucket(item *pendingWrite) (int32, error) {
 		}
 		return w.buckets[int(bucket)], nil
 	}
-	if w.effectiveAssignment() == AssignmentRoundRobin {
+	if w.effectiveNoKeyAssigner() == NoKeyAssignerRoundRobin {
 		bucket := w.buckets[w.roundRobin%len(w.buckets)]
 		w.roundRobin++
 		return bucket, nil

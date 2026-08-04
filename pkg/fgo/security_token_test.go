@@ -81,8 +81,8 @@ func (t *fakeSecurityTokenTimer) fire(now time.Time) {
 
 func tokenTestConfig(clock *fakeSecurityTokenClock) FileSystemSecurityTokenRefreshConfig {
 	config, err := (FileSystemSecurityTokenRefreshConfig{
-		RenewalRatio: 0.5, RetryBackoff: 10 * time.Second,
-		MaxRetryBackoff: 40 * time.Second, ClockSkew: time.Second,
+		RenewalTimeRatio: 0.5, RenewalRetryBackoff: 10 * time.Second,
+		MaxRenewalRetryBackoff: 40 * time.Second, ClockSkew: time.Second,
 		clock: clock, random: func() float64 { return 0.5 },
 	}).normalized()
 	if err != nil {
@@ -292,7 +292,7 @@ func TestSecurityTokenOptionsAndProtocol(t *testing.T) {
 	for _, option := range []Option{
 		WithFileSystemSecurityTokenProvider(nil, FileSystemSecurityTokenRefreshConfig{}),
 		WithFileSystemSecurityTokenRefresh(
-			FileSystemSecurityTokenRefreshConfig{RenewalRatio: 1},
+			FileSystemSecurityTokenRefreshConfig{RenewalTimeRatio: 1},
 		),
 		WithFileSystemSecurityTokenRefresh(
 			FileSystemSecurityTokenRefreshConfig{},

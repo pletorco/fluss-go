@@ -418,7 +418,7 @@ func TestLogScannerAcceptsFirstArrowBatchLargerThanBucketFetchLimit(t *testing.T
 	}
 	result.Release()
 	calls := backend.fetchCalls()
-	if len(calls) != 1 || calls[0].config.MaxBucketBytes != 1<<20 {
+	if len(calls) != 1 || calls[0].config.FetchMaxBytesForBucket != 1<<20 {
 		t.Fatalf("fetch calls = %#v", calls)
 	}
 }
@@ -766,7 +766,7 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	backend.fetches[0] = scannerFetch{records: encoded}
 	scanner, err := newLogScanner(
 		context.Background(), backend, table, Earliest(),
-		WithScanProjection("name"), WithScanLimits(4096, 2048, 1, time.Millisecond),
+		WithScanProjection("name"), WithLogFetchLimits(4096, 2048, 1, time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -780,7 +780,7 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	}
 	call := backend.fetchCalls()[0]
 	if call.offset != 12 || len(call.projection) != 1 || call.projection[0] != 1 ||
-		call.config.MaxBytes != 4096 {
+		call.config.FetchMaxBytes != 4096 {
 		t.Fatalf("projected fetch = %#v", call)
 	}
 	result.Release()
@@ -1026,7 +1026,7 @@ func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
 		{"bad partition", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanPartition("   ")}, ErrInvalidConfig},
 		{"empty projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection()}, ErrInvalidConfig},
 		{"unknown projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection("missing")}, ErrInvalidSchema},
-		{"bad limits", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanLimits(0, 1, 2, -1)}, ErrInvalidConfig},
+		{"bad limits", AtOffset(0), scannerBackend(0), []LogScannerOption{WithLogFetchLimits(0, 1, 2, -1)}, ErrInvalidConfig},
 		{"bad row limit", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanRowLimit(0)}, ErrInvalidConfig},
 		{"empty stops", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(nil)}, ErrInvalidConfig},
 		{"negative stop", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(map[int32]int64{0: -1})}, ErrInvalidConfig},
@@ -1140,7 +1140,7 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 	}
 	if _, err := backend.fetch(context.Background(), logFetchRequest{
 		path: path, tableID: 9, partitionID: -1,
-		config: LogScannerConfig{MaxBytes: 1, MaxBucketBytes: 1},
+		config: LogScannerConfig{FetchMaxBytes: 1, FetchMaxBytesForBucket: 1},
 	}); !errors.Is(err, ErrRecord) {
 		t.Fatalf("FetchLog error = %v", err)
 	}

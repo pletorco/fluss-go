@@ -114,7 +114,7 @@ func TestUpsertWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
 	backend := kvBackend(0)
 	writer, err := newUpsertWriter(
 		context.Background(), backend, table,
-		WithUpsertBatchLimits(1<<20, 2), WithUpsertBuffer(8), WithUpsertLinger(time.Hour), WithUpsertRequest(time.Second, 1),
+		WithUpsertBatchLimits(1<<20, 2), WithUpsertBuffer(8), WithUpsertBatchTimeout(time.Hour), WithUpsertRequest(time.Second, 1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestUpsertWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 		nil,
 	}
 	writer, err := newUpsertWriter(
-		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
+		context.Background(), backend, upsertWriterTable(), WithUpsertBatchTimeout(0),
 		WithUpsertRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
 	)
 	if err != nil {
@@ -180,7 +180,7 @@ func TestUpsertWriterMergeModes(t *testing.T) {
 	backend := kvBackend(0)
 	writer, err := newUpsertWriter(
 		context.Background(), backend, table,
-		WithUpsertMergeMode(MergeModeOverwrite), WithUpsertLinger(0),
+		WithUpsertMergeMode(MergeModeOverwrite), WithUpsertBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func assertKVBatchCalls(t *testing.T, calls []putKVCall) {
 func TestUpsertWriterPartialUpdateUsesTargetColumns(t *testing.T) {
 	table := upsertWriterTable()
 	backend := kvBackend(0)
-	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertLinger(time.Hour))
+	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertBatchTimeout(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestUpsertWriterPartitionRoutingAndHash(t *testing.T) {
 	table.BucketCount = 3
 	backend := kvBackend(0, 1, 2)
 	backend.physicalID = 55
-	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertPartition("day=1"), WithUpsertLinger(0))
+	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertPartition("day=1"), WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestUpsertWriterFailureCancellationAndClose(t *testing.T) {
 	table := upsertWriterTable()
 	backend := kvBackend(0)
 	backend.putErr = errors.New("ambiguous")
-	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertLinger(0))
+	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestUpsertWriterFailureCancellationAndClose(t *testing.T) {
 	release := make(chan struct{})
 	backend = kvBackend(0)
 	backend.block = release
-	writer, _ = newUpsertWriter(context.Background(), backend, table, WithUpsertLinger(0))
+	writer, _ = newUpsertWriter(context.Background(), backend, table, WithUpsertBatchTimeout(0))
 	first := writer.Upsert(context.Background(), Row{int32(1), nil, nil})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -344,7 +344,7 @@ func TestUpsertWriterFailureCancellationAndClose(t *testing.T) {
 
 func TestUpsertWriterRejectsInvalidMutations(t *testing.T) {
 	table := upsertWriterTable()
-	writer, err := newUpsertWriter(context.Background(), kvBackend(0), table, WithUpsertLinger(time.Hour))
+	writer, err := newUpsertWriter(context.Background(), kvBackend(0), table, WithUpsertBatchTimeout(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestUpsertWriterRejectsInvalidMutations(t *testing.T) {
 
 	auto := table
 	auto.Schema.AutoIncrement = []string{"score"}
-	writer, err = newUpsertWriter(context.Background(), kvBackend(0), auto, WithUpsertLinger(time.Hour))
+	writer, err = newUpsertWriter(context.Background(), kvBackend(0), auto, WithUpsertBatchTimeout(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestUpsertWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	backend := kvBackend(0)
 	backend.block = release
 	writer, err := newUpsertWriter(
-		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
+		context.Background(), backend, upsertWriterTable(), WithUpsertBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -427,7 +427,7 @@ func TestUpsertWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	backend.block = make(chan struct{})
 	writer, err := newUpsertWriter(
 		context.Background(), backend, upsertWriterTable(),
-		WithUpsertLinger(time.Hour), WithUpsertRequest(20*time.Millisecond, -1),
+		WithUpsertBatchTimeout(time.Hour), WithUpsertRequest(20*time.Millisecond, -1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -456,7 +456,7 @@ func TestUpsertWriterClosePreservesTerminalFailure(t *testing.T) {
 	backend.block = release
 	backend.putErr = errWriterTerminal
 	writer, err := newUpsertWriter(
-		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(time.Hour),
+		context.Background(), backend, upsertWriterTable(), WithUpsertBatchTimeout(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -480,7 +480,7 @@ func TestUpsertWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
 	backend := kvBackend(0)
 	backend.putErr = errWriterTerminal
 	writer, err := newUpsertWriter(
-		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(time.Hour),
+		context.Background(), backend, upsertWriterTable(), WithUpsertBatchTimeout(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -517,7 +517,7 @@ func TestUpsertWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"batch limits", table, kvBackend(0), []UpsertWriterOption{WithUpsertBatchLimits(1, 0)}, ErrInvalidConfig},
 		{"buffer", table, kvBackend(0), []UpsertWriterOption{WithUpsertBuffer(0)}, ErrInvalidConfig},
 		{"concurrency", table, kvBackend(0), []UpsertWriterOption{WithUpsertConcurrency(65)}, ErrInvalidConfig},
-		{"linger", table, kvBackend(0), []UpsertWriterOption{WithUpsertLinger(-1)}, ErrInvalidConfig},
+		{"batch timeout", table, kvBackend(0), []UpsertWriterOption{WithUpsertBatchTimeout(-1)}, ErrInvalidConfig},
 		{"request", table, kvBackend(0), []UpsertWriterOption{WithUpsertRequest(0, 2)}, ErrInvalidConfig},
 		{"metadata", table, &fakeUpsertWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", table, kvBackend(), nil, ErrMetadata},
@@ -564,7 +564,7 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 	tablet.versions[fmsg.APIKeyPutKv] = 1
 	writer, err := client.NewUpsertWriter(
 		context.Background(), upsertWriterTable(),
-		WithUpsertLinger(0), WithUpsertMergeMode(MergeModeOverwrite),
+		WithUpsertBatchTimeout(0), WithUpsertMergeMode(MergeModeOverwrite),
 	)
 	if err != nil {
 		t.Fatal(err)

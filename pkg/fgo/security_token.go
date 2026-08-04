@@ -98,13 +98,13 @@ func (f FileSystemSecurityTokenReceiverFunc) ReceiveFileSystemSecurityToken(
 // FileSystemSecurityTokenRefreshConfig controls renewal timing and bounded
 // retry backoff. Zero fields use documented defaults.
 type FileSystemSecurityTokenRefreshConfig struct {
-	// RenewalRatio selects the fraction of token lifetime before renewal;
+	// RenewalTimeRatio selects the fraction of token lifetime before renewal;
 	// zero defaults to 0.75.
-	RenewalRatio float64
-	// RetryBackoff is the initial acquisition retry delay; zero defaults to 1m.
-	RetryBackoff time.Duration
-	// MaxRetryBackoff bounds exponential retry delay; zero defaults to 1h.
-	MaxRetryBackoff time.Duration
+	RenewalTimeRatio float64
+	// RenewalRetryBackoff is the initial acquisition retry delay; zero defaults to 1m.
+	RenewalRetryBackoff time.Duration
+	// MaxRenewalRetryBackoff bounds exponential retry delay; zero defaults to 1h.
+	MaxRenewalRetryBackoff time.Duration
 	// ClockSkew renews this much earlier than calculated; zero defaults to 30s.
 	ClockSkew time.Duration
 	// Jitter randomizes renewal delay as a fraction in [0, 1].
@@ -115,20 +115,20 @@ type FileSystemSecurityTokenRefreshConfig struct {
 }
 
 func (c FileSystemSecurityTokenRefreshConfig) normalized() (FileSystemSecurityTokenRefreshConfig, error) {
-	if c.RenewalRatio == 0 {
-		c.RenewalRatio = 0.75
+	if c.RenewalTimeRatio == 0 {
+		c.RenewalTimeRatio = 0.75
 	}
-	if c.RetryBackoff == 0 {
-		c.RetryBackoff = time.Minute
+	if c.RenewalRetryBackoff == 0 {
+		c.RenewalRetryBackoff = time.Minute
 	}
-	if c.MaxRetryBackoff == 0 {
-		c.MaxRetryBackoff = time.Hour
+	if c.MaxRenewalRetryBackoff == 0 {
+		c.MaxRenewalRetryBackoff = time.Hour
 	}
 	if c.ClockSkew == 0 {
 		c.ClockSkew = 30 * time.Second
 	}
-	if c.RenewalRatio <= 0 || c.RenewalRatio >= 1 || c.RetryBackoff <= 0 ||
-		c.MaxRetryBackoff < c.RetryBackoff || c.ClockSkew < 0 ||
+	if c.RenewalTimeRatio <= 0 || c.RenewalTimeRatio >= 1 || c.RenewalRetryBackoff <= 0 ||
+		c.MaxRenewalRetryBackoff < c.RenewalRetryBackoff || c.ClockSkew < 0 ||
 		c.Jitter < 0 || c.Jitter > 1 {
 		return FileSystemSecurityTokenRefreshConfig{}, fmt.Errorf(
 			"%w: invalid filesystem security token refresh settings", ErrInvalidConfig,
@@ -303,7 +303,7 @@ func (m *securityTokenManager) refreshOnce(ctx context.Context) (time.Duration, 
 	m.failures = 0
 	m.mu.Unlock()
 	if token.Revoked {
-		return m.jitter(m.config.RetryBackoff), false
+		return m.jitter(m.config.RenewalRetryBackoff), false
 	}
 	if token.ExpiresAt.IsZero() {
 		return 0, true
@@ -353,9 +353,9 @@ func (m *securityTokenManager) failedDelay() time.Duration {
 	if exponent > 30 {
 		exponent = 30
 	}
-	delay := time.Duration(float64(m.config.RetryBackoff) * math.Pow(2, float64(exponent)))
-	if delay > m.config.MaxRetryBackoff || delay < 0 {
-		delay = m.config.MaxRetryBackoff
+	delay := time.Duration(float64(m.config.RenewalRetryBackoff) * math.Pow(2, float64(exponent)))
+	if delay > m.config.MaxRenewalRetryBackoff || delay < 0 {
+		delay = m.config.MaxRenewalRetryBackoff
 	}
 	return m.jitter(delay)
 }
@@ -364,9 +364,9 @@ func (m *securityTokenManager) renewalDelay(expiresAt time.Time) time.Duration {
 	now := m.config.clock.Now()
 	lifetime := expiresAt.Add(-m.config.ClockSkew).Sub(now)
 	if lifetime <= 0 {
-		return m.jitter(m.config.RetryBackoff)
+		return m.jitter(m.config.RenewalRetryBackoff)
 	}
-	return m.jitter(time.Duration(float64(lifetime) * m.config.RenewalRatio))
+	return m.jitter(time.Duration(float64(lifetime) * m.config.RenewalTimeRatio))
 }
 
 func (m *securityTokenManager) jitter(delay time.Duration) time.Duration {

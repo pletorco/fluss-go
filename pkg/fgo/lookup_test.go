@@ -204,7 +204,7 @@ func TestLookuperPreservesInputAndNotFound(t *testing.T) {
 	backend := lookupBackendFor(table, 0, 1)
 	putLookupValue(t, backend, table, PrimaryKey{"a", int32(1)}, Row{"a", int32(1), "one"})
 	putLookupValue(t, backend, table, PrimaryKey{"b", int32(2)}, Row{"b", int32(2), "two"})
-	client, err := newLookuper(context.Background(), backend, table, WithLookupBatch(1, 2))
+	client, err := newLookuper(context.Background(), backend, table, WithLookupBatchLimits(1, 2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestLookuperBatchesConcurrentCalls(t *testing.T) {
 	const callers = 16
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(callers, 2),
+		WithLookupBatchLimits(callers, 2),
 		WithLookupQueue(callers, time.Hour),
 	)
 	if err != nil {
@@ -277,7 +277,7 @@ func TestLookuperKeepsCallerCancellationIndependent(t *testing.T) {
 	backend.entered = make(chan struct{})
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(2, 1),
+		WithLookupBatchLimits(2, 1),
 		WithLookupQueue(2, time.Hour),
 	)
 	if err != nil {
@@ -310,7 +310,7 @@ func TestLookuperBoundsQueuedAndInflightKeys(t *testing.T) {
 	backend.entered = make(chan struct{})
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1),
+		WithLookupBatchLimits(1, 1),
 		WithLookupQueue(2, 0),
 	)
 	if err != nil {
@@ -353,7 +353,7 @@ func TestLookuperSchedulesIndependentBatchesFairly(t *testing.T) {
 	backend.block = release
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 2), WithLookupQueue(2, 0),
+		WithLookupBatchLimits(1, 2), WithLookupQueue(2, 0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -393,7 +393,7 @@ func TestLookuperRetriesOnlyReadOnlyRequests(t *testing.T) {
 	}
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1),
+		WithLookupBatchLimits(1, 1),
 		WithLookupQueue(1, 0),
 		WithLookupRetryPolicy(RetryPolicy{MaxAttempts: 2}),
 	)
@@ -432,8 +432,8 @@ func TestLookuperRequestTimeout(t *testing.T) {
 	backend.block = make(chan struct{})
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1), WithLookupQueue(1, 0),
-		WithLookupTimeout(10*time.Millisecond),
+		WithLookupBatchLimits(1, 1), WithLookupQueue(1, 0),
+		WithLookupRequestTimeout(10*time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -454,7 +454,7 @@ func TestLookuperCloseCompletesQueuedAndInflight(t *testing.T) {
 	backend.entered = make(chan struct{})
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1), WithLookupQueue(3, 0),
+		WithLookupBatchLimits(1, 1), WithLookupQueue(3, 0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -579,7 +579,7 @@ func TestPrefixLookuperBatchesConcurrentCalls(t *testing.T) {
 	const callers = 4
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(callers, 1), WithLookupQueue(callers, time.Hour),
+		WithLookupBatchLimits(callers, 1), WithLookupQueue(callers, time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -681,10 +681,10 @@ func TestLookuperRejectsInvalidConfiguration(t *testing.T) {
 		{"log table", logTable, lookupBackendFor(table, 0), nil, ErrTableKind},
 		{"nil option", table, lookupBackendFor(table, 0), []LookupOption{nil}, ErrInvalidConfig},
 		{"bad partition", table, lookupBackendFor(table, 0), []LookupOption{WithLookupPartition("   ")}, ErrInvalidConfig},
-		{"bad batch", table, lookupBackendFor(table, 0), []LookupOption{WithLookupBatch(0, 0)}, ErrInvalidConfig},
+		{"bad batch", table, lookupBackendFor(table, 0), []LookupOption{WithLookupBatchLimits(0, 0)}, ErrInvalidConfig},
 		{"bad queue", table, lookupBackendFor(table, 0), []LookupOption{WithLookupQueue(0, -1)}, ErrInvalidConfig},
 		{"bad retry", table, lookupBackendFor(table, 0), []LookupOption{WithLookupRetryPolicy(RetryPolicy{})}, ErrInvalidConfig},
-		{"bad timeout", table, lookupBackendFor(table, 0), []LookupOption{WithLookupTimeout(0)}, ErrInvalidConfig},
+		{"bad timeout", table, lookupBackendFor(table, 0), []LookupOption{WithLookupRequestTimeout(0)}, ErrInvalidConfig},
 		{"bad insert request", table, lookupBackendFor(table, 0), []LookupOption{WithLookupInsertIfNotExists(0, 2)}, ErrInvalidConfig},
 		{"required insert value", requiredValue, lookupBackendFor(requiredValue, 0), []LookupOption{WithLookupInsertIfNotExists(time.Second, -1)}, ErrInvalidSchema},
 		{"metadata", table, &fakeLookupBackend{metadataErr: context.Canceled}, nil, context.Canceled},
@@ -841,7 +841,7 @@ func benchmarkLookupCrossCallBatching(b *testing.B, batch int, delay time.Durati
 	putLookupValue(b, backend, table, key, Row{"bench", int32(1), "one"})
 	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(batch, 8),
+		WithLookupBatchLimits(batch, 8),
 		WithLookupQueue(1024, delay),
 	)
 	if err != nil {

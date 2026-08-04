@@ -81,7 +81,7 @@ func TestMetricsObserverAppendWriterEvent(t *testing.T) {
 	recorder := &metricRecorder{}
 	logBackend := logBackend(0)
 	appendWriter, err := newAppendWriter(
-		context.Background(), logBackend, appendWriterTable(), WithAppendLinger(0),
+		context.Background(), logBackend, appendWriterTable(), WithAppendBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestMetricsObserverUpsertWriterEvent(t *testing.T) {
 	recorder := &metricRecorder{}
 	kvBackend := kvBackend(0)
 	upsertWriter, err := newUpsertWriter(
-		context.Background(), kvBackend, upsertWriterTable(), WithUpsertLinger(0),
+		context.Background(), kvBackend, upsertWriterTable(), WithUpsertBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)

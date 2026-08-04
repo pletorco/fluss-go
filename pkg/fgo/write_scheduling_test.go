@@ -296,9 +296,9 @@ func TestWriterSchedulingIsolatesSaturationAndShutdown(t *testing.T) {
 	backend.setControl(1, &schedulingBackendControl{block: release, started: started})
 
 	slow := newSchedulingAppendWriter(
-		t, backend, 1, WithAppendLinger(0), WithAppendBuffer(2),
+		t, backend, 1, WithAppendBatchTimeout(0), WithAppendBuffer(2),
 	)
-	fast := newSchedulingAppendWriter(t, backend, 1, WithAppendLinger(0))
+	fast := newSchedulingAppendWriter(t, backend, 1, WithAppendBatchTimeout(0))
 
 	first := slow.Append(context.Background(), Row{int32(1), "slow"})
 	select {
@@ -348,8 +348,8 @@ func TestWriterSchedulingIsolatesAmbiguousFailure(t *testing.T) {
 	backend := newSchedulingLogBackend(1)
 	failure := errors.New("ambiguous server failure")
 	backend.setControl(1, &schedulingBackendControl{err: failure})
-	failing := newSchedulingAppendWriter(t, backend, 1, WithAppendLinger(0))
-	healthy := newSchedulingAppendWriter(t, backend, 1, WithAppendLinger(0))
+	failing := newSchedulingAppendWriter(t, backend, 1, WithAppendBatchTimeout(0))
+	healthy := newSchedulingAppendWriter(t, backend, 1, WithAppendBatchTimeout(0))
 
 	if result := failing.Append(
 		context.Background(), Row{int32(1), "failing"},
@@ -382,13 +382,13 @@ func TestUpsertWriterSchedulingIsolatesSlowWriter(t *testing.T) {
 	schedule.setControl(1, &schedulingBackendControl{block: release, started: started})
 	backend := schedulingKVBackend{schedule: schedule}
 	slow, err := newUpsertWriter(
-		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
+		context.Background(), backend, upsertWriterTable(), WithUpsertBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	healthy, err := newUpsertWriter(
-		context.Background(), backend, upsertWriterTable(), WithUpsertLinger(0),
+		context.Background(), backend, upsertWriterTable(), WithUpsertBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -424,8 +424,8 @@ func TestAppendWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
 	probe := newBucketExecutionProbe(0, release)
 	backend := bucketIsolationLogBackend{probe: probe, locations: twoBucketLocations()}
 	writer := newSchedulingAppendWriter(
-		t, backend, 2, WithAppendLinger(0), WithAppendConcurrency(2),
-		WithAppendBucketAssignment(AssignmentRoundRobin),
+		t, backend, 2, WithAppendBatchTimeout(0), WithAppendConcurrency(2),
+		WithAppendNoKeyAssigner(NoKeyAssignerRoundRobin),
 	)
 	first := writer.Append(context.Background(), Row{int32(1), "blocked"})
 	select {
@@ -471,7 +471,7 @@ func TestUpsertWriterIsolatesSlowBucketAndPreservesBucketOrder(t *testing.T) {
 	backend := bucketIsolationKVBackend{probe: probe, locations: twoBucketLocations()}
 	writer, err := newUpsertWriter(
 		context.Background(), backend, table,
-		WithUpsertLinger(0), WithUpsertConcurrency(2),
+		WithUpsertBatchTimeout(0), WithUpsertConcurrency(2),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -569,7 +569,7 @@ func benchmarkFailingWriterLifecycle(b *testing.B) {
 	for index := range b.N {
 		backend := newSchedulingLogBackend(1)
 		backend.err = failure
-		writer := newSchedulingAppendWriter(b, backend, 1, WithAppendLinger(0))
+		writer := newSchedulingAppendWriter(b, backend, 1, WithAppendBatchTimeout(0))
 		result := writer.Append(
 			context.Background(), Row{int32(index), "failure"},
 		).Await(context.Background())
@@ -589,7 +589,7 @@ func benchmarkWriterLifecycle(b *testing.B, count int) {
 		writers := make([]*AppendWriter, count)
 		for index := range writers {
 			writers[index] = newSchedulingAppendWriter(
-				b, backend, 8, WithAppendLinger(0), WithAppendBuffer(64),
+				b, backend, 8, WithAppendBatchTimeout(0), WithAppendBuffer(64),
 			)
 		}
 		for _, writer := range writers {
@@ -614,7 +614,7 @@ func benchmarkWriterBatchSize(b *testing.B, records int) {
 		b, backend, 1,
 		WithAppendBatchLimits(1<<20, records),
 		WithAppendBuffer(records),
-		WithAppendLinger(time.Hour),
+		WithAppendBatchTimeout(time.Hour),
 	)
 	b.Cleanup(func() {
 		if err := writer.Close(context.Background()); err != nil {
@@ -660,9 +660,9 @@ func benchmarkParallelWriters(
 	for index := range writers {
 		writers[index] = newSchedulingAppendWriter(
 			b, backend, bucketCount,
-			WithAppendLinger(0),
+			WithAppendBatchTimeout(0),
 			WithAppendBuffer(64),
-			WithAppendBucketAssignment(AssignmentRoundRobin),
+			WithAppendNoKeyAssigner(NoKeyAssignerRoundRobin),
 		)
 	}
 	b.Cleanup(func() {

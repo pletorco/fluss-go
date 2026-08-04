@@ -135,7 +135,7 @@ func TestAppendWriterBatchesRowsAndAdvancesSequences(t *testing.T) {
 	backend := logBackend(0)
 	writer, err := newAppendWriter(
 		context.Background(), backend, appendWriterTable(),
-		WithAppendBatchLimits(1<<20, 2), WithAppendBuffer(8), WithAppendLinger(time.Hour), WithAppendRequest(time.Second, 1),
+		WithAppendBatchLimits(1<<20, 2), WithAppendBuffer(8), WithAppendBatchTimeout(time.Hour), WithAppendRequest(time.Second, 1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestAppendWriterAssignmentsAndLinger(t *testing.T) {
 	backend := logBackend(7, 2, 4)
 	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithAppendBucketAssignment(AssignmentRoundRobin), WithAppendLinger(time.Millisecond),
+		WithAppendNoKeyAssigner(NoKeyAssignerRoundRobin), WithAppendBatchTimeout(time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func TestAppendWriterAssignmentsAndLinger(t *testing.T) {
 
 	table.Schema.BucketKey = []string{"id"}
 	backend = logBackend(0, 1, 2)
-	writer, err = newAppendWriter(context.Background(), backend, table, WithAppendLinger(0))
+	writer, err = newAppendWriter(context.Background(), backend, table, WithAppendBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestAppendWriterFlushWaitsAndCancellationCompletes(t *testing.T) {
 	release := make(chan struct{})
 	backend := logBackend(0)
 	backend.block = release
-	writer, err := newAppendWriter(context.Background(), backend, appendWriterTable(), WithAppendLinger(0))
+	writer, err := newAppendWriter(context.Background(), backend, appendWriterTable(), WithAppendBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestAppendWriterFlushWaitsAndCancellationCompletes(t *testing.T) {
 func TestAppendWriterFailurePoisonsOnlyBucket(t *testing.T) {
 	backend := logBackend(0)
 	backend.produceErr = errors.New("ambiguous transport failure")
-	writer, err := newAppendWriter(context.Background(), backend, appendWriterTable(), WithAppendLinger(0))
+	writer, err := newAppendWriter(context.Background(), backend, appendWriterTable(), WithAppendBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestAppendWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 		nil,
 	}
 	writer, err := newAppendWriter(
-		context.Background(), backend, appendWriterTable(), WithAppendLinger(0),
+		context.Background(), backend, appendWriterTable(), WithAppendBatchTimeout(0),
 		WithAppendRetryPolicy(WriterRetryPolicy{MaxAttempts: 2}),
 	)
 	if err != nil {
@@ -328,7 +328,7 @@ func TestAppendWriterRowFormats(t *testing.T) {
 	}
 	config, err := appendWriterConfig(nil)
 	if err != nil || config.Format != LogFormatAuto ||
-		config.ArrowCompression != ArrowCompressionNone {
+		config.ArrowCompressionType != ArrowCompressionNone {
 		t.Fatalf("default format config = %#v, %v", config, err)
 	}
 }
@@ -340,7 +340,7 @@ func testAppendWriterRowFormat(t *testing.T, format LogFormat, compacted bool) {
 	backend := logBackend(0)
 	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithAppendLogFormat(format), WithAppendLinger(0),
+		WithAppendLogFormat(format), WithAppendBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -376,7 +376,7 @@ func TestAppendWriterArrowAndPartition(t *testing.T) {
 
 	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithAppendPartition("day=1"), WithAppendLinger(0),
+		WithAppendPartition("day=1"), WithAppendBatchTimeout(0),
 		WithAppendLogFormat(LogFormatArrow), WithAppendArrowCompression(ArrowCompressionLZ4),
 	)
 	if err != nil {
@@ -450,16 +450,16 @@ func TestAppendWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"bad limits", table, logBackend(0), []AppendWriterOption{WithAppendBatchLimits(1, 0)}, ErrInvalidConfig},
 		{"bad buffer", table, logBackend(0), []AppendWriterOption{WithAppendBuffer(0)}, ErrInvalidConfig},
 		{"bad concurrency", table, logBackend(0), []AppendWriterOption{WithAppendConcurrency(0)}, ErrInvalidConfig},
-		{"bad linger", table, logBackend(0), []AppendWriterOption{WithAppendLinger(-1)}, ErrInvalidConfig},
+		{"bad batch timeout", table, logBackend(0), []AppendWriterOption{WithAppendBatchTimeout(-1)}, ErrInvalidConfig},
 		{"bad request", table, logBackend(0), []AppendWriterOption{WithAppendRequest(0, 2)}, ErrInvalidConfig},
 		{
 			"request timeout overflow", table, logBackend(0),
 			[]AppendWriterOption{WithAppendRequest((time.Duration(math.MaxInt32)+1)*time.Millisecond, 1)},
 			ErrInvalidConfig,
 		},
-		{"bad assignment", table, logBackend(0), []AppendWriterOption{WithAppendBucketAssignment("random")}, ErrInvalidConfig},
+		{"bad no-key assigner", table, logBackend(0), []AppendWriterOption{WithAppendNoKeyAssigner("random")}, ErrInvalidConfig},
 		{"bad format", table, logBackend(0), []AppendWriterOption{WithAppendLogFormat("unknown")}, ErrInvalidConfig},
-		{"bad compression", table, logBackend(0), []AppendWriterOption{WithAppendArrowCompression(ArrowCompression(99))}, ErrInvalidConfig},
+		{"bad compression", table, logBackend(0), []AppendWriterOption{WithAppendArrowCompression(ArrowCompressionType(99))}, ErrInvalidConfig},
 		{"row compression", table, logBackend(0), []AppendWriterOption{WithAppendLogFormat(LogFormatIndexed), WithAppendArrowCompression(ArrowCompressionZSTD)}, ErrInvalidConfig},
 		{"table format", arrowTable, logBackend(0), []AppendWriterOption{WithAppendLogFormat(LogFormatCompacted)}, ErrInvalidConfig},
 		{"no buckets", table, logBackend(), nil, ErrMetadata},
@@ -481,7 +481,7 @@ func TestAppendWriterRejectsInvalidConfiguration(t *testing.T) {
 func TestAppendWriterRejectsInvalidOperations(t *testing.T) {
 	table := appendWriterTable()
 	writer, err := newAppendWriter(
-		context.Background(), logBackend(0), table, WithAppendLinger(time.Hour),
+		context.Background(), logBackend(0), table, WithAppendBatchTimeout(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -538,7 +538,7 @@ func TestAppendWriterCloseCanTimeOutWhileWriteIsBlocked(t *testing.T) {
 	backend := logBackend(0)
 	backend.block = release
 	writer, err := newAppendWriter(
-		context.Background(), backend, appendWriterTable(), WithAppendLinger(0),
+		context.Background(), backend, appendWriterTable(), WithAppendBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -568,7 +568,7 @@ func TestAppendWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	backend.block = make(chan struct{})
 	writer, err := newAppendWriter(
 		context.Background(), backend, appendWriterTable(),
-		WithAppendLinger(time.Hour), WithAppendRequest(20*time.Millisecond, -1),
+		WithAppendBatchTimeout(time.Hour), WithAppendRequest(20*time.Millisecond, -1),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -597,7 +597,7 @@ func TestAppendWriterClosePreservesTerminalFailure(t *testing.T) {
 	backend.block = release
 	backend.produceErr = errWriterTerminal
 	writer, err := newAppendWriter(
-		context.Background(), backend, appendWriterTable(), WithAppendLinger(time.Hour),
+		context.Background(), backend, appendWriterTable(), WithAppendBatchTimeout(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -621,7 +621,7 @@ func TestAppendWriterConcurrentCloseReturnsTerminalResult(t *testing.T) {
 	backend := logBackend(0)
 	backend.produceErr = errWriterTerminal
 	writer, err := newAppendWriter(
-		context.Background(), backend, appendWriterTable(), WithAppendLinger(time.Hour),
+		context.Background(), backend, appendWriterTable(), WithAppendBatchTimeout(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -645,7 +645,7 @@ func TestAppendWriterMovesStickyBatchAfterSizeBoundary(t *testing.T) {
 	table.BucketCount = 2
 	writer, err := newAppendWriter(
 		context.Background(), backend, table,
-		WithAppendLinger(time.Hour),
+		WithAppendBatchTimeout(time.Hour),
 		WithAppendBatchLimits(logBatchV0HeaderSize+1, 100),
 	)
 	if err != nil {
@@ -704,7 +704,7 @@ func TestClientAppendWriterBackendUsesFluss091Messages(t *testing.T) {
 		},
 	)
 	table := appendWriterTable()
-	writer, err := client.NewAppendWriter(context.Background(), table, WithAppendLinger(0))
+	writer, err := client.NewAppendWriter(context.Background(), table, WithAppendBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -121,7 +121,7 @@ func ExampleOpen() {
 	client, err := fgo.Open(
 		ctx,
 		fgo.WithBootstrapServers("coordinator.example:9123"),
-		fgo.WithClientIdentity("orders-service", "1.0.0"),
+		fgo.WithClientSoftware("orders-service", "1.0.0"),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -165,7 +165,7 @@ func ExampleClient_NewAppendWriter() {
 		ctx,
 		table,
 		fgo.WithAppendBatchLimits(1<<20, 500),
-		fgo.WithAppendLinger(5*time.Millisecond),
+		fgo.WithAppendBatchTimeout(5*time.Millisecond),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -365,7 +365,7 @@ func ExampleClient_NewLookuper() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	lookup, err := client.NewLookuper(ctx, table, fgo.WithLookupBatch(100, 4))
+	lookup, err := client.NewLookuper(ctx, table, fgo.WithLookupBatchLimits(100, 4))
 	if err != nil {
 		log.Fatal(err)
 	}

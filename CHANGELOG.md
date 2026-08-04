@@ -14,6 +14,10 @@ breaking changes.
   terminology before RC. Append and upsert writers, lookupers, bootstrap
   servers, server nodes and types, metadata descriptors and info objects, and
   admin `Get*` operations now follow the pinned Fluss 0.9.1 client vocabulary.
+  Public configuration uses Fluss terms including connect timeout, writer batch
+  timeout, no-key assigner, log fetch limits, lookup batch limits, and
+  filesystem-token renewal settings. Java-only memory, JAAS, JMX, and Netty
+  controls are documented rather than copied into the Go API.
   This is an intentional breaking change without deprecated aliases; the
   complete migration table is in `docs/public-api-stability.md`.
 - Kept generated `pkg/fmsg` names unchanged because they follow the pinned

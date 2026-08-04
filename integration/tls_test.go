@@ -129,7 +129,7 @@ func testTLSProtocolMismatches(t *testing.T, coordinator string, tlsConfig *tls.
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	client, err := fgo.Open(ctx, fgo.WithBootstrapServers(coordinator), fgo.WithDialTimeout(time.Second))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers(coordinator), fgo.WithConnectTimeout(time.Second))
 	if client != nil {
 		_ = client.Close()
 	}
@@ -196,7 +196,7 @@ func tlsOpenError(address string, config *tls.Config) error {
 		ctx,
 		fgo.WithBootstrapServers(address),
 		fgo.WithTLSConfig(config),
-		fgo.WithDialTimeout(time.Second),
+		fgo.WithConnectTimeout(time.Second),
 	)
 	if client != nil {
 		_ = client.Close()

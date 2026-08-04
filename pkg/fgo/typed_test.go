@@ -60,7 +60,7 @@ func TestTypedCodecFunctionsValidateCallbacks(t *testing.T) {
 func TestTypedAppendWriterDelegatesEncodingAndLifecycle(t *testing.T) {
 	table := appendWriterTable()
 	backend := logBackend(0)
-	base, err := newAppendWriter(context.Background(), backend, table, WithAppendLinger(0))
+	base, err := newAppendWriter(context.Background(), backend, table, WithAppendBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestTypedAppendWriterDelegatesEncodingAndLifecycle(t *testing.T) {
 
 func TestTypedUpsertWriterDelegatesUpsertDeleteAndLifecycle(t *testing.T) {
 	table := upsertWriterTable()
-	base, err := newUpsertWriter(context.Background(), kvBackend(0), table, WithUpsertLinger(0))
+	base, err := newUpsertWriter(context.Background(), kvBackend(0), table, WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
 	}
