@@ -37,10 +37,20 @@ The current prepared prerelease is `v0.1.0-beta.10`, with release notes in
    that the prepared release notes match it. Update the current release and
    installation examples in `README.md`, and move the supported prerelease in
    `SECURITY.md` to the version being published. Search user-facing manuals for
-   the previous tag and review every remaining reference intentionally.
+   the previous tag and review every remaining reference intentionally. Compare
+   the release range with `git diff --name-only <previous-tag>..HEAD -- '*.md'`
+   and link every added or changed user-facing manual from the upgrade notes,
+   or record why it has no upgrade impact.
 6. Inspect `task security:licenses` after every dependency change and confirm
    that any new attribution obligations are reflected in `LICENSE`, `NOTICE`,
    module documentation, and the release notes.
+
+GitHub renders a release body at `/releases/tag/<version>`, not relative to the
+committed `.github/releases/<version>.md` file. Documentation links in release
+notes must therefore use absolute, tag-pinned GitHub URLs. Do not use repository-
+relative links such as `../../docs/...`; they resolve outside this repository on
+the published Release page. After publication, open the rendered release and
+confirm every upgrade-documentation link returns successfully.
 
 Do not reuse or move a published version tag. If the intended commit is wrong,
 fix `main` through another reviewed PR and release the corrected commit.
