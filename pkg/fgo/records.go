@@ -51,12 +51,12 @@ type TableBucket struct {
 	// BucketID identifies the logical table bucket.
 	BucketID int32
 	// Leader is the current tablet server leader.
-	Leader Node
+	Leader ServerNode
 }
 
 // Validate checks IDs and leader metadata.
 func (b TableBucket) Validate() error {
-	if b.TableID < 0 || b.PartitionID < -1 || b.BucketID < 0 || b.Leader.Address == "" || b.Leader.Role != TabletServer {
+	if b.TableID < 0 || b.PartitionID < -1 || b.BucketID < 0 || b.Leader.Address == "" || b.Leader.ServerType != TabletServer {
 		return fmt.Errorf("%w: invalid table bucket", ErrInvalidConfig)
 	}
 	return nil

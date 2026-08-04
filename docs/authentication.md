@@ -9,9 +9,9 @@ exchange is protected in transit.
 
 | Deployment path | Client options |
 | --- | --- |
-| Native Fluss plaintext | `WithSeedBrokers` |
-| TLS terminator to Fluss plaintext | `WithSeedBrokers`, `WithTLSConfig` |
-| Native Fluss SASL PLAIN | `WithSeedBrokers`, `WithAuthenticator` |
+| Native Fluss plaintext | `WithBootstrapServers` |
+| TLS terminator to Fluss plaintext | `WithBootstrapServers`, `WithTLSConfig` |
+| Native Fluss SASL PLAIN | `WithBootstrapServers`, `WithAuthenticator` |
 | TLS terminator to Fluss SASL PLAIN | all three options |
 
 SASL PLAIN without TLS provides authentication but does not encrypt the
@@ -41,9 +41,9 @@ tlsConfig := &tls.Config{
 }
 client, err := fgo.Open(
 	ctx,
-	fgo.WithSeedBrokers("coordinator.example:9123"),
+	fgo.WithBootstrapServers("coordinator.example:9123"),
 	fgo.WithTLSConfig(tlsConfig),
-	fgo.WithAuthenticator(fgo.PlainAuthenticator(
+	fgo.WithAuthenticator(fgo.SASLPlainAuthenticator(
 		os.Getenv("FLUSS_SASL_USERNAME"),
 		os.Getenv("FLUSS_SASL_PASSWORD"),
 	)),
@@ -63,7 +63,7 @@ Metadata returned by Fluss contains tablet addresses. Every advertised tablet
 address must therefore lead to a TLS terminator as well as the coordinator
 seed; terminating only the seed permits routed data calls to bypass TLS.
 
-`PlainAuthenticator` is a factory rather than a shared mechanism instance.
+`SASLPlainAuthenticator` is a factory rather than a shared mechanism instance.
 Each connection receives separate credential buffers, and closing that
 authenticator clears those buffers. Custom `AuthenticatorFactory`
 implementations must provide the same connection-local ownership and must not

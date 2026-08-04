@@ -7,7 +7,7 @@ Public beta Go client for Apache Fluss 0.9.1-incubating.
 Development and review follow the project
 [coding guidelines](CODING_GUIDELINES.md).
 
-The current release is `v0.1.0-beta.9`. It is suitable for compatibility
+The current release is `v0.1.0-beta.10`. It is suitable for compatibility
 testing and application evaluation against the pinned Fluss 0.9.1 target, but
 it does not yet provide a stable v1 API or a production support commitment.
 
@@ -21,7 +21,7 @@ remaining centered on the Apache Fluss table model:
 ## Install
 
 ```sh
-go get github.com/pletorco/fluss-go@v0.1.0-beta.9
+go get github.com/pletorco/fluss-go@v0.1.0-beta.10
 ```
 
 The API is experimental before v1. Pin a release in production rather than
@@ -33,12 +33,12 @@ OpenTelemetry SDKs to the root module graph. Install an adapter at the same
 release version when it is needed, for example:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.9
+go get github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.10
 ```
 
 ## Quick Start
 
-Open one shared client and close it after all writers, scanners, lookup clients,
+Open one shared client and close it after all writers, scanners, lookupers,
 and administrative clients have stopped:
 
 <!-- go-source: internal/docexamples/snippets_test.go quickStart -->
@@ -46,8 +46,8 @@ and administrative clients have stopped:
 ctx := context.Background()
 client, err := fgo.Open(
 	ctx,
-	fgo.WithSeedBrokers("localhost:9123"),
-	fgo.WithClientIdentity("example", "1.0.0"),
+	fgo.WithBootstrapServers("localhost:9123"),
+	fgo.WithClientSoftware("example", "1.0.0"),
 )
 if err != nil {
 	log.Fatal(err)
@@ -58,7 +58,7 @@ defer func() {
 	}
 }()
 
-table, err := client.OpenTable(ctx, fgo.TablePath{
+table, err := client.GetTable(ctx, fgo.TablePath{
 	Database: "fluss",
 	Table:    "events",
 })
@@ -69,7 +69,7 @@ log.Printf("opened table %s with %d buckets", table.Path, table.BucketCount)
 ```
 
 `fgo.Client` owns negotiated coordinator and tablet connections. Create
-`fadm.Client`, data writers, scanners, and lookup clients from this shared
+`fadm.Client`, data writers, scanners, and lookupers from this shared
 client instead of opening a transport for each operation.
 
 ## Fluss 0.9.1 Feature Matrix
@@ -84,15 +84,15 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Protocol framing and request correlation | Implemented | [`internal/transport`](internal/transport) has bounded framing, context-aware writes, exactly-once completion, cancellation, and protocol tests. |
 | Client bootstrap, TLS, SASL and connection pooling | Implemented | [`pkg/fgo`](pkg/fgo) negotiates versions, authenticates each managed connection, supports native Fluss plaintext/SASL listeners and infrastructure-terminated TLS, bounds retries to safe reads, and emits bounded-cardinality `MetricsObserver` events. Fluss 0.9.1 has no native TLS listener. |
 | Coordinator/tablet metadata and partition routing | Implemented | Metadata refreshes are coalesced, stale leaders are rerouted once, `ResolveTableBuckets` returns stable bucket snapshots, and opt-in dynamic partition creation supports partitioned writers. |
-| Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables, load authoritative schemas through `OpenTable`, and resolve historical record schemas through a bounded client cache. |
+| Table, schema, logical-type and record models | Implemented | [`pkg/fgo/model.go`](pkg/fgo/model.go) and [`pkg/fgo/records.go`](pkg/fgo/records.go) model Fluss 0.9.1 tables, load authoritative schemas through `GetTable`, and resolve historical record schemas through a bounded client cache. |
 | Arrow schema and record batches | Supported | Full Fluss logical schema conversion plus v0/v1 Arrow log batches with NONE, LZ4, and ZSTD IPC compression; decoded records use explicit `Release` ownership. |
 | Row, key, KV and log record-batch codecs | Supported | Compacted/indexed rows, nested values, projected rows, v0/v1 lookup keys, KV batches, and row/Arrow log batches are covered by pinned Java 0.9.1 fixtures. |
-| Log append writers | Supported | `LogWriter` provides row and Arrow appends; auto, Arrow, indexed, and compacted formats; hash/sticky/round-robin assignment; bounded batching and per-bucket concurrency; idempotent sequences; `Flush`; and deterministic `Close`. |
+| Log append writers | Supported | `AppendWriter` provides row and Arrow appends; auto, Arrow, indexed, and compacted formats; hash routing for keyed rows and sticky/round-robin no-key assignment; bounded batching and per-bucket concurrency; idempotent sequences; `Flush`; and deterministic `Close`. |
 | Log scanners | Supported | `LogScanner` provides explicit/earliest/latest/timestamp subscriptions, schema-aware projection, row limits, exclusive stopping offsets, remote-log merging, `Wakeup`, partial bucket errors, and row or Arrow polling. |
 | Current-state and snapshot batch scans | Supported | `ResolveTableBuckets`, `NewBatchScanner`, and `NewSnapshotBatchScanner` provide bounded current-state and pluggable immutable snapshot reads with projection and explicit result ownership. |
-| Primary-key writers | Supported | `KVWriter` provides full and projected upsert, delete, Fluss hash routing, merge-engine or overwrite modes, idempotent per-bucket sequences, bounded batching and per-bucket concurrency, partial results, and deterministic lifecycle operations. |
-| Point and prefix lookups | Supported | `LookupClient` validates keys, batches compatible concurrent calls by bucket, preserves caller cancellation and input association, bounds queue/delay/concurrency/retries, resolves historical schemas, supports leading-key prefixes, and can atomically insert missing rows without unsafe retries. |
-| Typed data APIs | Supported | Generic wrappers cover log and KV writers, point and prefix lookup, log scans, current-state scans, and snapshot scans through explicit application codecs. |
+| Primary-key writers | Supported | `UpsertWriter` provides full and projected upsert, delete, Fluss hash routing, merge-engine or overwrite modes, idempotent per-bucket sequences, bounded batching and per-bucket concurrency, partial results, and deterministic lifecycle operations. |
+| Point and prefix lookups | Supported | `Lookuper` validates keys, batches compatible concurrent calls by bucket, preserves caller cancellation and input association, bounds queue/delay/concurrency/retries, resolves historical schemas, supports leading-key prefixes, and can atomically insert missing rows without unsafe retries. |
+| Typed data APIs | Supported | Generic wrappers cover log and upsert writers, point and prefix lookup, log scans, current-state scans, and snapshot scans through explicit application codecs. |
 | Remote storage adapters | Supported | Pluggable complete-object or streaming range readers compose remote logs and snapshots with bounded retries, object/aggregate/active byte limits, ordered prefetch, and cancellation cleanup. Local files are built in; optional adapters cover S3, OSS, and application-owned HDFS clients. |
 | Native lake formats | Not bundled | `fadm.LakeSnapshot` exposes the Fluss 0.9.1 snapshot ID and bucket offsets, but Iceberg, Lance, and Paimon planning and decoding remain application-owned. The reviewed no-implementation decision prevents local format, filesystem, or credential reimplementation. |
 | Filesystem security-token refresh | Supported | The client acquires, clones, refreshes, revokes, and safely publishes filesystem tokens through optional providers and receivers without exposing token bytes. |
@@ -110,6 +110,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
   [fadm](https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm)
 - [Public architecture and ownership](docs/architecture/v0.1.md)
 - [Public API stability and compatibility checks](docs/public-api-stability.md)
+- [Fluss 0.9.1 client configuration mapping](docs/client-configuration.md)
 - [Fluss 0.9.1 live API evidence](docs/live-evidence.md)
 - [Repeatable load, soak, and fault-injection testing](docs/reliability-testing.md)
 - [Go module and optional dependency layout](docs/module-layout.md)

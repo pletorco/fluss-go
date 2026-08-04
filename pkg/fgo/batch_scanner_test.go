@@ -30,14 +30,14 @@ func (f batchScanBackendFunc) limitScan(
 func testTableBucket(table Table) TableBucket {
 	return TableBucket{
 		TableID: table.ID, PartitionID: -1, BucketID: 0,
-		Leader: Node{ID: 1, Address: "tablet:9123", Role: TabletServer},
+		Leader: ServerNode{ID: 1, Address: "tablet:9123", ServerType: TabletServer},
 	}
 }
 
 func TestResolvedTableBucketsAreOrdered(t *testing.T) {
-	buckets, err := resolvedTableBuckets(10, 20, map[int32]Node{
-		2: {ID: 12, Address: "two:9123", Role: TabletServer},
-		0: {ID: 10, Address: "zero:9123", Role: TabletServer},
+	buckets, err := resolvedTableBuckets(10, 20, map[int32]ServerNode{
+		2: {ID: 12, Address: "two:9123", ServerType: TabletServer},
+		0: {ID: 10, Address: "zero:9123", ServerType: TabletServer},
 	})
 	if err != nil || len(buckets) != 2 ||
 		buckets[0].BucketID != 0 || buckets[1].BucketID != 2 ||
@@ -78,7 +78,7 @@ func TestClientResolvesTableAndPartitionBuckets(t *testing.T) {
 }
 
 func TestClientBatchScanBackendResponses(t *testing.T) {
-	node := Node{ID: 2, Address: "tablet:9123", Role: TabletServer}
+	node := ServerNode{ID: 2, Address: "tablet:9123", ServerType: TabletServer}
 	bucket := TableBucket{TableID: 9, PartitionID: 10, BucketID: 1, Leader: node}
 	requestErr := errors.New("limit scan request failed")
 
@@ -133,16 +133,16 @@ func TestClientBatchScanBackendResponses(t *testing.T) {
 	}
 }
 
-func batchBackendClient(node Node, requester requesterFunc) *Client {
+func batchBackendClient(node ServerNode, requester requesterFunc) *Client {
 	tablet := newClient(requester, nil)
 	tablet.versions[fmsg.APIKeyLimitScan] = 0
 	manager := newConnectionManager(config{})
-	manager.clients[connectionKey{id: node.ID, address: node.Address, role: node.Role}] = tablet
+	manager.clients[connectionKey{id: node.ID, address: node.Address, serverType: node.ServerType}] = tablet
 	return &Client{manager: manager}
 }
 
 func TestBatchScannerReadsCurrentKVStateOnce(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	bucket := testTableBucket(table)
 	encoded := encodedValueBatch(
 		t, table,
@@ -205,7 +205,7 @@ func encodedValueBatch(t *testing.T, table Table, rows ...Row) []byte {
 }
 
 func TestBatchScannerReadsLatestLogRows(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	bucket := testTableBucket(table)
 	encoded, err := (LogBatch{
 		Magic: 1, BaseOffset: 10, SchemaID: int16(table.SchemaID), AppendOnly: true,
@@ -238,7 +238,7 @@ func TestBatchScannerReadsLatestLogRows(t *testing.T) {
 }
 
 func TestBatchScannerLimitsOversizedKVResponse(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	encoded := encodedValueBatch(
 		t, table,
 		Row{int32(1), "one", int64(10)},
@@ -265,7 +265,7 @@ func TestBatchScannerLimitsOversizedKVResponse(t *testing.T) {
 }
 
 func TestBatchScannerLimitsAndProjectsArrowResponse(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	encoded := encodedArrowRows(t, table.Schema, 10, 1, 2, 3, 4)
 	scanner, err := newBatchScanner(
 		context.Background(),
@@ -296,7 +296,7 @@ func TestBatchScannerLimitsAndProjectsArrowResponse(t *testing.T) {
 }
 
 func TestBatchScannerLimitsMixedLogFormatsByOffset(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	for _, test := range []struct {
 		name          string
 		encoded       []byte
@@ -355,7 +355,7 @@ func TestBatchScannerLimitsMixedLogFormatsByOffset(t *testing.T) {
 }
 
 func TestBatchScannerCurrentFailures(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	bucket := testTableBucket(table)
 	tests := []struct {
 		name    string
@@ -431,7 +431,7 @@ func (r *fakeSnapshotBatchReader) Close() error {
 }
 
 func TestSnapshotBatchScannerLifecycle(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	bucket := testTableBucket(table)
 	reader := &fakeSnapshotBatchReader{batches: [][]Row{{
 		{int32(1), "one", int64(10)},
@@ -481,7 +481,7 @@ type snapshotEOFCase struct {
 }
 
 func TestSnapshotBatchScannerPreservesFinalEOFResult(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	tests := []snapshotEOFCase{
 		{name: "empty", wantDone: true},
 		{
@@ -542,7 +542,7 @@ func assertSnapshotEOFCase(t *testing.T, table Table, test snapshotEOFCase) {
 }
 
 func TestSnapshotBatchScannerCloseUnblocksPoll(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	entered := make(chan struct{})
 	reader := &fakeSnapshotBatchReader{block: true, entered: entered}
 	scanner, err := newBatchScanner(
@@ -571,7 +571,7 @@ func TestSnapshotBatchScannerCloseUnblocksPoll(t *testing.T) {
 }
 
 func TestSnapshotBatchScannerRejectsInvalidProviderResults(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	reader := &fakeSnapshotBatchReader{batches: [][]Row{{
 		{int32(1)}, {int32(2)},
 	}}}
@@ -604,7 +604,7 @@ func TestSnapshotBatchScannerRejectsInvalidProviderResults(t *testing.T) {
 		t.Fatalf("provider open error = %v", err)
 	}
 	if _, err := client.NewSnapshotBatchScanner(
-		context.Background(), logWriterTable(), testTableBucket(logWriterTable()), 1,
+		context.Background(), appendWriterTable(), testTableBucket(appendWriterTable()), 1,
 	); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("log snapshot error = %v", err)
 	}
@@ -616,7 +616,7 @@ func TestSnapshotBatchScannerRejectsInvalidProviderResults(t *testing.T) {
 }
 
 func TestBatchScannerConfigurationValidation(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	bucket := testTableBucket(table)
 	backend := batchScanBackendFunc(func(context.Context, TableBucket, int32) (bool, []byte, error) {
 		return false, nil, nil
@@ -680,7 +680,7 @@ func TestBatchScannerConfigurationValidation(t *testing.T) {
 }
 
 func TestDecodeValueRecordBatchRejectsSchemaAndTrailingBytes(t *testing.T) {
-	table := kvWriterTable()
+	table := upsertWriterTable()
 	wrongSchema := encodedValueBatch(t, table, Row{int32(1), "one", int64(1)})
 	binary.LittleEndian.PutUint16(wrongSchema[13:], uint16(table.SchemaID+1))
 	if _, err := decodeValueRecordBatch(table, wrongSchema); !errors.Is(err, ErrInvalidSchema) {

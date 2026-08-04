@@ -480,7 +480,7 @@ const (
 	PrimaryKeyTable TableKind = "PRIMARY_KEY"
 )
 
-// Table is authoritative table metadata and schema loaded by [Client.OpenTable].
+// Table is authoritative table metadata and schema loaded by [Client.GetTable].
 type Table struct {
 	// ID is the server-assigned logical table identifier.
 	ID int64
@@ -515,8 +515,8 @@ func (t Table) RequirePrimaryKey() error {
 	return nil
 }
 
-// OpenTable loads authoritative table metadata and schema from the coordinator.
-func (c *Client) OpenTable(ctx context.Context, path TablePath) (Table, error) {
+// GetTable loads authoritative table metadata and schema from the coordinator.
+func (c *Client) GetTable(ctx context.Context, path TablePath) (Table, error) {
 	if err := c.ensureOpen(); err != nil {
 		return Table{}, err
 	}

@@ -8,6 +8,8 @@
 - [ ] New or changed behavior has focused tests.
 - [ ] Public API and compatibility impact is documented.
 - [ ] Exported API changes are intentional, pass `task api:check`, and include baseline, changelog, and migration updates when applicable.
+- [ ] Changed `fgo`/`fadm` names and settings were checked against the complete affected Fluss public API/configuration surface; direct mappings, unsupported settings, and Go-specific differences are documented.
+- [ ] Generated `pkg/fmsg` names remain derived from the pinned protocol inputs and were not renamed for client ergonomics.
 
 ## Build vs buy
 

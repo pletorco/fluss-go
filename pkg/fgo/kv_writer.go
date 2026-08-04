@@ -14,9 +14,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// KVWriterConfig controls batching, buffering, acknowledgements, partition
+// UpsertWriterConfig controls batching, buffering, acknowledgements, partition
 // routing, and merge behavior for a primary-key writer.
-type KVWriterConfig struct {
+type UpsertWriterConfig struct {
 	// MaxBatchBytes bounds encoded bytes in one put request.
 	MaxBatchBytes int
 	// MaxBatchRecords bounds mutations in one put request.
@@ -25,23 +25,23 @@ type KVWriterConfig struct {
 	MaxBuffered int
 	// MaxConcurrentRequests bounds active put calls across distinct buckets.
 	MaxConcurrentRequests int
-	// Linger is the maximum delay used to fill a non-full batch.
-	Linger time.Duration
-	// Timeout bounds both the server-side put operation and the client call.
-	Timeout time.Duration
+	// BatchTimeout is the maximum delay used to fill a non-full batch.
+	BatchTimeout time.Duration
+	// RequestTimeout bounds both the server-side put operation and the client call.
+	RequestTimeout time.Duration
 	// Acks is 0, 1, or -1 using the Fluss acknowledgement contract.
 	Acks int32
-	// Retry controls bounded retries of idempotent batches. More than one
+	// RetryPolicy controls bounded retries of idempotent batches. More than one
 	// attempt requires Acks=-1.
-	Retry WriterRetryPolicy
+	RetryPolicy WriterRetryPolicy
 	// Partition selects one named physical partition; empty selects the table.
 	Partition string
 	// MergeMode selects merge-engine or overwrite semantics.
 	MergeMode MergeMode
 }
 
-// KVWriterOption configures a [KVWriter].
-type KVWriterOption func(*KVWriterConfig) error
+// UpsertWriterOption configures a [UpsertWriter].
+type UpsertWriterOption func(*UpsertWriterConfig) error
 
 // MergeMode controls whether Fluss applies or bypasses a table's merge engine.
 type MergeMode int32
@@ -57,9 +57,9 @@ func (m MergeMode) valid() bool {
 	return m == MergeModeDefault || m == MergeModeOverwrite
 }
 
-// WithKVMergeMode sets one merge mode for every record written by the writer.
-func WithKVMergeMode(mode MergeMode) KVWriterOption {
-	return func(config *KVWriterConfig) error {
+// WithUpsertMergeMode sets one merge mode for every record written by the writer.
+func WithUpsertMergeMode(mode MergeMode) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
 		if !mode.valid() {
 			return fmt.Errorf("%w: unsupported KV merge mode %d", ErrInvalidConfig, mode)
 		}
@@ -68,9 +68,9 @@ func WithKVMergeMode(mode MergeMode) KVWriterOption {
 	}
 }
 
-// WithKVBatchLimits sets maximum encoded bytes and records in one request.
-func WithKVBatchLimits(bytes, records int) KVWriterOption {
-	return func(config *KVWriterConfig) error {
+// WithUpsertBatchLimits sets maximum encoded bytes and records in one request.
+func WithUpsertBatchLimits(bytes, records int) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
 		if bytes <= kvBatchHeaderSize || bytes > maxRowBytes || records <= 0 {
 			return fmt.Errorf("%w: invalid KV batch limits", ErrInvalidConfig)
 		}
@@ -79,9 +79,9 @@ func WithKVBatchLimits(bytes, records int) KVWriterOption {
 	}
 }
 
-// WithKVBuffer bounds the number of queued records awaiting completion.
-func WithKVBuffer(records int) KVWriterOption {
-	return func(config *KVWriterConfig) error {
+// WithUpsertBuffer bounds the number of queued records awaiting completion.
+func WithUpsertBuffer(records int) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
 		if records <= 0 {
 			return fmt.Errorf("%w: KV buffer must be positive", ErrInvalidConfig)
 		}
@@ -90,10 +90,10 @@ func WithKVBuffer(records int) KVWriterOption {
 	}
 }
 
-// WithKVConcurrency bounds active put calls across distinct buckets.
+// WithUpsertConcurrency bounds active put calls across distinct buckets.
 // Calls for one bucket remain strictly ordered.
-func WithKVConcurrency(requests int) KVWriterOption {
-	return func(config *KVWriterConfig) error {
+func WithUpsertConcurrency(requests int) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
 		if requests < 1 || requests > 64 {
 			return fmt.Errorf("%w: KV concurrency must be in [1, 64]", ErrInvalidConfig)
 		}
@@ -102,41 +102,41 @@ func WithKVConcurrency(requests int) KVWriterOption {
 	}
 }
 
-// WithKVLinger sets the maximum delay used to collect a non-full batch.
-func WithKVLinger(linger time.Duration) KVWriterOption {
-	return func(config *KVWriterConfig) error {
-		if linger < 0 {
-			return fmt.Errorf("%w: negative KV linger", ErrInvalidConfig)
+// WithUpsertBatchTimeout sets the maximum delay used to collect a non-full batch.
+func WithUpsertBatchTimeout(timeout time.Duration) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
+		if timeout < 0 {
+			return fmt.Errorf("%w: negative upsert batch timeout", ErrInvalidConfig)
 		}
-		config.Linger = linger
+		config.BatchTimeout = timeout
 		return nil
 	}
 }
 
-// WithKVRequest sets the server and client call timeout and acknowledgement mode.
-func WithKVRequest(timeout time.Duration, acks int32) KVWriterOption {
-	return func(config *KVWriterConfig) error {
+// WithUpsertRequest sets the server and client call timeout and acknowledgement mode.
+func WithUpsertRequest(timeout time.Duration, acks int32) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
 		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 ||
 			(acks != 0 && acks != 1 && acks != -1) {
 			return fmt.Errorf("%w: invalid KV request settings", ErrInvalidConfig)
 		}
-		config.Timeout, config.Acks = timeout, acks
+		config.RequestTimeout, config.Acks = timeout, acks
 		return nil
 	}
 }
 
-// WithKVRetryPolicy configures bounded idempotent put retries.
+// WithUpsertRetryPolicy configures bounded idempotent put retries.
 // Retries preserve the encoded batch, writer ID, and bucket sequence.
-func WithKVRetryPolicy(policy WriterRetryPolicy) KVWriterOption {
-	return func(config *KVWriterConfig) error {
-		config.Retry = policy
+func WithUpsertRetryPolicy(policy WriterRetryPolicy) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
+		config.RetryPolicy = policy
 		return nil
 	}
 }
 
-// WithKVPartition routes writes to the named physical partition.
-func WithKVPartition(partition string) KVWriterOption {
-	return func(config *KVWriterConfig) error {
+// WithUpsertPartition routes writes to the named physical partition.
+func WithUpsertPartition(partition string) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
 		path := PhysicalTablePath{TablePath: TablePath{Database: "d", Table: "t"}, Partition: partition}
 		if err := path.Validate(); err != nil {
 			return err
@@ -146,9 +146,9 @@ func WithKVPartition(partition string) KVWriterOption {
 	}
 }
 
-// WithKVPartitionSpec selects a partition using the table schema's partition-key order.
-func WithKVPartitionSpec(schema Schema, spec PartitionSpec) KVWriterOption {
-	return func(config *KVWriterConfig) error {
+// WithUpsertPartitionSpec selects a partition using the table schema's partition-key order.
+func WithUpsertPartitionSpec(schema Schema, spec PartitionSpec) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
 		partition, err := schema.PartitionName(spec)
 		if err != nil {
 			return err
@@ -158,15 +158,15 @@ func WithKVPartitionSpec(schema Schema, spec PartitionSpec) KVWriterOption {
 	}
 }
 
-type kvWriterBackend interface {
-	metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error)
+type upsertWriterBackend interface {
+	metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
 	put(context.Context, kvPutRequest) (int64, error)
 }
 
-type clientKVWriterBackend struct{ client *Client }
+type clientUpsertWriterBackend struct{ client *Client }
 
-func (b clientKVWriterBackend) ensurePartition(
+func (b clientUpsertWriterBackend) ensurePartition(
 	ctx context.Context,
 	path PhysicalTablePath,
 	partitionKeys []string,
@@ -186,15 +186,15 @@ type kvPutRequest struct {
 	mergeMode   MergeMode
 }
 
-func (b clientKVWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]Node, error) {
-	return (clientLogWriterBackend{client: b.client}).metadata(ctx, path)
+func (b clientUpsertWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]ServerNode, error) {
+	return (clientAppendWriterBackend{client: b.client}).metadata(ctx, path)
 }
 
-func (b clientKVWriterBackend) initWriter(ctx context.Context, path PhysicalTablePath, bucket int32) (int64, error) {
-	return (clientLogWriterBackend{client: b.client}).initWriter(ctx, path, bucket)
+func (b clientUpsertWriterBackend) initWriter(ctx context.Context, path PhysicalTablePath, bucket int32) (int64, error) {
+	return (clientAppendWriterBackend{client: b.client}).initWriter(ctx, path, bucket)
 }
 
-func (b clientKVWriterBackend) put(
+func (b clientUpsertWriterBackend) put(
 	ctx context.Context,
 	input kvPutRequest,
 ) (int64, error) {
@@ -231,18 +231,18 @@ func (b clientKVWriterBackend) put(
 	return result.GetLogEndOffset(), nil
 }
 
-// KVWriter batches primary-key upserts and deletes.
+// UpsertWriter batches primary-key upserts and deletes.
 // It owns one background scheduler and must be closed after use.
-type KVWriter struct {
+type UpsertWriter struct {
 	table       Table
 	path        PhysicalTablePath
-	backend     kvWriterBackend
-	config      KVWriterConfig
+	backend     upsertWriterBackend
+	config      UpsertWriterConfig
 	tableID     int64
 	partitionID int64
 	writerID    int64
 	buckets     []int32
-	commands    chan kvWriterCommand
+	commands    chan upsertWriterCommand
 	slots       chan struct{}
 	done        chan struct{}
 	appendMu    sync.Mutex
@@ -251,7 +251,7 @@ type KVWriter struct {
 	observer    MetricsObserver
 }
 
-type kvWriterCommand struct {
+type upsertWriterCommand struct {
 	item  *pendingKVWrite
 	flush chan error
 	close chan error
@@ -274,8 +274,8 @@ type kvPendingBatch struct {
 	bytes   int
 }
 
-type kvWriterLoop struct {
-	writer      *KVWriter
+type upsertWriterLoop struct {
+	writer      *UpsertWriter
 	batches     map[int32]*kvPendingBatch
 	pending     map[int32][]*kvPendingBatch
 	active      map[int32]bool
@@ -297,23 +297,23 @@ type kvBatchCompletion struct {
 	err         error
 }
 
-// NewKVWriter creates a primary-key writer for table.
-func (c *Client) NewKVWriter(ctx context.Context, table Table, options ...KVWriterOption) (*KVWriter, error) {
+// NewUpsertWriter creates a primary-key writer for table.
+func (c *Client) NewUpsertWriter(ctx context.Context, table Table, options ...UpsertWriterOption) (*UpsertWriter, error) {
 	if err := c.ensureOpen(); err != nil {
 		return nil, err
 	}
-	writer, err := newKVWriter(ctx, clientKVWriterBackend{client: c}, table, options...)
+	writer, err := newUpsertWriter(ctx, clientUpsertWriterBackend{client: c}, table, options...)
 	if err == nil {
 		writer.observer = c.observer
 	}
 	return writer, err
 }
 
-func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, options ...KVWriterOption) (*KVWriter, error) {
-	if err := validateKVWriterTable(table); err != nil {
+func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Table, options ...UpsertWriterOption) (*UpsertWriter, error) {
+	if err := validateUpsertWriterTable(table); err != nil {
 		return nil, err
 	}
-	config, err := kvWriterConfig(options)
+	config, err := upsertWriterConfig(options)
 	if err != nil {
 		return nil, err
 	}
@@ -347,10 +347,10 @@ func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, opti
 	if err != nil {
 		return nil, err
 	}
-	writer := &KVWriter{
+	writer := &UpsertWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, writerID: writerID, buckets: buckets,
-		commands: make(chan kvWriterCommand, config.MaxBuffered),
+		commands: make(chan upsertWriterCommand, config.MaxBuffered),
 		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
 	}
 	if path.Partition != "" {
@@ -360,7 +360,7 @@ func newKVWriter(ctx context.Context, backend kvWriterBackend, table Table, opti
 	return writer, nil
 }
 
-func validateKVWriterTable(table Table) error {
+func validateUpsertWriterTable(table Table) error {
 	if err := table.RequirePrimaryKey(); err != nil {
 		return err
 	}
@@ -385,29 +385,29 @@ func validateKVWriterTable(table Table) error {
 	return nil
 }
 
-func kvWriterConfig(options []KVWriterOption) (KVWriterConfig, error) {
-	config := KVWriterConfig{
+func upsertWriterConfig(options []UpsertWriterOption) (UpsertWriterConfig, error) {
+	config := UpsertWriterConfig{
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
 		MaxConcurrentRequests: 4,
-		Linger:                5 * time.Millisecond, Timeout: 30 * time.Second, Acks: -1,
-		Retry: defaultWriterRetryPolicy(),
+		BatchTimeout:          5 * time.Millisecond, RequestTimeout: 30 * time.Second, Acks: -1,
+		RetryPolicy: defaultWriterRetryPolicy(),
 	}
 	for _, option := range options {
 		if option == nil {
-			return KVWriterConfig{}, fmt.Errorf("%w: nil KV writer option", ErrInvalidConfig)
+			return UpsertWriterConfig{}, fmt.Errorf("%w: nil upsert writer option", ErrInvalidConfig)
 		}
 		if err := option(&config); err != nil {
-			return KVWriterConfig{}, err
+			return UpsertWriterConfig{}, err
 		}
 	}
-	if err := validateWriterRetryPolicy(config.Retry, config.Acks); err != nil {
-		return KVWriterConfig{}, err
+	if err := validateWriterRetryPolicy(config.RetryPolicy, config.Acks); err != nil {
+		return UpsertWriterConfig{}, err
 	}
 	return config, nil
 }
 
 // Upsert queues a complete primary-key row for insertion or update.
-func (w *KVWriter) Upsert(ctx context.Context, row Row) *WriteFuture {
+func (w *UpsertWriter) Upsert(ctx context.Context, row Row) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil {
 		future.complete(WriteResult{Err: fmt.Errorf("%w: nil context", ErrInvalidConfig)})
@@ -432,7 +432,7 @@ func (w *KVWriter) Upsert(ctx context.Context, row Row) *WriteFuture {
 
 // PartialUpsert writes only columns named by columns. The columns must contain the complete
 // primary key and must be in the same order as values.
-func (w *KVWriter) PartialUpsert(ctx context.Context, columns []string, values Row) *WriteFuture {
+func (w *UpsertWriter) PartialUpsert(ctx context.Context, columns []string, values Row) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil {
 		future.complete(WriteResult{Err: fmt.Errorf("%w: nil context", ErrInvalidConfig)})
@@ -461,7 +461,7 @@ func (w *KVWriter) PartialUpsert(ctx context.Context, columns []string, values R
 }
 
 // Delete queues removal of the row identified by key.
-func (w *KVWriter) Delete(ctx context.Context, key PrimaryKey) *WriteFuture {
+func (w *UpsertWriter) Delete(ctx context.Context, key PrimaryKey) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil {
 		future.complete(WriteResult{Err: fmt.Errorf("%w: nil context", ErrInvalidConfig)})
@@ -479,7 +479,7 @@ func (w *KVWriter) Delete(ctx context.Context, key PrimaryKey) *WriteFuture {
 	return future
 }
 
-func (w *KVWriter) enqueueMutation(
+func (w *UpsertWriter) enqueueMutation(
 	ctx context.Context,
 	values map[string]any,
 	value []byte,
@@ -524,7 +524,7 @@ func (w *KVWriter) enqueueMutation(
 	w.enqueue(ctx, item)
 }
 
-func (w *KVWriter) validatePartial(columns []string, values Row) ([]int32, error) {
+func (w *UpsertWriter) validatePartial(columns []string, values Row) ([]int32, error) {
 	if len(columns) == 0 || len(columns) != len(values) {
 		return nil, fmt.Errorf("%w: partial update columns and values must be non-empty and aligned", ErrInvalidRow)
 	}
@@ -550,7 +550,7 @@ func (w *KVWriter) validatePartial(columns []string, values Row) ([]int32, error
 	return targets, nil
 }
 
-func (w *KVWriter) validatePartialSelection(selected map[string]bool) error {
+func (w *UpsertWriter) validatePartialSelection(selected map[string]bool) error {
 	for _, name := range w.table.Schema.PrimaryKey {
 		if !selected[name] {
 			return fmt.Errorf("%w: partial update omits primary key %q", ErrInvalidRow, name)
@@ -590,7 +590,7 @@ func contains(values []string, target string) bool {
 	return false
 }
 
-func (w *KVWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
+func (w *UpsertWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
 	select {
 	case w.slots <- struct{}{}:
 		item.future.release = func() { <-w.slots }
@@ -608,7 +608,7 @@ func (w *KVWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
 		return
 	}
 	select {
-	case w.commands <- kvWriterCommand{item: item}:
+	case w.commands <- upsertWriterCommand{item: item}:
 	case <-ctx.Done():
 		item.future.complete(WriteResult{Err: ctx.Err()})
 	case <-w.done:
@@ -618,7 +618,7 @@ func (w *KVWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
 
 // Flush waits until every previously accepted mutation reaches a terminal
 // result.
-func (w *KVWriter) Flush(ctx context.Context) error {
+func (w *UpsertWriter) Flush(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
 	}
@@ -629,7 +629,7 @@ func (w *KVWriter) Flush(ctx context.Context) error {
 		return ErrClosed
 	}
 	select {
-	case w.commands <- kvWriterCommand{flush: barrier}:
+	case w.commands <- upsertWriterCommand{flush: barrier}:
 		w.appendMu.Unlock()
 	case <-ctx.Done():
 		w.appendMu.Unlock()
@@ -645,7 +645,7 @@ func (w *KVWriter) Flush(ctx context.Context) error {
 
 // Close flushes accepted mutations and stops the writer.
 // Close is idempotent.
-func (w *KVWriter) Close(ctx context.Context) error {
+func (w *UpsertWriter) Close(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
 	}
@@ -665,7 +665,7 @@ func (w *KVWriter) Close(ctx context.Context) error {
 	w.closed = true
 	barrier := make(chan error, 1)
 	select {
-	case w.commands <- kvWriterCommand{close: barrier}:
+	case w.commands <- upsertWriterCommand{close: barrier}:
 		w.appendMu.Unlock()
 	case <-ctx.Done():
 		w.closed = false
@@ -680,13 +680,13 @@ func (w *KVWriter) Close(ctx context.Context) error {
 	}
 }
 
-func (w *KVWriter) run() {
+func (w *UpsertWriter) run() {
 	defer close(w.done)
-	timer := time.NewTimer(w.config.Linger)
+	timer := time.NewTimer(w.config.BatchTimeout)
 	if !timer.Stop() {
 		<-timer.C
 	}
-	loop := &kvWriterLoop{
+	loop := &upsertWriterLoop{
 		writer: w, batches: make(map[int32]*kvPendingBatch), pending: make(map[int32][]*kvPendingBatch),
 		active: make(map[int32]bool), sequences: make(map[int32]int32),
 		poisoned:    make(map[int32]error),
@@ -696,7 +696,7 @@ func (w *KVWriter) run() {
 	loop.run()
 }
 
-func (l *kvWriterLoop) run() {
+func (l *upsertWriterLoop) run() {
 	for {
 		select {
 		case command := <-l.writer.commands:
@@ -723,7 +723,7 @@ func (l *kvWriterLoop) run() {
 	}
 }
 
-func (l *kvWriterLoop) add(item *pendingKVWrite) {
+func (l *upsertWriterLoop) add(item *pendingKVWrite) {
 	if err := item.ctx.Err(); err != nil {
 		item.future.complete(WriteResult{Err: err})
 		return
@@ -736,14 +736,14 @@ func (l *kvWriterLoop) add(item *pendingKVWrite) {
 	batch.items = append(batch.items, item)
 	batch.records = append(batch.records, item.record)
 	batch.bytes += item.size
-	if l.batchFull(batch) || l.writer.config.Linger == 0 {
+	if l.batchFull(batch) || l.writer.config.BatchTimeout == 0 {
 		_ = l.flushBucket(item.bucket)
 		return
 	}
 	l.armTimer()
 }
 
-func (l *kvWriterLoop) compatibleBatch(item *pendingKVWrite) *kvPendingBatch {
+func (l *upsertWriterLoop) compatibleBatch(item *pendingKVWrite) *kvPendingBatch {
 	batch := l.batches[item.bucket]
 	if batch != nil && targetKey(batch.targets) != targetKey(item.targets) {
 		_ = l.flushBucket(item.bucket)
@@ -755,22 +755,22 @@ func (l *kvWriterLoop) compatibleBatch(item *pendingKVWrite) *kvPendingBatch {
 	return batch
 }
 
-func (l *kvWriterLoop) newBatch(item *pendingKVWrite) *kvPendingBatch {
+func (l *upsertWriterLoop) newBatch(item *pendingKVWrite) *kvPendingBatch {
 	batch := &kvPendingBatch{targets: append([]int32(nil), item.targets...)}
 	l.batches[item.bucket] = batch
 	return batch
 }
 
-func (l *kvWriterLoop) batchFull(batch *kvPendingBatch) bool {
+func (l *upsertWriterLoop) batchFull(batch *kvPendingBatch) bool {
 	return len(batch.items) >= l.writer.config.MaxBatchRecords || batch.bytes >= l.writer.config.MaxBatchBytes
 }
 
-func (l *kvWriterLoop) batchFullWith(batch *kvPendingBatch, item *pendingKVWrite) bool {
+func (l *upsertWriterLoop) batchFullWith(batch *kvPendingBatch, item *pendingKVWrite) bool {
 	return len(batch.items) >= l.writer.config.MaxBatchRecords ||
 		batch.bytes+item.size > l.writer.config.MaxBatchBytes
 }
 
-func (l *kvWriterLoop) flushBucket(bucket int32) error {
+func (l *upsertWriterLoop) flushBucket(bucket int32) error {
 	batch := l.batches[bucket]
 	if batch == nil || len(batch.items) == 0 {
 		return nil
@@ -786,7 +786,7 @@ func (l *kvWriterLoop) flushBucket(bucket int32) error {
 	return nil
 }
 
-func (l *kvWriterLoop) dispatch() {
+func (l *upsertWriterLoop) dispatch() {
 	for l.inFlight < l.writer.config.MaxConcurrentRequests {
 		dispatched := false
 		for _, bucket := range l.writer.buckets {
@@ -810,7 +810,7 @@ func (l *kvWriterLoop) dispatch() {
 	}
 }
 
-func (l *kvWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequence int32) {
+func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequence int32) {
 	encoded, err := (KVBatch{
 		SchemaID: int16(l.writer.table.SchemaID), WriterID: l.writer.writerID,
 		BatchSequence: sequence, Records: batch.records,
@@ -818,13 +818,13 @@ func (l *kvWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequenc
 	var result writerAttemptResult
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.Timeout)
+		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.RequestTimeout)
 		result = executeWriterAttempts(
-			requestCtx, l.writer.config.Retry, l.writer.observer, MetricOperationKVWrite,
+			requestCtx, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
 			func(ctx context.Context) (int64, bool, error) {
 				offset, err := l.writer.backend.put(ctx, kvPutRequest{
 					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
-					targets: batch.targets, records: encoded, timeout: l.writer.config.Timeout, acks: l.writer.config.Acks,
+					targets: batch.targets, records: encoded, timeout: l.writer.config.RequestTimeout, acks: l.writer.config.Acks,
 					mergeMode: l.writer.config.MergeMode,
 				})
 				return offset, err == nil, err
@@ -843,7 +843,7 @@ func (l *kvWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequenc
 	}
 }
 
-func (l *kvWriterLoop) handleCompletion(completion kvBatchCompletion) error {
+func (l *upsertWriterLoop) handleCompletion(completion kvBatchCompletion) error {
 	delete(l.active, completion.bucket)
 	l.inFlight--
 	queueTime := time.Duration(0)
@@ -876,7 +876,7 @@ func (l *kvWriterLoop) handleCompletion(completion kvBatchCompletion) error {
 	return completion.err
 }
 
-func (l *kvWriterLoop) flushAll() error {
+func (l *upsertWriterLoop) flushAll() error {
 	l.stopTimer()
 	err := l.queueAll()
 	for l.inFlight > 0 {
@@ -885,7 +885,7 @@ func (l *kvWriterLoop) flushAll() error {
 	return err
 }
 
-func (l *kvWriterLoop) queueAll() error {
+func (l *upsertWriterLoop) queueAll() error {
 	l.stopTimer()
 	var joined error
 	for _, bucket := range l.writer.buckets {
@@ -894,14 +894,14 @@ func (l *kvWriterLoop) queueAll() error {
 	return joined
 }
 
-func (l *kvWriterLoop) armTimer() {
-	if l.timerC == nil && l.writer.config.Linger > 0 {
-		l.timer.Reset(l.writer.config.Linger)
+func (l *upsertWriterLoop) armTimer() {
+	if l.timerC == nil && l.writer.config.BatchTimeout > 0 {
+		l.timer.Reset(l.writer.config.BatchTimeout)
 		l.timerC = l.timer.C
 	}
 }
 
-func (l *kvWriterLoop) stopTimer() {
+func (l *upsertWriterLoop) stopTimer() {
 	if l.timerC != nil && !l.timer.Stop() {
 		select {
 		case <-l.timer.C:
@@ -911,7 +911,7 @@ func (l *kvWriterLoop) stopTimer() {
 	l.timerC = nil
 }
 
-func (w *KVWriter) completeKVBatch(
+func (w *UpsertWriter) completeKVBatch(
 	batch *kvPendingBatch,
 	bucket int32,
 	logEnd int64,

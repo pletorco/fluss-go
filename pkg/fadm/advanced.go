@@ -11,10 +11,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ACLResourceType identifies a resource category in the Fluss ACL protocol.
+// ACLResourceType identifies a resource category in the Fluss ACLBinding protocol.
 type ACLResourceType int32
 
-// ACL resource types supported by Apache Fluss 0.9.1.
+// ACLBinding resource types supported by Apache Fluss 0.9.1.
 const (
 	ACLResourceAny      ACLResourceType = 1
 	ACLResourceCluster  ACLResourceType = 2
@@ -22,10 +22,10 @@ const (
 	ACLResourceTable    ACLResourceType = 4
 )
 
-// ACLOperation identifies an operation protected by an ACL.
+// ACLOperation identifies an operation protected by an ACL binding.
 type ACLOperation int32
 
-// ACL operations supported by Apache Fluss 0.9.1.
+// ACLBinding operations supported by Apache Fluss 0.9.1.
 const (
 	ACLOperationAny      ACLOperation = 1
 	ACLOperationAll      ACLOperation = 2
@@ -41,13 +41,13 @@ const (
 // Apache Fluss 0.9.1 does not support deny ACLs.
 type ACLPermission int32
 
-// ACL permissions supported by Apache Fluss 0.9.1.
+// ACLBinding permissions supported by Apache Fluss 0.9.1.
 const (
 	ACLPermissionAny   ACLPermission = 1
 	ACLPermissionAllow ACLPermission = 2
 )
 
-// ACLPrincipalType identifies the namespace of an ACL principal.
+// ACLPrincipalType identifies the namespace of an ACLBinding principal.
 // Custom authorizers may define additional non-empty, case-sensitive values.
 type ACLPrincipalType string
 
@@ -64,8 +64,8 @@ const (
 	ACLClusterResourceName   = "fluss-cluster"
 )
 
-// ACL describes one Fluss access-control entry.
-type ACL struct {
+// ACLBinding describes one Fluss access-control entry.
+type ACLBinding struct {
 	// ResourceName is a concrete database, table, or cluster resource.
 	ResourceName string
 	// ResourceType must be a concrete resource type, not [ACLResourceAny].
@@ -82,29 +82,29 @@ type ACL struct {
 	Permission ACLPermission
 }
 
-func (a ACL) validate() error {
+func (a ACLBinding) validate() error {
 	if a.ResourceName == "" {
-		return fmt.Errorf("%w: ACL resource name is required", fgo.ErrInvalidConfig)
+		return fmt.Errorf("%w: ACLBinding resource name is required", fgo.ErrInvalidConfig)
 	}
 	if !a.ResourceType.valid(false) {
-		return fmt.Errorf("%w: ACL resource type %d is not concrete", fgo.ErrInvalidConfig, a.ResourceType)
+		return fmt.Errorf("%w: ACLBinding resource type %d is not concrete", fgo.ErrInvalidConfig, a.ResourceType)
 	}
 	if err := validateACLPrincipal(a.PrincipalName, a.PrincipalType); err != nil {
 		return err
 	}
 	if a.Host == "" {
-		return fmt.Errorf("%w: ACL host is required", fgo.ErrInvalidConfig)
+		return fmt.Errorf("%w: ACLBinding host is required", fgo.ErrInvalidConfig)
 	}
 	if !a.Operation.valid(false) {
-		return fmt.Errorf("%w: ACL operation %d is not concrete", fgo.ErrInvalidConfig, a.Operation)
+		return fmt.Errorf("%w: ACLBinding operation %d is not concrete", fgo.ErrInvalidConfig, a.Operation)
 	}
 	if a.Permission != ACLPermissionAllow {
-		return fmt.Errorf("%w: ACL permission %d is not concrete", fgo.ErrInvalidConfig, a.Permission)
+		return fmt.Errorf("%w: ACLBinding permission %d is not concrete", fgo.ErrInvalidConfig, a.Permission)
 	}
 	return nil
 }
 
-func (a ACL) message() *fmsg.PbAclInfo {
+func (a ACLBinding) message() *fmsg.PbAclInfo {
 	return &fmsg.PbAclInfo{
 		ResourceName: proto.String(a.ResourceName), ResourceType: proto.Int32(int32(a.ResourceType)),
 		PrincipalName: proto.String(a.PrincipalName), PrincipalType: proto.String(string(a.PrincipalType)),
@@ -113,10 +113,10 @@ func (a ACL) message() *fmsg.PbAclInfo {
 	}
 }
 
-// ACLFilter selects access-control entries.
+// ACLBindingFilter selects access-control entries.
 // Nil optional string fields and explicit Any enum values act as wildcards.
 // PrincipalName and PrincipalType must either both be nil or both be set.
-type ACLFilter struct {
+type ACLBindingFilter struct {
 	// ResourceName is nil to match every resource name.
 	ResourceName *string
 	// ResourceType may be [ACLResourceAny].
@@ -133,15 +133,15 @@ type ACLFilter struct {
 	Permission ACLPermission
 }
 
-func (f ACLFilter) validate() error {
+func (f ACLBindingFilter) validate() error {
 	if !f.ResourceType.valid(true) {
-		return fmt.Errorf("%w: invalid ACL filter resource type %d", fgo.ErrInvalidConfig, f.ResourceType)
+		return fmt.Errorf("%w: invalid ACLBinding filter resource type %d", fgo.ErrInvalidConfig, f.ResourceType)
 	}
 	if f.ResourceName != nil && *f.ResourceName == "" {
-		return fmt.Errorf("%w: ACL filter resource name is empty", fgo.ErrInvalidConfig)
+		return fmt.Errorf("%w: ACLBinding filter resource name is empty", fgo.ErrInvalidConfig)
 	}
 	if (f.PrincipalName == nil) != (f.PrincipalType == nil) {
-		return fmt.Errorf("%w: ACL filter principal name and type must be set together", fgo.ErrInvalidConfig)
+		return fmt.Errorf("%w: ACLBinding filter principal name and type must be set together", fgo.ErrInvalidConfig)
 	}
 	if f.PrincipalName != nil {
 		if err := validateACLPrincipal(*f.PrincipalName, *f.PrincipalType); err != nil {
@@ -149,18 +149,18 @@ func (f ACLFilter) validate() error {
 		}
 	}
 	if f.Host != nil && *f.Host == "" {
-		return fmt.Errorf("%w: ACL filter host is empty", fgo.ErrInvalidConfig)
+		return fmt.Errorf("%w: ACLBinding filter host is empty", fgo.ErrInvalidConfig)
 	}
 	if !f.Operation.valid(true) {
-		return fmt.Errorf("%w: invalid ACL filter operation %d", fgo.ErrInvalidConfig, f.Operation)
+		return fmt.Errorf("%w: invalid ACLBinding filter operation %d", fgo.ErrInvalidConfig, f.Operation)
 	}
 	if !f.Permission.valid(true) {
-		return fmt.Errorf("%w: invalid ACL filter permission %d", fgo.ErrInvalidConfig, f.Permission)
+		return fmt.Errorf("%w: invalid ACLBinding filter permission %d", fgo.ErrInvalidConfig, f.Permission)
 	}
 	return nil
 }
 
-func (f ACLFilter) message() *fmsg.PbAclFilter {
+func (f ACLBindingFilter) message() *fmsg.PbAclFilter {
 	return &fmsg.PbAclFilter{
 		ResourceName: f.ResourceName, ResourceType: proto.Int32(int32(f.ResourceType)),
 		PrincipalName: f.PrincipalName, PrincipalType: aclPrincipalTypeString(f.PrincipalType), Host: f.Host,
@@ -186,11 +186,11 @@ func (p ACLPermission) valid(allowAny bool) bool {
 
 func validateACLPrincipal(name string, principalType ACLPrincipalType) error {
 	if name == "" {
-		return fmt.Errorf("%w: ACL principal name is required", fgo.ErrInvalidConfig)
+		return fmt.Errorf("%w: ACLBinding principal name is required", fgo.ErrInvalidConfig)
 	}
 	value := string(principalType)
 	if value == "" || strings.TrimSpace(value) != value {
-		return fmt.Errorf("%w: invalid ACL principal type %q", fgo.ErrInvalidConfig, value)
+		return fmt.Errorf("%w: invalid ACLBinding principal type %q", fgo.ErrInvalidConfig, value)
 	}
 	for _, canonical := range []ACLPrincipalType{
 		ACLPrincipalUser,
@@ -200,7 +200,7 @@ func validateACLPrincipal(name string, principalType ACLPrincipalType) error {
 	} {
 		if strings.EqualFold(value, string(canonical)) && principalType != canonical {
 			return fmt.Errorf(
-				"%w: ACL principal type %q must use canonical form %q",
+				"%w: ACLBinding principal type %q must use canonical form %q",
 				fgo.ErrInvalidConfig,
 				value,
 				canonical,
@@ -209,7 +209,7 @@ func validateACLPrincipal(name string, principalType ACLPrincipalType) error {
 	}
 	if (name == ACLWildcardPrincipalName) != (principalType == ACLPrincipalWildcard) {
 		return fmt.Errorf(
-			"%w: wildcard ACL principal name and type must be used together",
+			"%w: wildcard ACLBinding principal name and type must be used together",
 			fgo.ErrInvalidConfig,
 		)
 	}
@@ -224,16 +224,16 @@ func aclPrincipalTypeString(principalType *ACLPrincipalType) *string {
 	return &value
 }
 
-// ACLResult associates one ACL with its server-side result.
-type ACLResult struct {
-	// ACL is the server-returned access-control entry.
-	ACL ACL
+// CreateACLResult associates one ACLBinding with its server-side result.
+type CreateACLResult struct {
+	// Binding is the server-returned access-control entry.
+	Binding ACLBinding
 	// Err is the entry-local server failure.
 	Err error
 }
 
-// CreateACLs creates entries and returns one result per input ACL.
-func (c *Client) CreateACLs(ctx context.Context, acls ...ACL) ([]ACLResult, error) {
+// CreateACLs creates entries and returns one result per input ACL binding.
+func (c *Client) CreateACLs(ctx context.Context, acls ...ACLBinding) ([]CreateACLResult, error) {
 	if len(acls) == 0 {
 		return nil, fmt.Errorf("%w: no ACLs", fgo.ErrInvalidConfig)
 	}
@@ -257,24 +257,24 @@ func (c *Client) CreateACLs(ctx context.Context, acls ...ACL) ([]ACLResult, erro
 		return nil, unexpected("create ACLs", response)
 	}
 	if len(created.GetAclRes()) != len(acls) {
-		return nil, fmt.Errorf("%w: create ACL response count mismatch", fgo.ErrValidation)
+		return nil, fmt.Errorf("%w: create ACLBinding response count mismatch", fgo.ErrValidation)
 	}
-	results := make([]ACLResult, len(acls))
+	results := make([]CreateACLResult, len(acls))
 	for index, item := range created.GetAclRes() {
 		acl, err := aclFromMessage(item.GetAcl())
 		if err != nil {
 			return nil, err
 		}
-		results[index] = ACLResult{
-			ACL: acl,
-			Err: fgo.ResponseError(item.GetErrorCode(), item.GetErrorMessage(), fmsg.APIKeyCreateAcls),
+		results[index] = CreateACLResult{
+			Binding: acl,
+			Err:     fgo.ResponseError(item.GetErrorCode(), item.GetErrorMessage(), fmsg.APIKeyCreateAcls),
 		}
 	}
 	return results, nil
 }
 
 // ListACLs returns entries matching filter.
-func (c *Client) ListACLs(ctx context.Context, filter ACLFilter) ([]ACL, error) {
+func (c *Client) ListACLs(ctx context.Context, filter ACLBindingFilter) ([]ACLBinding, error) {
 	if err := filter.validate(); err != nil {
 		return nil, err
 	}
@@ -291,7 +291,7 @@ func (c *Client) ListACLs(ctx context.Context, filter ACLFilter) ([]ACL, error) 
 	if !ok {
 		return nil, unexpected("list ACLs", response)
 	}
-	acls := make([]ACL, len(list.GetAcl()))
+	acls := make([]ACLBinding, len(list.GetAcl()))
 	for index, item := range list.GetAcl() {
 		acl, err := aclFromMessage(item)
 		if err != nil {
@@ -305,17 +305,17 @@ func (c *Client) ListACLs(ctx context.Context, filter ACLFilter) ([]ACL, error) 
 // DropACLResult contains matches and errors for one requested filter.
 type DropACLResult struct {
 	// Filter is the requested filter associated with this result.
-	Filter ACLFilter
-	// Matches contains independently reported matching ACL outcomes.
-	Matches []ACLResult
+	Filter ACLBindingFilter
+	// Matches contains independently reported matching ACLBinding outcomes.
+	Matches []CreateACLResult
 	// Err is the filter-level server failure.
 	Err error
 }
 
 // DropACLs removes entries and returns one result per input filter.
-func (c *Client) DropACLs(ctx context.Context, filters ...ACLFilter) ([]DropACLResult, error) {
+func (c *Client) DropACLs(ctx context.Context, filters ...ACLBindingFilter) ([]DropACLResult, error) {
 	if len(filters) == 0 {
-		return nil, fmt.Errorf("%w: no ACL filters", fgo.ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: no ACLBinding filters", fgo.ErrInvalidConfig)
 	}
 	request, err := fmsg.NewRequest(fmsg.APIKeyDropAcls, 0)
 	if err != nil {
@@ -337,7 +337,7 @@ func (c *Client) DropACLs(ctx context.Context, filters ...ACLFilter) ([]DropACLR
 		return nil, unexpected("drop ACLs", response)
 	}
 	if len(dropped.GetFilterResults()) != len(filters) {
-		return nil, fmt.Errorf("%w: drop ACL response count mismatch", fgo.ErrValidation)
+		return nil, fmt.Errorf("%w: drop ACLBinding response count mismatch", fgo.ErrValidation)
 	}
 	results := make([]DropACLResult, len(filters))
 	for index, item := range dropped.GetFilterResults() {
@@ -348,20 +348,20 @@ func (c *Client) DropACLs(ctx context.Context, filters ...ACLFilter) ([]DropACLR
 			if err != nil {
 				return nil, err
 			}
-			results[index].Matches = append(results[index].Matches, ACLResult{
-				ACL: acl,
-				Err: fgo.ResponseError(match.GetErrorCode(), match.GetErrorMessage(), fmsg.APIKeyDropAcls),
+			results[index].Matches = append(results[index].Matches, CreateACLResult{
+				Binding: acl,
+				Err:     fgo.ResponseError(match.GetErrorCode(), match.GetErrorMessage(), fmsg.APIKeyDropAcls),
 			})
 		}
 	}
 	return results, nil
 }
 
-func aclFromMessage(message *fmsg.PbAclInfo) (ACL, error) {
+func aclFromMessage(message *fmsg.PbAclInfo) (ACLBinding, error) {
 	if message == nil {
-		return ACL{}, fmt.Errorf("%w: missing ACL in server response", fgo.ErrValidation)
+		return ACLBinding{}, fmt.Errorf("%w: missing ACLBinding in server response", fgo.ErrValidation)
 	}
-	acl := ACL{
+	acl := ACLBinding{
 		ResourceName:  message.GetResourceName(),
 		ResourceType:  ACLResourceType(message.GetResourceType()),
 		PrincipalName: message.GetPrincipalName(),
@@ -371,13 +371,13 @@ func aclFromMessage(message *fmsg.PbAclInfo) (ACL, error) {
 		Permission:    ACLPermission(message.GetPermissionType()),
 	}
 	if err := acl.validate(); err != nil {
-		return ACL{}, fmt.Errorf("%w: malformed ACL server response: %v", fgo.ErrValidation, err)
+		return ACLBinding{}, fmt.Errorf("%w: malformed ACLBinding server response: %v", fgo.ErrValidation, err)
 	}
 	return acl, nil
 }
 
-// ClusterConfig is one effective cluster configuration value and its source.
-type ClusterConfig struct {
+// ConfigEntry is one effective cluster configuration value and its source.
+type ConfigEntry struct {
 	// Key is the cluster configuration name.
 	Key string
 	// Value is the effective configuration value.
@@ -387,7 +387,7 @@ type ClusterConfig struct {
 }
 
 // DescribeClusterConfigs returns effective cluster configuration values.
-func (c *Client) DescribeClusterConfigs(ctx context.Context) ([]ClusterConfig, error) {
+func (c *Client) DescribeClusterConfigs(ctx context.Context) ([]ConfigEntry, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyDescribeClusterConfigs, 0)
 	if err != nil {
 		return nil, err
@@ -400,9 +400,9 @@ func (c *Client) DescribeClusterConfigs(ctx context.Context) ([]ClusterConfig, e
 	if !ok {
 		return nil, unexpected("describe cluster configs", response)
 	}
-	configs := make([]ClusterConfig, len(message.GetConfigs()))
+	configs := make([]ConfigEntry, len(message.GetConfigs()))
 	for index, config := range message.GetConfigs() {
-		configs[index] = ClusterConfig{
+		configs[index] = ConfigEntry{
 			Key: config.GetConfigKey(), Value: config.GetConfigValue(), Source: config.GetConfigSource(),
 		}
 	}
@@ -410,7 +410,7 @@ func (c *Client) DescribeClusterConfigs(ctx context.Context) ([]ClusterConfig, e
 }
 
 // AlterClusterConfigs applies configuration changes as one request.
-func (c *Client) AlterClusterConfigs(ctx context.Context, changes ...ConfigChange) error {
+func (c *Client) AlterClusterConfigs(ctx context.Context, changes ...AlterConfig) error {
 	if len(changes) == 0 {
 		return fmt.Errorf("%w: no cluster config changes", fgo.ErrInvalidConfig)
 	}
@@ -511,8 +511,8 @@ type RebalanceBucketProgress struct {
 	NewReplicas []int32
 }
 
-// StartRebalance starts an asynchronous rebalance and returns its ID.
-func (c *Client) StartRebalance(ctx context.Context, goals ...int32) (string, error) {
+// Rebalance starts an asynchronous rebalance and returns its ID.
+func (c *Client) Rebalance(ctx context.Context, goals ...int32) (string, error) {
 	if len(goals) == 0 {
 		return "", fmt.Errorf("%w: no rebalance goals", fgo.ErrInvalidConfig)
 	}
@@ -535,8 +535,8 @@ func (c *Client) StartRebalance(ctx context.Context, goals ...int32) (string, er
 	return message.GetRebalanceId(), nil
 }
 
-// RebalanceProgress returns the latest state for id.
-func (c *Client) RebalanceProgress(ctx context.Context, id string) (RebalanceProgress, error) {
+// ListRebalanceProgress returns the latest state for id.
+func (c *Client) ListRebalanceProgress(ctx context.Context, id string) (RebalanceProgress, error) {
 	if id == "" {
 		return RebalanceProgress{}, fmt.Errorf("%w: rebalance ID is required", fgo.ErrInvalidConfig)
 	}
@@ -577,7 +577,7 @@ func (c *Client) WaitRebalance(ctx context.Context, id string, interval time.Dur
 		return RebalanceProgress{}, fmt.Errorf("%w: rebalance poll interval must be positive", fgo.ErrInvalidConfig)
 	}
 	for {
-		progress, err := c.RebalanceProgress(ctx, id)
+		progress, err := c.ListRebalanceProgress(ctx, id)
 		if err != nil || progress.Status != 0 {
 			return progress, err
 		}
@@ -760,8 +760,8 @@ type KVSnapshot struct {
 	Available bool
 }
 
-// LatestKVSnapshot groups latest snapshot metadata by table partition.
-type LatestKVSnapshot struct {
+// KVSnapshots groups latest snapshot metadata by table partition.
+type KVSnapshots struct {
 	// TableID is the server-assigned table identifier.
 	TableID int64
 	// PartitionID is -1 for an unpartitioned table.
@@ -770,18 +770,18 @@ type LatestKVSnapshot struct {
 	Snapshots []KVSnapshot
 }
 
-// LatestKVSnapshots returns current primary-key snapshot IDs and offsets.
-func (c *Client) LatestKVSnapshots(
+// GetLatestKVSnapshots returns current primary-key snapshot IDs and offsets.
+func (c *Client) GetLatestKVSnapshots(
 	ctx context.Context,
 	path fgo.TablePath,
 	partition string,
-) (LatestKVSnapshot, error) {
+) (KVSnapshots, error) {
 	if err := path.Validate(); err != nil {
-		return LatestKVSnapshot{}, err
+		return KVSnapshots{}, err
 	}
 	request, err := fmsg.NewRequest(fmsg.APIKeyGetLatestKvSnapshots, 0)
 	if err != nil {
-		return LatestKVSnapshot{}, err
+		return KVSnapshots{}, err
 	}
 	message := request.Message().(*fmsg.GetLatestKvSnapshotsRequest)
 	message.TablePath = pbTablePath(path)
@@ -790,13 +790,13 @@ func (c *Client) LatestKVSnapshots(
 	}
 	response, err := c.requester.RequestCoordinator(ctx, request)
 	if err != nil {
-		return LatestKVSnapshot{}, err
+		return KVSnapshots{}, err
 	}
 	latest, ok := response.Message().(*fmsg.GetLatestKvSnapshotsResponse)
 	if !ok {
-		return LatestKVSnapshot{}, unexpected("latest KV snapshots", response)
+		return KVSnapshots{}, unexpected("latest KV snapshots", response)
 	}
-	result := LatestKVSnapshot{TableID: latest.GetTableId(), PartitionID: -1}
+	result := KVSnapshots{TableID: latest.GetTableId(), PartitionID: -1}
 	if latest.PartitionId != nil {
 		result.PartitionID = latest.GetPartitionId()
 	}
@@ -826,7 +826,7 @@ type KVSnapshotMetadata struct {
 }
 
 // KVSnapshotMetadata returns immutable file metadata for one snapshot.
-func (c *Client) KVSnapshotMetadata(
+func (c *Client) GetKVSnapshotMetadata(
 	ctx context.Context,
 	tableID, partitionID int64,
 	bucket int32,
@@ -861,8 +861,8 @@ func (c *Client) KVSnapshotMetadata(
 	return result, nil
 }
 
-// SnapshotLease identifies one bucket snapshot protected by a lease.
-type SnapshotLease struct {
+// KVSnapshotLease identifies one bucket snapshot protected by a lease.
+type KVSnapshotLease struct {
 	// TableID is the server-assigned table identifier.
 	TableID int64
 	// PartitionID is -1 for an unpartitioned table.
@@ -881,8 +881,8 @@ func (c *Client) AcquireKVSnapshotLease(
 	ctx context.Context,
 	leaseID string,
 	duration time.Duration,
-	snapshots []SnapshotLease,
-) ([]SnapshotLease, error) {
+	snapshots []KVSnapshotLease,
+) ([]KVSnapshotLease, error) {
 	if leaseID == "" || duration <= 0 || len(snapshots) == 0 {
 		return nil, fmt.Errorf("%w: lease ID, duration, and snapshots are required", fgo.ErrInvalidConfig)
 	}
@@ -968,7 +968,7 @@ func (c *Client) DropKVSnapshotLease(ctx context.Context, leaseID string) error 
 	return err
 }
 
-func leaseMessages(snapshots []SnapshotLease) ([]*fmsg.PbKvSnapshotLeaseForTable, error) {
+func leaseMessages(snapshots []KVSnapshotLease) ([]*fmsg.PbKvSnapshotLeaseForTable, error) {
 	grouped := make(map[int64]*fmsg.PbKvSnapshotLeaseForTable)
 	order := make([]int64, 0)
 	for _, snapshot := range snapshots {
@@ -996,15 +996,15 @@ func leaseMessages(snapshots []SnapshotLease) ([]*fmsg.PbKvSnapshotLeaseForTable
 	return result, nil
 }
 
-func leasesFromMessage(tables []*fmsg.PbKvSnapshotLeaseForTable) []SnapshotLease {
-	var result []SnapshotLease
+func leasesFromMessage(tables []*fmsg.PbKvSnapshotLeaseForTable) []KVSnapshotLease {
+	var result []KVSnapshotLease
 	for _, table := range tables {
 		for _, bucket := range table.GetBucketSnapshots() {
 			partitionID := int64(-1)
 			if bucket.PartitionId != nil {
 				partitionID = bucket.GetPartitionId()
 			}
-			result = append(result, SnapshotLease{
+			result = append(result, KVSnapshotLease{
 				TableID: table.GetTableId(), PartitionID: partitionID,
 				Bucket: bucket.GetBucketId(), SnapshotID: bucket.GetSnapshotId(),
 			})
@@ -1017,7 +1017,7 @@ func leasesFromMessage(tables []*fmsg.PbKvSnapshotLeaseForTable) []SnapshotLease
 type FileSystemSecurityToken = fgo.FileSystemSecurityToken
 
 // FileSystemSecurityToken requests temporary filesystem credentials.
-func (c *Client) FileSystemSecurityToken(ctx context.Context) (FileSystemSecurityToken, error) {
+func (c *Client) GetFileSystemSecurityToken(ctx context.Context) (FileSystemSecurityToken, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyGetFilesystemSecurityToken, 0)
 	if err != nil {
 		return FileSystemSecurityToken{}, err
@@ -1062,10 +1062,22 @@ type LakeSnapshot struct {
 	Buckets []LakeBucketSnapshot
 }
 
-// LakeSnapshot returns an exact snapshot when snapshotID is non-nil, or lets
-// the server select a snapshot when it is nil. The readable flag requests a
-// snapshot suitable for reading.
-func (c *Client) LakeSnapshot(
+// GetLatestLakeSnapshot returns the latest tiered lake snapshot.
+func (c *Client) GetLatestLakeSnapshot(ctx context.Context, path fgo.TablePath) (LakeSnapshot, error) {
+	return c.getLakeSnapshot(ctx, path, nil, false)
+}
+
+// GetLakeSnapshot returns the historical lake snapshot identified by snapshotID.
+func (c *Client) GetLakeSnapshot(ctx context.Context, path fgo.TablePath, snapshotID int64) (LakeSnapshot, error) {
+	return c.getLakeSnapshot(ctx, path, &snapshotID, false)
+}
+
+// GetReadableLakeSnapshot returns the latest snapshot safe for union reads.
+func (c *Client) GetReadableLakeSnapshot(ctx context.Context, path fgo.TablePath) (LakeSnapshot, error) {
+	return c.getLakeSnapshot(ctx, path, nil, true)
+}
+
+func (c *Client) getLakeSnapshot(
 	ctx context.Context,
 	path fgo.TablePath,
 	snapshotID *int64,
@@ -1122,7 +1134,7 @@ type TableStats struct {
 
 // TableStats returns one independent result per requested bucket in input
 // order. Callers must inspect every result's Err and preserve partial success.
-func (c *Client) TableStats(
+func (c *Client) GetTableStats(
 	ctx context.Context,
 	table fgo.Table,
 	path fgo.PhysicalTablePath,

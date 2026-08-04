@@ -42,14 +42,14 @@ func TestMetricsObserverRequestsAndIsolation(t *testing.T) {
 		return fmsg.NewResponse(request.APIKey(), request.Version())
 	}), nil)
 	client.observer = recorder
-	client.role = TabletServer
+	client.serverType = TabletServer
 	client.versions[fmsg.APIKeyLookup] = 0
 	request, _ := fmsg.NewRequest(fmsg.APIKeyLookup, 0)
 	if _, err := client.Request(context.Background(), request); err != nil {
 		t.Fatal(err)
 	}
 	event, ok := recorder.find(MetricRequest, MetricOperationRPC)
-	if !ok || event.APIKey != fmsg.APIKeyLookup || event.ServerRole != TabletServer ||
+	if !ok || event.APIKey != fmsg.APIKeyLookup || event.ServerType != TabletServer ||
 		event.Failed || event.ErrorClass != MetricErrorNone || event.Duration <= 0 {
 		t.Fatalf("request metric = %#v, found=%v", event, ok)
 	}
@@ -77,51 +77,51 @@ func TestMetricsObserverRequestsAndIsolation(t *testing.T) {
 	}
 }
 
-func TestMetricsObserverLogWriterEvent(t *testing.T) {
+func TestMetricsObserverAppendWriterEvent(t *testing.T) {
 	recorder := &metricRecorder{}
 	logBackend := logBackend(0)
-	logWriter, err := newLogWriter(
-		context.Background(), logBackend, logWriterTable(), WithLogLinger(0),
+	appendWriter, err := newAppendWriter(
+		context.Background(), logBackend, appendWriterTable(), WithAppendBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	logWriter.observer = recorder
-	if result := logWriter.Append(context.Background(), Row{int32(1), "one"}).
+	appendWriter.observer = recorder
+	if result := appendWriter.Append(context.Background(), Row{int32(1), "one"}).
 		Await(context.Background()); result.Err != nil {
 		t.Fatal(result.Err)
 	}
 	if event, ok := recorder.find(MetricWriteBatch, MetricOperationLogWrite); !ok ||
 		event.Records != 1 || event.Bytes <= 0 || event.QueueTime <= 0 || event.Failed {
-		t.Fatalf("log writer metric = %#v, found=%v", event, ok)
+		t.Fatalf("append writer metric = %#v, found=%v", event, ok)
 	}
-	_ = logWriter.Close(context.Background())
+	_ = appendWriter.Close(context.Background())
 }
 
-func TestMetricsObserverKVWriterEvent(t *testing.T) {
+func TestMetricsObserverUpsertWriterEvent(t *testing.T) {
 	recorder := &metricRecorder{}
 	kvBackend := kvBackend(0)
-	kvWriter, err := newKVWriter(
-		context.Background(), kvBackend, kvWriterTable(), WithKVLinger(0),
+	upsertWriter, err := newUpsertWriter(
+		context.Background(), kvBackend, upsertWriterTable(), WithUpsertBatchTimeout(0),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kvWriter.observer = recorder
-	if result := kvWriter.Upsert(context.Background(), Row{int32(1), "one", int64(1)}).
+	upsertWriter.observer = recorder
+	if result := upsertWriter.Upsert(context.Background(), Row{int32(1), "one", int64(1)}).
 		Await(context.Background()); result.Err != nil {
 		t.Fatal(result.Err)
 	}
 	if event, ok := recorder.find(MetricWriteBatch, MetricOperationKVWrite); !ok ||
 		event.Records != 1 || event.Bytes <= 0 || event.Failed {
-		t.Fatalf("KV writer metric = %#v, found=%v", event, ok)
+		t.Fatalf("upsert writer metric = %#v, found=%v", event, ok)
 	}
-	_ = kvWriter.Close(context.Background())
+	_ = upsertWriter.Close(context.Background())
 }
 
 func TestMetricsObserverScannerEvents(t *testing.T) {
 	recorder := &metricRecorder{}
-	table := logWriterTable()
+	table := appendWriterTable()
 	scanBackend := scannerBackend(0)
 	scanBackend.fetches[0] = scannerFetch{
 		records: encodedRows(t, table.Schema, 0, 1), highWatermark: 10,

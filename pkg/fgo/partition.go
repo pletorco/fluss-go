@@ -93,7 +93,7 @@ type DynamicPartitionCreationConfig struct {
 	RetryBackoff time.Duration
 }
 
-// WithDynamicPartitionCreation enables automatic creation for partitioned log and KV writers.
+// WithDynamicPartitionCreation enables automatic creation for partitioned log and upsert writers.
 func WithDynamicPartitionCreation(settings DynamicPartitionCreationConfig) Option {
 	return func(config *config) error {
 		if settings.MetadataAttempts == 0 {

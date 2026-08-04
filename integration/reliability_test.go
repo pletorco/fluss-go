@@ -103,9 +103,9 @@ type reliabilityEnvironment struct {
 }
 
 type reliabilityResources struct {
-	logWriter *fgo.LogWriter
-	kvWriter  *fgo.KVWriter
-	lookup    *fgo.LookupClient
+	appendWriter *fgo.AppendWriter
+	upsertWriter *fgo.UpsertWriter
+	lookup       *fgo.Lookuper
 }
 
 type reliabilityWorker struct {
@@ -303,7 +303,7 @@ func openReliabilityEnvironment(t *testing.T, address string) (*reliabilityEnvir
 	environment.logPath = fgo.TablePath{Database: environment.database, Table: "events"}
 	environment.kvPath = fgo.TablePath{Database: environment.database, Table: "state"}
 	if err := admin.CreateDatabase(
-		context.Background(), environment.database, fadm.DatabaseDefinition{}, false,
+		context.Background(), environment.database, fadm.DatabaseDescriptor{}, false,
 	); err != nil {
 		environment.client.Close()
 		return nil, err
@@ -315,9 +315,9 @@ func openReliabilityEnvironment(t *testing.T, address string) (*reliabilityEnvir
 		}
 	}()
 	createTables(t, admin, environment.logPath, environment.kvPath)
-	environment.logTable, err = environment.client.OpenTable(context.Background(), environment.logPath)
+	environment.logTable, err = environment.client.GetTable(context.Background(), environment.logPath)
 	if err == nil {
-		environment.kvTable, err = environment.client.OpenTable(context.Background(), environment.kvPath)
+		environment.kvTable, err = environment.client.GetTable(context.Background(), environment.kvPath)
 	}
 	if err != nil {
 		_ = environment.close()
@@ -431,37 +431,37 @@ func openReliabilityResources(
 	metrics *reliabilityMetrics,
 ) (*reliabilityResources, error) {
 	resources := &reliabilityResources{}
-	logWriter, err := client.NewLogWriter(
-		ctx, logTable, fgo.WithLogLinger(0), fgo.WithLogConcurrency(4),
-		fgo.WithLogRetryPolicy(reliabilityWriterRetry()),
+	appendWriter, err := client.NewAppendWriter(
+		ctx, logTable, fgo.WithAppendBatchTimeout(0), fgo.WithAppendConcurrency(4),
+		fgo.WithAppendRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
 		return nil, err
 	}
-	resources.logWriter = logWriter
-	kvWriter, err := client.NewKVWriter(
-		ctx, kvTable, fgo.WithKVLinger(0), fgo.WithKVConcurrency(4),
-		fgo.WithKVRetryPolicy(reliabilityWriterRetry()),
+	resources.appendWriter = appendWriter
+	upsertWriter, err := client.NewUpsertWriter(
+		ctx, kvTable, fgo.WithUpsertBatchTimeout(0), fgo.WithUpsertConcurrency(4),
+		fgo.WithUpsertRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
-		_ = logWriter.Close(context.Background())
+		_ = appendWriter.Close(context.Background())
 		return nil, err
 	}
-	resources.kvWriter = kvWriter
-	lookup, err := client.NewLookupClient(
-		ctx, kvTable, fgo.WithLookupBatch(64, 4),
+	resources.upsertWriter = upsertWriter
+	lookup, err := client.NewLookuper(
+		ctx, kvTable, fgo.WithLookupBatchLimits(64, 4),
 		fgo.WithLookupRetryPolicy(fgo.RetryPolicy{MaxAttempts: 3, Backoff: reliabilityBackoff}),
 	)
 	if err != nil {
-		_ = logWriter.Close(context.Background())
-		_ = kvWriter.Close(context.Background())
+		_ = appendWriter.Close(context.Background())
+		_ = upsertWriter.Close(context.Background())
 		return nil, err
 	}
 	resources.lookup = lookup
-	if err := seedReliabilityData(ctx, logWriter, kvWriter, metrics); err != nil {
+	if err := seedReliabilityData(ctx, appendWriter, upsertWriter, metrics); err != nil {
 		_ = lookup.Close()
-		_ = logWriter.Close(context.Background())
-		_ = kvWriter.Close(context.Background())
+		_ = appendWriter.Close(context.Background())
+		_ = upsertWriter.Close(context.Background())
 		return nil, err
 	}
 	return resources, nil
@@ -520,35 +520,35 @@ func closeReliabilityResources(
 	resources *reliabilityResources,
 	metrics *reliabilityMetrics,
 ) {
-	if err := resources.logWriter.Close(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		metrics.fail(fmt.Errorf("close log writer: %w", err))
+	if err := resources.appendWriter.Close(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		metrics.fail(fmt.Errorf("close append writer: %w", err))
 	}
-	if err := resources.kvWriter.Close(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		metrics.fail(fmt.Errorf("close KV writer: %w", err))
+	if err := resources.upsertWriter.Close(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		metrics.fail(fmt.Errorf("close upsert writer: %w", err))
 	}
 	if err := resources.lookup.Close(); err != nil {
 		metrics.fail(fmt.Errorf("close lookup: %w", err))
 	}
-	if _, err := admin.ServerNodes(ctx); err != nil {
+	if _, err := admin.GetServerNodes(ctx); err != nil {
 		metrics.fail(fmt.Errorf("post-load admin request: %w", err))
 	}
 }
 
 func seedReliabilityData(
 	ctx context.Context,
-	logWriter *fgo.LogWriter,
-	kvWriter *fgo.KVWriter,
+	appendWriter *fgo.AppendWriter,
+	upsertWriter *fgo.UpsertWriter,
 	metrics *reliabilityMetrics,
 ) error {
 	for index := -reliabilitySeedRows; index < 0; index++ {
 		value := fmt.Sprintf("seed-%d", -index)
-		if result := logWriter.Append(ctx, fgo.Row{index, value}).Await(ctx); result.Err != nil {
+		if result := appendWriter.Append(ctx, fgo.Row{index, value}).Await(ctx); result.Err != nil {
 			return fmt.Errorf("seed log row %d: %w", index, result.Err)
 		}
 		metrics.recordLog(index, value)
 		tenant := fmt.Sprintf("tenant-%02d", (-index)%16)
 		row := fgo.Row{tenant, index, value}
-		if result := kvWriter.Upsert(ctx, row).Await(ctx); result.Err != nil {
+		if result := upsertWriter.Upsert(ctx, row).Await(ctx); result.Err != nil {
 			return fmt.Errorf("seed KV row %d: %w", index, result.Err)
 		}
 		metrics.recordKV(reliabilityKey(tenant, index), row)
@@ -585,7 +585,7 @@ func (w reliabilityWorker) run() {
 		case "log":
 			id := int32(w.sequence.Add(1))
 			value := fmt.Sprintf("value-%d", id)
-			result := w.resources.logWriter.Append(w.ctx, fgo.Row{id, value}).Await(w.ctx)
+			result := w.resources.appendWriter.Append(w.ctx, fgo.Row{id, value}).Await(w.ctx)
 			err = result.Err
 			if err == nil {
 				w.metrics.recordLog(id, value)
@@ -594,7 +594,7 @@ func (w reliabilityWorker) run() {
 			id := int32(w.sequence.Add(1))
 			tenant := fmt.Sprintf("tenant-%02d", id%16)
 			row := fgo.Row{tenant, id, fmt.Sprintf("value-%d", id)}
-			result := w.resources.kvWriter.Upsert(w.ctx, row).Await(w.ctx)
+			result := w.resources.upsertWriter.Upsert(w.ctx, row).Await(w.ctx)
 			err = result.Err
 			if err == nil {
 				w.metrics.recordKV(reliabilityKey(tenant, id), row)
@@ -616,7 +616,7 @@ func (w reliabilityWorker) run() {
 func reliabilityScanOnce(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(), fgo.WithScanRowLimit(16),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
 	)
 	if err != nil {
 		return err
@@ -658,7 +658,7 @@ func runSoakCycle(
 	address string,
 	logPath, kvPath fgo.TablePath,
 ) (resultErr error) {
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers(address), fgo.WithDialTimeout(3*time.Second))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers(address), fgo.WithConnectTimeout(3*time.Second))
 	if err != nil {
 		return err
 	}
@@ -667,18 +667,18 @@ func runSoakCycle(
 			resultErr = err
 		}
 	}()
-	logTable, err := client.OpenTable(ctx, logPath)
+	logTable, err := client.GetTable(ctx, logPath)
 	if err != nil {
 		return err
 	}
 	if _, err := client.ResolveTableBuckets(ctx, fgo.PhysicalTablePath{TablePath: logPath}); err != nil {
 		return err
 	}
-	kvTable, err := client.OpenTable(ctx, kvPath)
+	kvTable, err := client.GetTable(ctx, kvPath)
 	if err != nil {
 		return err
 	}
-	lookup, err := client.NewLookupClient(ctx, kvTable)
+	lookup, err := client.NewLookuper(ctx, kvTable)
 	if err != nil {
 		return err
 	}
@@ -687,7 +687,7 @@ func runSoakCycle(
 	}
 	scanner, err := client.NewLogScanner(
 		ctx, logTable, fgo.Earliest(), fgo.WithScanRowLimit(1),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 50*time.Millisecond),
 	)
 	if err != nil {
 		return err
@@ -695,7 +695,7 @@ func runSoakCycle(
 	if err := scanner.Close(); err != nil {
 		return err
 	}
-	writer, err := client.NewLogWriter(ctx, logTable, fgo.WithLogLinger(0))
+	writer, err := client.NewAppendWriter(ctx, logTable, fgo.WithAppendBatchTimeout(0))
 	if err != nil {
 		return err
 	}
@@ -708,7 +708,7 @@ func exerciseReliabilityDialFaults(address string, seed int64, metrics *reliabil
 	defer cancel()
 	truncated, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers(address),
+		fgo.WithBootstrapServers(address),
 		fgo.WithDialContext(func(ctx context.Context, network, target string) (net.Conn, error) {
 			connection, dialErr := dialer.DialContext(ctx, network, target)
 			if dialErr == nil {
@@ -726,7 +726,7 @@ func exerciseReliabilityDialFaults(address string, seed int64, metrics *reliabil
 	delay := time.Duration((seed%7)+1) * time.Millisecond
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers(address),
+		fgo.WithBootstrapServers(address),
 		fgo.WithDialContext(func(ctx context.Context, network, target string) (net.Conn, error) {
 			timer := time.NewTimer(delay)
 			select {
@@ -774,7 +774,7 @@ func injectCancellationBurst(client *fgo.Client, path fgo.TablePath, metrics *re
 			defer wait.Done()
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			_, err := client.OpenTable(ctx, path)
+			_, err := client.GetTable(ctx, path)
 			if errors.Is(err, context.Canceled) {
 				metrics.expected("canceled_request")
 				return
@@ -841,7 +841,7 @@ func verifyReliabilityLog(
 	}
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(), fgo.WithScanStoppingOffsets(ends),
-		fgo.WithScanLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 	)
 	if err != nil {
 		return len(expected), 0, 0, err
@@ -942,7 +942,7 @@ func verifyReliabilityKV(
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	lookup, err := client.NewLookupClient(ctx, table, fgo.WithLookupBatch(128, 4))
+	lookup, err := client.NewLookuper(ctx, table, fgo.WithLookupBatchLimits(128, 4))
 	if err != nil {
 		return len(expected), 0, err
 	}

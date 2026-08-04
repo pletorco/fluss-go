@@ -6,7 +6,7 @@ toolchain go1.26.5
 
 require (
 	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.5.3
-	github.com/pletorco/fluss-go v0.1.0-beta.9
+	github.com/pletorco/fluss-go v0.1.0-beta.10
 )
 
 require (

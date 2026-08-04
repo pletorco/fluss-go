@@ -20,7 +20,7 @@ func TestConnectionManagerBootstrapFallsBackToNextSeed(t *testing.T) {
 	done := serveVersions(t, serverConn, Coordinator)
 	var calls []string
 	manager := newConnectionManager(config{
-		seeds: []string{"down:9123", "up:9123"}, name: "test", version: "1",
+		bootstrapServers: []string{"down:9123", "up:9123"}, name: "test", version: "1",
 		dialContext: func(_ context.Context, _, address string) (net.Conn, error) {
 			calls = append(calls, address)
 			if address == "down:9123" {
@@ -138,8 +138,8 @@ func TestConnectionManagerAuthenticatesEveryConnectionBeforePublishingIt(t *test
 	}
 	result := make(chan openResult, 1)
 	go func() {
-		client, err := manager.getNode(context.Background(), Node{
-			ID: 1, Address: "tablet-1:9123", Role: TabletServer,
+		client, err := manager.getNode(context.Background(), ServerNode{
+			ID: 1, Address: "tablet-1:9123", ServerType: TabletServer,
 		})
 		result <- openResult{client: client, err: err}
 	}()
@@ -154,8 +154,8 @@ func TestConnectionManagerAuthenticatesEveryConnectionBeforePublishingIt(t *test
 	if opened.err != nil || opened.client == nil {
 		t.Fatalf("first authenticated connection = %#v", opened)
 	}
-	second, err := manager.getNode(context.Background(), Node{
-		ID: 2, Address: "tablet-2:9123", Role: TabletServer,
+	second, err := manager.getNode(context.Background(), ServerNode{
+		ID: 2, Address: "tablet-2:9123", ServerType: TabletServer,
 	})
 	if err != nil || second == nil || second == opened.client {
 		t.Fatalf("second authenticated connection = %p, %v", second, err)
@@ -180,7 +180,7 @@ func TestConnectionManagerAuthenticatesEveryConnectionBeforePublishingIt(t *test
 	<-secondDone
 }
 
-func TestConnectionManagerRejectsWrongServerRole(t *testing.T) {
+func TestConnectionManagerRejectsWrongServerType(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	done := serveVersions(t, serverConn, TabletServer)
 	manager := newConnectionManager(config{
@@ -188,19 +188,19 @@ func TestConnectionManagerRejectsWrongServerRole(t *testing.T) {
 		dialContext: func(context.Context, string, string) (net.Conn, error) { return clientConn, nil },
 	})
 	_, err := manager.get(context.Background(), "tablet:9123", Coordinator)
-	if !errors.Is(err, ErrServerRole) {
-		t.Fatalf("get() error = %v, want ErrServerRole", err)
+	if !errors.Is(err, ErrServerType) {
+		t.Fatalf("get() error = %v, want ErrServerType", err)
 	}
 	<-done
 }
 
 func TestConnectionManagerRejectsInvalidOrClosedRequests(t *testing.T) {
 	manager := newConnectionManager(config{})
-	if _, err := manager.getNode(context.Background(), Node{Role: Coordinator}); !errors.Is(err, ErrInvalidConfig) {
+	if _, err := manager.getNode(context.Background(), ServerNode{ServerType: Coordinator}); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("empty address error = %v", err)
 	}
-	if _, err := manager.getNode(context.Background(), Node{Address: "server:9123", Role: UnknownServerRole}); !errors.Is(err, ErrServerRole) {
-		t.Fatalf("unknown role error = %v", err)
+	if _, err := manager.getNode(context.Background(), ServerNode{Address: "server:9123", ServerType: UnknownServerType}); !errors.Is(err, ErrServerType) {
+		t.Fatalf("unknown server type error = %v", err)
 	}
 	if err := manager.Close(); err != nil {
 		t.Fatal(err)
@@ -215,7 +215,7 @@ func TestConnectionManagerRejectsInvalidOrClosedRequests(t *testing.T) {
 
 func TestConnectionManagerCancelsWaitingDial(t *testing.T) {
 	manager := newConnectionManager(config{})
-	key := connectionKey{id: 1, address: "tablet:9123", role: TabletServer}
+	key := connectionKey{id: 1, address: "tablet:9123", serverType: TabletServer}
 	started := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan struct{})
@@ -230,7 +230,7 @@ func TestConnectionManagerCancelsWaitingDial(t *testing.T) {
 	<-started
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := manager.getNode(ctx, Node{ID: 1, Address: "tablet:9123", Role: TabletServer}); !errors.Is(err, context.Canceled) {
+	if _, err := manager.getNode(ctx, ServerNode{ID: 1, Address: "tablet:9123", ServerType: TabletServer}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("waiting get error = %v, want context.Canceled", err)
 	}
 	close(release)
@@ -281,7 +281,7 @@ func TestClientRequestToUsesTabletConnection(t *testing.T) {
 	tabletClient, tabletServer := net.Pipe()
 	tabletDone := serveVersionThenRequest(t, tabletServer, TabletServer, fmsg.APIKeyApiVersions)
 	client, err := Open(context.Background(),
-		WithSeedBrokers("coordinator:9123"),
+		WithBootstrapServers("coordinator:9123"),
 		WithDialContext(func(_ context.Context, _, address string) (net.Conn, error) {
 			switch address {
 			case "coordinator:9123":
@@ -300,7 +300,7 @@ func TestClientRequestToUsesTabletConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.RequestTo(context.Background(), Node{ID: 7, Address: "tablet:9123", Role: TabletServer}, request); err != nil {
+	if _, err := client.RequestTo(context.Background(), ServerNode{ID: 7, Address: "tablet:9123", ServerType: TabletServer}, request); err != nil {
 		t.Fatalf("RequestTo() error = %v", err)
 	}
 	if err := client.Close(); err != nil {
@@ -332,11 +332,11 @@ func TestClientRequestBucketRefreshesStaleLeader(t *testing.T) {
 	})
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}, Partition: "day=2026-07-30"}
 	leader := 0
-	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		return TableMetadata{Path: path.TablePath}, nil
 	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
 		leader++
-		return PartitionMetadata{Path: path, Buckets: map[int32]Node{0: {ID: int32(leader), Address: fmt.Sprintf("tablet-%d:9123", leader), Role: TabletServer}}}, nil
+		return PartitionMetadata{Path: path, Buckets: map[int32]ServerNode{0: {ID: int32(leader), Address: fmt.Sprintf("tablet-%d:9123", leader), ServerType: TabletServer}}}, nil
 	})
 	client := &Client{manager: manager, router: router}
 	request, err := apiVersionsRequest()
@@ -379,12 +379,12 @@ func TestClientRequestBucketInvalidatesDisconnectedLeaderWithoutReplay(t *testin
 	})
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
 	leader := 0
-	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		leader++
 		return TableMetadata{
 			Path: path.TablePath,
-			Buckets: map[int32]Node{0: {
-				ID: int32(leader), Address: fmt.Sprintf("tablet-%d:9123", leader), Role: TabletServer,
+			Buckets: map[int32]ServerNode{0: {
+				ID: int32(leader), Address: fmt.Sprintf("tablet-%d:9123", leader), ServerType: TabletServer,
 			}},
 		}, nil
 	})
@@ -442,7 +442,7 @@ func TestConnectionManagerRedialsDisconnectedServer(t *testing.T) {
 			return secondClient, nil
 		},
 	})
-	node := Node{ID: 7, Address: "tablet:9123", Role: TabletServer}
+	node := ServerNode{ID: 7, Address: "tablet:9123", ServerType: TabletServer}
 	if _, err := manager.getNode(context.Background(), node); err != nil {
 		t.Fatalf("getNode() error = %v", err)
 	}
@@ -471,7 +471,7 @@ func TestConnectionManagerCancellationDoesNotPoisonEstablishedConnection(t *test
 	dials := 0
 	client, err := Open(
 		context.Background(),
-		WithSeedBrokers("coordinator:9123"),
+		WithBootstrapServers("coordinator:9123"),
 		WithDialContext(func(context.Context, string, string) (net.Conn, error) {
 			dials++
 			return clientConn, nil
@@ -514,7 +514,7 @@ func TestConnectionManagerEvictsConnectionAfterPartialCanceledWrite(t *testing.T
 	dials := 0
 	client, err := Open(
 		context.Background(),
-		WithSeedBrokers("coordinator:9123"),
+		WithBootstrapServers("coordinator:9123"),
 		WithDialContext(func(context.Context, string, string) (net.Conn, error) {
 			dials++
 			if dials == 1 {
@@ -568,7 +568,7 @@ func TestClientCoordinatorReplacementKeepsLogicalClientOpen(t *testing.T) {
 	releaseReplacement := make(chan struct{})
 	client, err := Open(
 		context.Background(),
-		WithSeedBrokers("coordinator:9123"),
+		WithBootstrapServers("coordinator:9123"),
 		WithRetryPolicy(RetryPolicy{
 			MaxAttempts: 2,
 			Backoff:     func(int) time.Duration { return 0 },
@@ -587,7 +587,7 @@ func TestClientCoordinatorReplacementKeepsLogicalClientOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := connectionKey{id: -1, address: "coordinator:9123", role: Coordinator}
+	key := connectionKey{id: -1, address: "coordinator:9123", serverType: Coordinator}
 	client.manager.mu.Lock()
 	bootstrap := client.manager.clients[key]
 	client.manager.mu.Unlock()
@@ -604,7 +604,7 @@ func TestClientCoordinatorReplacementKeepsLogicalClientOpen(t *testing.T) {
 	<-replacementStarted
 	openDuringReplacement := client.ensureOpen()
 	probe, probeErr := client.NewBatchScanner(
-		context.Background(), kvWriterTable(), testTableBucket(kvWriterTable()),
+		context.Background(), upsertWriterTable(), testTableBucket(upsertWriterTable()),
 	)
 	if probe != nil {
 		_ = probe.Close()
@@ -619,11 +619,11 @@ func TestClientCoordinatorReplacementKeepsLogicalClientOpen(t *testing.T) {
 	if err := client.ensureOpen(); err != nil {
 		t.Fatalf("logical client after replacement = %v", err)
 	}
-	table, err := client.OpenTable(
+	table, err := client.GetTable(
 		context.Background(), TablePath{Database: "db", Table: "events"},
 	)
 	if err != nil || table.ID != 9 || table.SchemaID != 3 || table.Kind != PrimaryKeyTable {
-		t.Fatalf("OpenTable() after replacement = %#v, %v", table, err)
+		t.Fatalf("GetTable() after replacement = %#v, %v", table, err)
 	}
 	buckets, err := client.ResolveTableBuckets(
 		context.Background(), PhysicalTablePath{TablePath: table.Path},
@@ -641,10 +641,10 @@ func TestClientCoordinatorReplacementKeepsLogicalClientOpen(t *testing.T) {
 	if err := client.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.OpenTable(
+	if _, err := client.GetTable(
 		context.Background(), TablePath{Database: "db", Table: "events"},
 	); !errors.Is(err, ErrClosed) {
-		t.Fatalf("OpenTable() after Close error = %v", err)
+		t.Fatalf("GetTable() after Close error = %v", err)
 	}
 	<-firstDone
 	<-secondDone
@@ -668,7 +668,7 @@ func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
 			return secondClient, nil
 		},
 	})
-	node := Node{ID: 7, Address: "tablet:9123", Role: TabletServer}
+	node := ServerNode{ID: 7, Address: "tablet:9123", ServerType: TabletServer}
 	request, _ := apiVersionsRequest()
 	if _, err := manager.request(context.Background(), node, request); err != nil {
 		t.Fatalf("retry request error = %v", err)
@@ -681,7 +681,7 @@ func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
 		t.Fatalf("retry metric = %#v, found=%v", event, ok)
 	}
 	if event, ok := metrics.find(MetricRemoteIO, MetricOperationDial); !ok ||
-		event.ServerRole != TabletServer || event.Failed {
+		event.ServerType != TabletServer || event.Failed {
 		t.Fatalf("dial metric = %#v, found=%v", event, ok)
 	}
 	if safeToRetry(fmsg.APIKeyCreateDatabase) {
@@ -694,22 +694,22 @@ func TestConnectionManagerRetriesOnlySafeRequests(t *testing.T) {
 	<-secondDone
 }
 
-func TestServerRole(t *testing.T) {
-	for _, role := range []ServerRole{Coordinator, TabletServer} {
-		got, err := serverRole(int32(role))
-		if err != nil || got != role {
-			t.Fatalf("serverRole(%d) = %v, %v", role, got, err)
+func TestServerType(t *testing.T) {
+	for _, serverType := range []ServerType{Coordinator, TabletServer} {
+		got, err := parseServerType(int32(serverType))
+		if err != nil || got != serverType {
+			t.Fatalf("parseServerType(%d) = %v, %v", serverType, got, err)
 		}
 	}
-	if _, err := serverRole(0); !errors.Is(err, ErrServerRole) {
-		t.Fatalf("serverRole(0) error = %v", err)
+	if _, err := parseServerType(0); !errors.Is(err, ErrServerType) {
+		t.Fatalf("parseServerType(0) error = %v", err)
 	}
-	if got, want := UnknownServerRole.String(), "unknown"; got != want {
-		t.Fatalf("unknown role string = %q, want %q", got, want)
+	if got, want := UnknownServerType.String(), "unknown"; got != want {
+		t.Fatalf("unknown server type string = %q, want %q", got, want)
 	}
 }
 
-func serveVersions(t *testing.T, conn net.Conn, role ServerRole) <-chan struct{} {
+func serveVersions(t *testing.T, conn net.Conn, serverType ServerType) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -720,7 +720,7 @@ func serveVersions(t *testing.T, conn net.Conn, role ServerRole) <-chan struct{}
 			t.Errorf("API key = %d, want API_VERSIONS", key)
 			return
 		}
-		body, err := versionResponse(role)
+		body, err := versionResponse(serverType)
 		if err != nil {
 			t.Error(err)
 			return
@@ -731,7 +731,7 @@ func serveVersions(t *testing.T, conn net.Conn, role ServerRole) <-chan struct{}
 	return done
 }
 
-func serveVersionThenRequest(t *testing.T, conn net.Conn, role ServerRole, expected fmsg.APIKey) <-chan struct{} {
+func serveVersionThenRequest(t *testing.T, conn net.Conn, serverType ServerType, expected fmsg.APIKey) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -742,7 +742,7 @@ func serveVersionThenRequest(t *testing.T, conn net.Conn, role ServerRole, expec
 			t.Errorf("API key = %d, want API_VERSIONS", key)
 			return
 		}
-		body, err := versionResponse(role)
+		body, err := versionResponse(serverType)
 		if err != nil {
 			t.Error(err)
 			return
@@ -754,7 +754,7 @@ func serveVersionThenRequest(t *testing.T, conn net.Conn, role ServerRole, expec
 			return
 		}
 		if expected == fmsg.APIKeyApiVersions {
-			body, err = versionResponse(role)
+			body, err = versionResponse(serverType)
 			if err != nil {
 				t.Error(err)
 				return
@@ -769,7 +769,7 @@ func serveVersionThenRequest(t *testing.T, conn net.Conn, role ServerRole, expec
 func serveVersionThenPartialRequest(
 	t *testing.T,
 	conn net.Conn,
-	role ServerRole,
+	serverType ServerType,
 	partial chan<- struct{},
 	release <-chan struct{},
 ) <-chan struct{} {
@@ -783,7 +783,7 @@ func serveVersionThenPartialRequest(
 			t.Errorf("API key = %d, want API_VERSIONS", key)
 			return
 		}
-		body, err := versionResponse(role)
+		body, err := versionResponse(serverType)
 		if err != nil {
 			t.Error(err)
 			return
@@ -813,7 +813,7 @@ func serveVersionThenPartialRequest(
 func serveAuthenticatedVersions(
 	t *testing.T,
 	conn net.Conn,
-	role ServerRole,
+	serverType ServerType,
 	authenticationSeen chan<- struct{},
 	release <-chan struct{},
 ) <-chan struct{} {
@@ -828,7 +828,7 @@ func serveAuthenticatedVersions(
 			return
 		}
 		body, err := proto.Marshal(&fmsg.ApiVersionsResponse{
-			ServerType: proto.Int32(int32(role)),
+			ServerType: proto.Int32(int32(serverType)),
 			ApiVersions: []*fmsg.PbApiVersion{
 				apiVersion(fmsg.APIKeyApiVersions, 0, 0),
 				apiVersion(fmsg.APIKeyAuthenticate, 0, 0),
@@ -854,7 +854,7 @@ func serveAuthenticatedVersions(
 	return done
 }
 
-func serveThenDisconnect(t *testing.T, conn net.Conn, role ServerRole, disconnect <-chan struct{}) <-chan struct{} {
+func serveThenDisconnect(t *testing.T, conn net.Conn, serverType ServerType, disconnect <-chan struct{}) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -865,7 +865,7 @@ func serveThenDisconnect(t *testing.T, conn net.Conn, role ServerRole, disconnec
 			t.Errorf("API key = %d, want API_VERSIONS", key)
 			return
 		}
-		body, err := versionResponse(role)
+		body, err := versionResponse(serverType)
 		if err != nil {
 			t.Error(err)
 			return
@@ -876,7 +876,7 @@ func serveThenDisconnect(t *testing.T, conn net.Conn, role ServerRole, disconnec
 	return done
 }
 
-func serveVersionThenRemoteError(t *testing.T, conn net.Conn, role ServerRole, code fmsg.ErrorCode) <-chan struct{} {
+func serveVersionThenRemoteError(t *testing.T, conn net.Conn, serverType ServerType, code fmsg.ErrorCode) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -887,7 +887,7 @@ func serveVersionThenRemoteError(t *testing.T, conn net.Conn, role ServerRole, c
 			t.Errorf("API key = %d, want API_VERSIONS", key)
 			return
 		}
-		body, err := versionResponse(role)
+		body, err := versionResponse(serverType)
 		if err != nil {
 			t.Error(err)
 			return
@@ -968,18 +968,18 @@ func serveReplacementCoordinator(t *testing.T, conn net.Conn) <-chan struct{} {
 	return done
 }
 
-func versionResponse(role ServerRole) ([]byte, error) {
-	return versionResponseFor(role, fmsg.APIKeyApiVersions)
+func versionResponse(serverType ServerType) ([]byte, error) {
+	return versionResponseFor(serverType, fmsg.APIKeyApiVersions)
 }
 
-func versionResponseFor(role ServerRole, keys ...fmsg.APIKey) ([]byte, error) {
+func versionResponseFor(serverType ServerType, keys ...fmsg.APIKey) ([]byte, error) {
 	versions := make([]*fmsg.PbApiVersion, len(keys))
 	for index, key := range keys {
 		versions[index] = apiVersion(key, 0, 0)
 	}
-	roleValue := int32(role)
+	serverTypeValue := int32(serverType)
 	return proto.Marshal(&fmsg.ApiVersionsResponse{
-		ServerType:  &roleValue,
+		ServerType:  &serverTypeValue,
 		ApiVersions: versions,
 	})
 }

@@ -18,7 +18,7 @@ func TestLakeSnapshotMatchesJava091Contract(t *testing.T) {
 		return lakeSnapshotContractResponse(t, path, request)
 	}}
 
-	snapshot, err := newClient(requester).LakeSnapshot(context.Background(), path, nil, true)
+	snapshot, err := newClient(requester).GetReadableLakeSnapshot(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestPlainAuthenticator(t *testing.T) {
-	factory := PlainAuthenticator("alice", "secret")
+func TestSASLPlainAuthenticator(t *testing.T) {
+	factory := SASLPlainAuthenticator("alice", "secret")
 	first, err := factory()
 	if err != nil {
 		t.Fatal(err)
@@ -17,7 +17,7 @@ func TestPlainAuthenticator(t *testing.T) {
 		t.Fatal(err)
 	}
 	if first == second {
-		t.Fatal("PlainAuthenticator() reused an authenticator")
+		t.Fatal("SASLPlainAuthenticator() reused an authenticator")
 	}
 	if first.Protocol() != "PLAIN" || !first.HasInitialResponse() {
 		t.Fatalf("PLAIN capabilities = protocol %q initial %t", first.Protocol(), first.HasInitialResponse())
@@ -40,16 +40,16 @@ func TestPlainAuthenticator(t *testing.T) {
 	}
 }
 
-func TestPlainAuthenticatorRejectsInvalidCredentials(t *testing.T) {
+func TestSASLPlainAuthenticatorRejectsInvalidCredentials(t *testing.T) {
 	for _, factory := range []AuthenticatorFactory{
-		PlainAuthenticator("", "secret"),
-		PlainAuthenticator("alice", ""),
+		SASLPlainAuthenticator("", "secret"),
+		SASLPlainAuthenticator("alice", ""),
 	} {
 		if _, err := factory(); !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("factory error = %v, want ErrInvalidConfig", err)
 		}
 	}
-	auth, err := PlainAuthenticator("alice", "secret")()
+	auth, err := SASLPlainAuthenticator("alice", "secret")()
 	if err != nil {
 		t.Fatal(err)
 	}

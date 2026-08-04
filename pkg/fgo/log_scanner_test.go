@@ -27,7 +27,7 @@ type scannerFetchCall struct {
 type fakeLogScannerBackend struct {
 	mu          sync.Mutex
 	physicalID  int64
-	locations   map[int32]Node
+	locations   map[int32]ServerNode
 	metadataErr error
 	listOffsets map[int32]int64
 	listErr     error
@@ -39,7 +39,14 @@ type fakeLogScannerBackend struct {
 	calls       []scannerFetchCall
 }
 
-func (b *fakeLogScannerBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error) {
+type resolvingLogScannerBackend struct {
+	*fakeLogScannerBackend
+	resolver schemaResolver
+}
+
+func (b resolvingLogScannerBackend) schemaResolver() schemaResolver { return b.resolver }
+
+func (b *fakeLogScannerBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
 	return b.physicalID, b.locations, b.metadataErr
 }
 
@@ -87,9 +94,9 @@ func (b *fakeLogScannerBackend) fetchCalls() []scannerFetchCall {
 }
 
 func scannerBackend(bucketIDs ...int32) *fakeLogScannerBackend {
-	locations := make(map[int32]Node, len(bucketIDs))
+	locations := make(map[int32]ServerNode, len(bucketIDs))
 	for _, bucket := range bucketIDs {
-		locations[bucket] = Node{ID: bucket + 10, Address: "tablet", Role: TabletServer}
+		locations[bucket] = ServerNode{ID: bucket + 10, Address: "tablet", ServerType: TabletServer}
 	}
 	return &fakeLogScannerBackend{
 		physicalID: 9, locations: locations, listOffsets: map[int32]int64{0: 5},
@@ -148,7 +155,7 @@ func requireRecordOffsets(t *testing.T, records []ScanRecord, want ...int64) {
 }
 
 func TestDecodeFetchedRowsTrimsBeforeRequestedOffset(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	encoded := encodedRows(t, table.Schema, 5, 10, 11, 12)
 	for _, test := range []struct {
 		name    string
@@ -173,7 +180,7 @@ func TestDecodeFetchedRowsTrimsBeforeRequestedOffset(t *testing.T) {
 }
 
 func TestDecodeFetchedRowsTrimsMultipleBatchesAndPreservesOffset(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	first := encodedRows(t, table.Schema, 4, 1, 2)
 	second := encodedRows(t, table.Schema, 6, 3, 4, 5)
 	next, rows, arrows, err := decodeFetchedLog(table.Schema, 0, 5, append(first, second...))
@@ -207,7 +214,7 @@ func TestDecodeFetchedRowsTrimsMultipleBatchesAndPreservesOffset(t *testing.T) {
 }
 
 func TestDecodeFetchedArrowTrimsBeforeRequestedOffset(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	encoded := encodedArrowRows(t, table.Schema, 5, 10, 11, 12)
 	for _, test := range []struct {
 		name        string
@@ -249,7 +256,7 @@ func TestDecodeFetchedArrowTrimsBeforeRequestedOffset(t *testing.T) {
 }
 
 func TestDecodeFetchedArrowTrimsMultipleBatchesAndRejectsOverflow(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	first := encodedArrowRows(t, table.Schema, 4, 10, 11)
 	second := encodedArrowRows(t, table.Schema, 6, 12, 13, 14)
 	next, rows, arrows, err := decodeFetchedLog(table.Schema, 0, 5, append(first, second...))
@@ -273,7 +280,7 @@ func TestDecodeFetchedArrowTrimsMultipleBatchesAndRejectsOverflow(t *testing.T) 
 }
 
 func TestLogScannerIgnoresIncompleteTrailingRowBatch(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	first := encodedRows(t, table.Schema, 4, 1, 2)
 	second := encodedRows(t, table.Schema, 6, 3, 4, 5)
@@ -306,7 +313,7 @@ func TestLogScannerIgnoresIncompleteTrailingRowBatch(t *testing.T) {
 }
 
 func TestLogScannerIgnoresIncompleteTrailingArrowBatch(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	first := encodedArrowRows(t, table.Schema, 10, 1, 2)
 	second := encodedArrowRows(t, table.Schema, 12, 3, 4, 5)
@@ -345,7 +352,7 @@ func TestLogScannerIgnoresIncompleteTrailingArrowBatch(t *testing.T) {
 }
 
 func TestLogScannerRetriesIncompleteFirstBatchWithoutAdvancing(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	complete := encodedRows(t, table.Schema, 20, 1, 2)
 	backend.fetches[0] = scannerFetch{records: complete[:len(complete)-1]}
@@ -376,7 +383,7 @@ func TestLogScannerRetriesIncompleteFirstBatchWithoutAdvancing(t *testing.T) {
 }
 
 func TestLogScannerAcceptsFirstArrowBatchLargerThanBucketFetchLimit(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	arrowSchema, err := table.Schema.ArrowSchema()
 	if err != nil {
 		t.Fatal(err)
@@ -418,13 +425,13 @@ func TestLogScannerAcceptsFirstArrowBatchLargerThanBucketFetchLimit(t *testing.T
 	}
 	result.Release()
 	calls := backend.fetchCalls()
-	if len(calls) != 1 || calls[0].config.MaxBucketBytes != 1<<20 {
+	if len(calls) != 1 || calls[0].config.FetchMaxBytesForBucket != 1<<20 {
 		t.Fatalf("fetch calls = %#v", calls)
 	}
 }
 
 func TestLogScannerRejectsInvalidCompleteBatchHeader(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	backend.fetches[0] = scannerFetch{records: make([]byte, 12)}
 	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(0))
@@ -441,7 +448,7 @@ func TestLogScannerRejectsInvalidCompleteBatchHeader(t *testing.T) {
 }
 
 func TestLogScannerAppliesBoundsAfterTrimmingRows(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	for _, test := range []struct {
 		name   string
 		option LogScannerOption
@@ -471,7 +478,7 @@ func TestLogScannerAppliesBoundsAfterTrimmingRows(t *testing.T) {
 }
 
 func TestLogScannerAppliesBoundsAfterTrimmingArrow(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	for _, test := range []struct {
 		name   string
 		option LogScannerOption
@@ -505,7 +512,7 @@ func TestLogScannerAppliesBoundsAfterTrimmingArrow(t *testing.T) {
 }
 
 func TestLogScannerTimestampTrimsPerBucketRows(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.BucketCount = 2
 	backend := scannerBackend(0, 1)
 	backend.listOffsets = map[int32]int64{0: 5, 1: 8}
@@ -533,7 +540,7 @@ func TestLogScannerTimestampTrimsPerBucketRows(t *testing.T) {
 }
 
 func TestLogScannerTimestampTrimsArrowBatch(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	backend.listOffsets[0] = 12
 	backend.fetches[0] = scannerFetch{records: encodedArrowRows(t, table.Schema, 10, 1, 2, 3, 4)}
@@ -556,7 +563,7 @@ func TestLogScannerTimestampTrimsArrowBatch(t *testing.T) {
 }
 
 func TestLogScannerDoesNotRegressAfterEntirelyOldBatch(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 4, 1, 2)}
 	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(8))
@@ -584,7 +591,7 @@ func TestLogScannerDoesNotRegressAfterEntirelyOldBatch(t *testing.T) {
 }
 
 func TestLogScannerStoppingOffsetsReopenAfterSubscribe(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1, 2)}
 	scanner, err := newLogScanner(
@@ -612,7 +619,7 @@ func TestLogScannerStoppingOffsetsReopenAfterSubscribe(t *testing.T) {
 }
 
 func TestLogScannerRowLimitRemainsDoneAfterSubscribe(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1)}
 	scanner, err := newLogScanner(
@@ -633,7 +640,7 @@ func TestLogScannerRowLimitRemainsDoneAfterSubscribe(t *testing.T) {
 }
 
 func TestLogScannerStoppingOffsetsIgnoreUnsubscribedBuckets(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.BucketCount = 2
 	backend := scannerBackend(0, 1)
 	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1, 2)}
@@ -655,7 +662,7 @@ func TestLogScannerStoppingOffsetsIgnoreUnsubscribedBuckets(t *testing.T) {
 }
 
 func TestLogScannerPollPreservesBucketOrderAndPartialErrors(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.BucketCount = 2
 	backend := scannerBackend(1, 0)
 	first := encodedRows(t, table.Schema, 5, 1, 2)
@@ -691,7 +698,7 @@ func TestLogScannerPollPreservesBucketOrderAndPartialErrors(t *testing.T) {
 }
 
 func TestLogScannerRowLimitAndStoppingOffsets(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.BucketCount = 2
 	backend := scannerBackend(0, 1)
 	backend.fetches[0] = scannerFetch{records: encodedRows(t, table.Schema, 5, 1, 2, 3)}
@@ -748,7 +755,7 @@ func TestLogScannerRowLimitAndStoppingOffsets(t *testing.T) {
 }
 
 func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.BucketCount = 1
 	backend := scannerBackend(0)
 	backend.listOffsets[0] = 12
@@ -766,7 +773,7 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	backend.fetches[0] = scannerFetch{records: encoded}
 	scanner, err := newLogScanner(
 		context.Background(), backend, table, Earliest(),
-		WithScanProjection("name"), WithScanLimits(4096, 2048, 1, time.Millisecond),
+		WithScanProjection("name"), WithLogFetchLimits(4096, 2048, 1, time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -780,15 +787,86 @@ func TestLogScannerProjectionAndOffsetInitialization(t *testing.T) {
 	}
 	call := backend.fetchCalls()[0]
 	if call.offset != 12 || len(call.projection) != 1 || call.projection[0] != 1 ||
-		call.config.MaxBytes != 4096 {
+		call.config.FetchMaxBytes != 4096 {
 		t.Fatalf("projected fetch = %#v", call)
 	}
 	result.Release()
 	_ = scanner.Close()
 }
 
+func TestLogScannerEvolvesAndProjectsHistoricalRowsAndArrow(t *testing.T) {
+	path := TablePath{Database: "db", Table: "events"}
+	source := evolutionSchema("old_name", true, StringType)
+	target := Schema{
+		Columns: []Column{
+			{Name: "id", Type: IntType, ID: 1},
+			{Name: "name", Type: StringType, Nullable: true, ID: 2},
+			{Name: "extra", Type: BigIntType, Nullable: true, ID: 3},
+		},
+		HighestFieldID: 3,
+	}
+	table := Table{ID: 9, SchemaID: 2, Path: path, Kind: LogTable, BucketCount: 1, Schema: target}
+	rowBatch, err := (LogBatch{
+		Magic: 0, BaseOffset: 0, SchemaID: 1, AppendOnly: true,
+		Records: []Record{{Value: Row{int32(1), "row"}, Change: Append}},
+	}).EncodeRows(source, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arrowSchema, err := source.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrowSchema)
+	builder.Field(0).(*array.Int32Builder).Append(2)
+	builder.Field(1).(*array.StringBuilder).Append("arrow")
+	record := builder.NewRecordBatch()
+	builder.Release()
+	arrowBatch, err := EncodeArrowLogBatch(ArrowLogBatch{
+		Magic: 0, BaseOffset: 1, SchemaID: 1, Record: record, Changes: []ChangeType{Append},
+	}, ArrowCompressionNone, memory.DefaultAllocator)
+	record.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{
+		records: append(rowBatch, arrowBatch...), highWatermark: 2,
+	}
+	resolving := resolvingLogScannerBackend{
+		fakeLogScannerBackend: backend,
+		resolver:              &mapSchemaResolver{schemas: map[int32]Schema{1: source, 2: target}},
+	}
+	scanner, err := newLogScanner(
+		context.Background(), resolving, table, AtOffset(0),
+		WithScanProjection("extra", "name"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Release()
+	defer scanner.Close()
+	if len(result.Records) != 1 || len(result.Records[0].Record.Value) != 2 ||
+		result.Records[0].Record.Value[0] != nil || result.Records[0].Record.Value[1] != "row" {
+		t.Fatalf("evolved projected row = %#v", result.Records)
+	}
+	if len(result.ArrowBatches) != 1 {
+		t.Fatalf("evolved projected Arrow batches = %#v", result.ArrowBatches)
+	}
+	projected := result.ArrowBatches[0].Batch.Record
+	if projected.NumCols() != 2 || projected.NumRows() != 1 ||
+		projected.Schema().Field(0).Name != "extra" || projected.Schema().Field(1).Name != "name" ||
+		projected.Column(0).NullN() != 1 || projected.Column(1).(*array.String).Value(0) != "arrow" {
+		t.Fatalf("evolved projected Arrow record = %#v", projected)
+	}
+}
+
 func TestLogScannerDecodesIndexedTable(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	table.Properties = map[string]string{"table.log.format": "INDEXED"}
 	backend := scannerBackend(0)
 	encoded, err := (LogBatch{
@@ -819,7 +897,7 @@ func TestLogScannerDecodesIndexedTable(t *testing.T) {
 }
 
 func TestLogScannerArrowBatchOwnership(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
@@ -856,7 +934,7 @@ func TestLogScannerArrowBatchOwnership(t *testing.T) {
 }
 
 func TestLogScannerSlicesArrowBatchAtLimit(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
@@ -895,7 +973,7 @@ func TestLogScannerSlicesArrowBatchAtLimit(t *testing.T) {
 }
 
 func TestLogScannerWakeupAndErrorPrecedence(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	block := make(chan struct{})
 	entered := make(chan struct{})
 	backend := scannerBackend(0)
@@ -942,7 +1020,7 @@ func TestLogScannerWakeupAndErrorPrecedence(t *testing.T) {
 }
 
 func TestLogScannerSubscribeCloseAndCancellation(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	block := make(chan struct{})
 	backend.block = block
@@ -988,7 +1066,7 @@ func TestLogScannerSubscribeCloseAndCancellation(t *testing.T) {
 }
 
 func TestLogScannerEmptySubscriptionAndMalformedBatch(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	backend := scannerBackend(0)
 	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(0))
 	if err != nil {
@@ -1011,7 +1089,7 @@ func TestLogScannerEmptySubscriptionAndMalformedBatch(t *testing.T) {
 }
 
 func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	for _, test := range []struct {
 		name    string
 		start   ScanOffset
@@ -1026,7 +1104,7 @@ func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
 		{"bad partition", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanPartition("   ")}, ErrInvalidConfig},
 		{"empty projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection()}, ErrInvalidConfig},
 		{"unknown projection", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanProjection("missing")}, ErrInvalidSchema},
-		{"bad limits", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanLimits(0, 1, 2, -1)}, ErrInvalidConfig},
+		{"bad limits", AtOffset(0), scannerBackend(0), []LogScannerOption{WithLogFetchLimits(0, 1, 2, -1)}, ErrInvalidConfig},
 		{"bad row limit", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanRowLimit(0)}, ErrInvalidConfig},
 		{"empty stops", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(nil)}, ErrInvalidConfig},
 		{"negative stop", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(map[int32]int64{0: -1})}, ErrInvalidConfig},
@@ -1057,7 +1135,7 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	var listed *fmsg.ListOffsetsRequest
 	var fetched *fmsg.FetchLogRequest
-	table := logWriterTable()
+	table := appendWriterTable()
 	records := encodedRows(t, table.Schema, 4, 8)
 	client := routedWriterClient(t,
 		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
@@ -1084,7 +1162,7 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 			return response, nil
 		},
 	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
+	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyListOffsets] = 0
 	tablet.versions[fmsg.APIKeyFetchLog] = 0
 	scanner, err := client.NewLogScanner(context.Background(), table, AtTimestamp(time.UnixMilli(1234)))
@@ -1102,6 +1180,21 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 	if fetched.GetFollowerServerId() != -1 || bucket.GetFetchOffset() != 4 ||
 		bucket.GetMaxFetchBytes() != 1<<20 {
 		t.Fatalf("FetchLog request = %#v", fetched)
+	}
+	backend := clientLogScannerBackend{client: client}
+	physicalPath := PhysicalTablePath{TablePath: path}
+	if offset, listErr := backend.listOffset(
+		context.Background(), physicalPath, 0, 9, 23, Earliest(),
+	); listErr != nil || offset != 4 || listed.GetPartitionId() != 23 || listed.GetOffsetType() != 0 {
+		t.Fatalf("partition ListOffsets = %#v, offset %d, error %v", listed, offset, listErr)
+	}
+	fetchResult, fetchErr := backend.fetch(context.Background(), logFetchRequest{
+		path: physicalPath, bucket: 0, tableID: 9, partitionID: 23, offset: 4,
+		config: LogScannerConfig{FetchMaxBytes: 2 << 20, FetchMaxBytesForBucket: 1 << 20},
+	})
+	if fetchErr != nil || fetchResult.highWatermark != 5 ||
+		fetched.GetTablesReq()[0].GetBucketsReq()[0].GetPartitionId() != 23 {
+		t.Fatalf("partition FetchLog = %#v, result %#v, error %v", fetched, fetchResult, fetchErr)
 	}
 	result.Release()
 	_ = scanner.Close()
@@ -1132,7 +1225,7 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 			return response, nil
 		},
 	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
+	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyListOffsets], tablet.versions[fmsg.APIKeyFetchLog] = 0, 0
 	backend := clientLogScannerBackend{client: client}
 	if _, err := backend.listOffset(context.Background(), path, 0, 9, -1, Latest()); !errors.Is(err, ErrAuthorization) {
@@ -1140,11 +1233,83 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 	}
 	if _, err := backend.fetch(context.Background(), logFetchRequest{
 		path: path, tableID: 9, partitionID: -1,
-		config: LogScannerConfig{MaxBytes: 1, MaxBucketBytes: 1},
+		config: LogScannerConfig{FetchMaxBytes: 1, FetchMaxBytesForBucket: 1},
 	}); !errors.Is(err, ErrRecord) {
 		t.Fatalf("FetchLog error = %v", err)
 	}
 	if _, err := backend.listOffset(context.Background(), path, 0, 9, -1, AtOffset(0)); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("explicit ListOffsets error = %v", err)
+	}
+
+	for _, test := range []struct {
+		name     string
+		fetch    bool
+		mode     string
+		target   error
+		contains string
+	}{
+		{name: "list transport", mode: "transport", target: context.Canceled},
+		{name: "list response type", mode: "unexpected", contains: "list offsets: unexpected response"},
+		{name: "list omitted bucket", mode: "omitted", target: ErrValidation},
+		{name: "list mismatched bucket", mode: "mismatched", target: ErrValidation},
+		{name: "fetch transport", fetch: true, mode: "transport", target: context.Canceled},
+		{name: "fetch response type", fetch: true, mode: "unexpected", contains: "fetch log: unexpected response"},
+		{name: "fetch omitted table", fetch: true, mode: "omitted", target: ErrValidation},
+		{name: "fetch mismatched table", fetch: true, mode: "table", target: ErrValidation},
+		{name: "fetch omitted bucket", fetch: true, mode: "bucket omitted", target: ErrValidation},
+		{name: "fetch mismatched bucket", fetch: true, mode: "bucket mismatched", target: ErrValidation},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tablet.requester = requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+				if test.mode == "transport" {
+					return nil, context.Canceled
+				}
+				if test.mode == "unexpected" {
+					response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
+					return response, nil
+				}
+				response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+				switch message := response.Message().(type) {
+				case *fmsg.ListOffsetsResponse:
+					if test.mode != "omitted" {
+						bucket := int32(0)
+						if test.mode == "mismatched" {
+							bucket = 1
+						}
+						message.BucketsResp = []*fmsg.PbListOffsetsRespForBucket{{BucketId: proto.Int32(bucket)}}
+					}
+				case *fmsg.FetchLogResponse:
+					if test.mode != "omitted" {
+						tableID := int64(9)
+						if test.mode == "table" {
+							tableID = 10
+						}
+						table := &fmsg.PbFetchLogRespForTable{TableId: proto.Int64(tableID)}
+						if test.mode != "bucket omitted" {
+							bucket := int32(0)
+							if test.mode == "bucket mismatched" {
+								bucket = 1
+							}
+							table.BucketsResp = []*fmsg.PbFetchLogRespForBucket{{BucketId: proto.Int32(bucket)}}
+						}
+						message.TablesResp = []*fmsg.PbFetchLogRespForTable{table}
+					}
+				}
+				return response, nil
+			})
+			var err error
+			if test.fetch {
+				_, err = backend.fetch(context.Background(), logFetchRequest{
+					path: path, bucket: 0, tableID: 9, partitionID: -1,
+					config: LogScannerConfig{FetchMaxBytes: 1, FetchMaxBytesForBucket: 1},
+				})
+			} else {
+				_, err = backend.listOffset(context.Background(), path, 0, 9, -1, Latest())
+			}
+			if err == nil || (test.target != nil && !errors.Is(err, test.target)) ||
+				(test.contains != "" && !strings.Contains(err.Error(), test.contains)) {
+				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
+			}
+		})
 	}
 }

@@ -15,11 +15,11 @@ func TestRouterCoalescesConcurrentRefresh(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	var startOnce sync.Once
-	router := NewRouter(Node{ID: 1}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{ID: 1}, func(context.Context, TablePath) (TableMetadata, error) {
 		calls.Add(1)
 		startOnce.Do(func() { close(started) })
 		<-release
-		return TableMetadata{Path: path, Buckets: map[int32]Node{3: {ID: 8, Address: "tablet:9123"}}}, nil
+		return TableMetadata{Path: path, Buckets: map[int32]ServerNode{3: {ID: 8, Address: "tablet:9123"}}}, nil
 	})
 	var wait sync.WaitGroup
 	ready := make(chan struct{}, 8)
@@ -57,8 +57,8 @@ func TestRouterCoalescesConcurrentRefresh(t *testing.T) {
 func TestRouterInvalidationRefreshesLeader(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	leader := atomic.Int32{}
-	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
-		return TableMetadata{Path: path, Buckets: map[int32]Node{0: {ID: leader.Add(1)}}}, nil
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
+		return TableMetadata{Path: path, Buckets: map[int32]ServerNode{0: {ID: leader.Add(1)}}}, nil
 	})
 	first, err := router.Route(context.Background(), path, 0)
 	if err != nil {
@@ -81,14 +81,14 @@ func TestRouterRoutesPhysicalPartitionAndCoalescesRefresh(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	var startOnce sync.Once
-	router := NewRouter(Node{ID: 1, Role: Coordinator}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{ID: 1, ServerType: Coordinator}, func(context.Context, TablePath) (TableMetadata, error) {
 		tableCalls.Add(1)
 		return TableMetadata{Path: table}, nil
 	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
 		partitionCalls.Add(1)
 		startOnce.Do(func() { close(started) })
 		<-release
-		return PartitionMetadata{Path: path, ID: 11, Buckets: map[int32]Node{2: {ID: 4, Address: "tablet:9123", Role: TabletServer}}}, nil
+		return PartitionMetadata{Path: path, ID: 11, Buckets: map[int32]ServerNode{2: {ID: 4, Address: "tablet:9123", ServerType: TabletServer}}}, nil
 	})
 
 	var wait sync.WaitGroup
@@ -121,13 +121,13 @@ func TestRouterRoutesPhysicalPartitionAndCoalescesRefresh(t *testing.T) {
 
 func TestRouterPhysicalAndTableFailuresAreTyped(t *testing.T) {
 	table := TablePath{Database: "db", Table: "missing"}
-	missing := NewRouter(Node{}, nil)
+	missing := NewRouter(ServerNode{}, nil)
 	if _, err := missing.Route(context.Background(), table, 0); !errors.Is(err, ErrUnknownTable) {
 		t.Fatalf("Route() error = %v, want unknown table", err)
 	}
 
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}, Partition: "day=x"}
-	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		return TableMetadata{Path: path.TablePath}, nil
 	})
 	if _, err := router.RoutePhysical(context.Background(), path, 0); !errors.Is(err, ErrUnknownPartition) {
@@ -142,9 +142,9 @@ func TestRouterMetadataErrorRefreshesOnce(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	var leader atomic.Int32
 	var calls atomic.Int32
-	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		calls.Add(1)
-		return TableMetadata{Path: path, Buckets: map[int32]Node{0: {ID: leader.Add(1), Address: "tablet:9123", Role: TabletServer}}}, nil
+		return TableMetadata{Path: path, Buckets: map[int32]ServerNode{0: {ID: leader.Add(1), Address: "tablet:9123", ServerType: TabletServer}}}, nil
 	})
 	if _, err := router.Route(context.Background(), path, 0); err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestRouterRefreshHonorsWaitingContext(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	release := make(chan struct{})
 	started := make(chan struct{})
-	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		close(started)
 		<-release
 		return TableMetadata{Path: path}, nil
@@ -182,10 +182,10 @@ func TestRouterRefreshHonorsWaitingContext(t *testing.T) {
 
 func TestRouterAppliesServerSnapshot(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
-	router := NewRouter(Node{}, func(context.Context, TablePath) (TableMetadata, error) {
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		return TableMetadata{
-			Path: path, coordinator: Node{ID: 1, Address: "coordinator:9123", Role: Coordinator},
-			tablets: map[int32]Node{2: {ID: 2, Address: "tablet:9123", Role: TabletServer}},
+			Path: path, coordinator: ServerNode{ID: 1, Address: "coordinator:9123", ServerType: Coordinator},
+			tablets: map[int32]ServerNode{2: {ID: 2, Address: "tablet:9123", ServerType: TabletServer}},
 		}, nil
 	})
 	if err := router.Refresh(context.Background(), path); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,7 +27,7 @@ type lookupCall struct {
 type fakeLookupBackend struct {
 	mu          sync.Mutex
 	physicalID  int64
-	locations   map[int32]Node
+	locations   map[int32]ServerNode
 	metadataErr error
 	values      map[string][]byte
 	prefixes    map[string][][]byte
@@ -43,7 +44,7 @@ type fakeLookupBackend struct {
 	maxActive   int
 }
 
-func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]Node, error) {
+func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
 	return b.physicalID, b.locations, b.metadataErr
 }
 
@@ -167,9 +168,9 @@ func lookupTable() Table {
 }
 
 func lookupBackendFor(table Table, bucketIDs ...int32) *fakeLookupBackend {
-	locations := make(map[int32]Node, len(bucketIDs))
+	locations := make(map[int32]ServerNode, len(bucketIDs))
 	for _, bucket := range bucketIDs {
-		locations[bucket] = Node{ID: bucket + 10, Address: "tablet", Role: TabletServer}
+		locations[bucket] = ServerNode{ID: bucket + 10, Address: "tablet", ServerType: TabletServer}
 	}
 	return &fakeLookupBackend{
 		physicalID: table.ID, locations: locations,
@@ -199,12 +200,12 @@ func encodeLookupValue(t testing.TB, table Table, row Row) []byte {
 	return value
 }
 
-func TestLookupClientPreservesInputAndNotFound(t *testing.T) {
+func TestLookuperPreservesInputAndNotFound(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	putLookupValue(t, backend, table, PrimaryKey{"a", int32(1)}, Row{"a", int32(1), "one"})
 	putLookupValue(t, backend, table, PrimaryKey{"b", int32(2)}, Row{"b", int32(2), "two"})
-	client, err := newLookupClient(context.Background(), backend, table, WithLookupBatch(1, 2))
+	client, err := newLookuper(context.Background(), backend, table, WithLookupBatchLimits(1, 2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,15 +225,15 @@ func TestLookupClientPreservesInputAndNotFound(t *testing.T) {
 	_ = client.Close()
 }
 
-func TestLookupClientBatchesConcurrentCalls(t *testing.T) {
+func TestLookuperBatchesConcurrentCalls(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"shared", int32(1)}
 	putLookupValue(t, backend, table, key, Row{"shared", int32(1), "one"})
 	const callers = 16
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(callers, 2),
+		WithLookupBatchLimits(callers, 2),
 		WithLookupQueue(callers, time.Hour),
 	)
 	if err != nil {
@@ -267,7 +268,7 @@ func TestLookupClientBatchesConcurrentCalls(t *testing.T) {
 	}
 }
 
-func TestLookupClientKeepsCallerCancellationIndependent(t *testing.T) {
+func TestLookuperKeepsCallerCancellationIndependent(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"shared", int32(1)}
@@ -275,9 +276,9 @@ func TestLookupClientKeepsCallerCancellationIndependent(t *testing.T) {
 	release := make(chan struct{})
 	backend.block = release
 	backend.entered = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(2, 1),
+		WithLookupBatchLimits(2, 1),
 		WithLookupQueue(2, time.Hour),
 	)
 	if err != nil {
@@ -302,15 +303,15 @@ func TestLookupClientKeepsCallerCancellationIndependent(t *testing.T) {
 	}
 }
 
-func TestLookupClientBoundsQueuedAndInflightKeys(t *testing.T) {
+func TestLookuperBoundsQueuedAndInflightKeys(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	release := make(chan struct{})
 	backend.block = release
 	backend.entered = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1),
+		WithLookupBatchLimits(1, 1),
 		WithLookupQueue(2, 0),
 	)
 	if err != nil {
@@ -346,14 +347,14 @@ func TestLookupClientBoundsQueuedAndInflightKeys(t *testing.T) {
 	}
 }
 
-func TestLookupClientSchedulesIndependentBatchesFairly(t *testing.T) {
+func TestLookuperSchedulesIndependentBatchesFairly(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	release := make(chan struct{})
 	backend.block = release
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 2), WithLookupQueue(2, 0),
+		WithLookupBatchLimits(1, 2), WithLookupQueue(2, 0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -380,7 +381,7 @@ func TestLookupClientSchedulesIndependentBatchesFairly(t *testing.T) {
 	}
 }
 
-func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
+func TestLookuperRetriesOnlyReadOnlyRequests(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"retry", int32(1)}
@@ -391,9 +392,9 @@ func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
 		),
 		nil,
 	}
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1),
+		WithLookupBatchLimits(1, 1),
 		WithLookupQueue(1, 0),
 		WithLookupRetryPolicy(RetryPolicy{MaxAttempts: 2}),
 	)
@@ -416,7 +417,7 @@ func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = newLookupClient(
+	_, err = newLookuper(
 		context.Background(), lookupBackendFor(table, 0, 1), table,
 		WithLookupInsertIfNotExists(time.Second, -1),
 		WithLookupRetryPolicy(RetryPolicy{MaxAttempts: 2}),
@@ -426,14 +427,14 @@ func TestLookupClientRetriesOnlyReadOnlyRequests(t *testing.T) {
 	}
 }
 
-func TestLookupClientRequestTimeout(t *testing.T) {
+func TestLookuperRequestTimeout(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	backend.block = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1), WithLookupQueue(1, 0),
-		WithLookupTimeout(10*time.Millisecond),
+		WithLookupBatchLimits(1, 1), WithLookupQueue(1, 0),
+		WithLookupRequestTimeout(10*time.Millisecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -447,14 +448,14 @@ func TestLookupClientRequestTimeout(t *testing.T) {
 	}
 }
 
-func TestLookupClientCloseCompletesQueuedAndInflight(t *testing.T) {
+func TestLookuperCloseCompletesQueuedAndInflight(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	backend.block = make(chan struct{})
 	backend.entered = make(chan struct{})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(1, 1), WithLookupQueue(3, 0),
+		WithLookupBatchLimits(1, 1), WithLookupQueue(3, 0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -494,7 +495,7 @@ func TestLookupInsertIfNotExists(t *testing.T) {
 	backend := lookupBackendFor(table, 0, 1)
 	key := PrimaryKey{"new", int32(1)}
 	putLookupValue(t, backend, table, key, Row{"new", int32(1), nil})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
 		WithLookupInsertIfNotExists(2*time.Second, 1),
 	)
@@ -542,7 +543,7 @@ func TestDecodeLookupValueRejectsInvalidEnvelope(t *testing.T) {
 	}
 }
 
-func TestPrefixLookupClientDecodesRows(t *testing.T) {
+func TestPrefixLookuperDecodesRows(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	key, err := EncodePrefixLookupKey(table.Schema, PrimaryKey{"a"}, 1)
@@ -553,7 +554,7 @@ func TestPrefixLookupClientDecodesRows(t *testing.T) {
 		value := encodeLookupValue(t, table, row)
 		backend.prefixes[string(key)] = append(backend.prefixes[string(key)], value)
 	}
-	client, err := newLookupClient(context.Background(), backend, table)
+	client, err := newLookuper(context.Background(), backend, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +566,7 @@ func TestPrefixLookupClientDecodesRows(t *testing.T) {
 	_ = client.Close()
 }
 
-func TestPrefixLookupClientBatchesConcurrentCalls(t *testing.T) {
+func TestPrefixLookuperBatchesConcurrentCalls(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	prefix := PrimaryKey{"a"}
@@ -577,9 +578,9 @@ func TestPrefixLookupClientBatchesConcurrentCalls(t *testing.T) {
 		encodeLookupValue(t, table, Row{"a", int32(1), "one"}),
 	}
 	const callers = 4
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(callers, 1), WithLookupQueue(callers, time.Hour),
+		WithLookupBatchLimits(callers, 1), WithLookupQueue(callers, time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -606,12 +607,12 @@ func TestPrefixLookupClientBatchesConcurrentCalls(t *testing.T) {
 	}
 }
 
-func TestLookupClientPartialErrorsAndValidation(t *testing.T) {
+func TestLookuperPartialErrorsAndValidation(t *testing.T) {
 	table := lookupTable()
 	backend := lookupBackendFor(table, 0, 1)
 	backend.lookupErr = errors.New("lookup unavailable")
 	backend.prefixErr = errors.New("prefix unavailable")
-	client, err := newLookupClient(context.Background(), backend, table)
+	client, err := newLookuper(context.Background(), backend, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +628,7 @@ func TestLookupClientPartialErrorsAndValidation(t *testing.T) {
 
 	bad := table
 	bad.Schema.BucketKey = []string{"id"}
-	client, err = newLookupClient(context.Background(), lookupBackendFor(bad, 0, 1), bad)
+	client, err = newLookuper(context.Background(), lookupBackendFor(bad, 0, 1), bad)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -637,14 +638,14 @@ func TestLookupClientPartialErrorsAndValidation(t *testing.T) {
 	_ = client.Close()
 }
 
-func TestLookupClientCancellationAndClose(t *testing.T) {
+func TestLookuperCancellationAndClose(t *testing.T) {
 	table := lookupTable()
 	release := make(chan struct{})
 	entered := make(chan struct{})
 	backend := lookupBackendFor(table, 0, 1)
 	backend.block = release
 	backend.entered = entered
-	client, err := newLookupClient(context.Background(), backend, table)
+	client, err := newLookuper(context.Background(), backend, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -664,7 +665,7 @@ func TestLookupClientCancellationAndClose(t *testing.T) {
 	close(release)
 }
 
-func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
+func TestLookuperRejectsInvalidConfiguration(t *testing.T) {
 	table := lookupTable()
 	logTable := table
 	logTable.Kind = LogTable
@@ -681,19 +682,19 @@ func TestLookupClientRejectsInvalidConfiguration(t *testing.T) {
 		{"log table", logTable, lookupBackendFor(table, 0), nil, ErrTableKind},
 		{"nil option", table, lookupBackendFor(table, 0), []LookupOption{nil}, ErrInvalidConfig},
 		{"bad partition", table, lookupBackendFor(table, 0), []LookupOption{WithLookupPartition("   ")}, ErrInvalidConfig},
-		{"bad batch", table, lookupBackendFor(table, 0), []LookupOption{WithLookupBatch(0, 0)}, ErrInvalidConfig},
+		{"bad batch", table, lookupBackendFor(table, 0), []LookupOption{WithLookupBatchLimits(0, 0)}, ErrInvalidConfig},
 		{"bad queue", table, lookupBackendFor(table, 0), []LookupOption{WithLookupQueue(0, -1)}, ErrInvalidConfig},
 		{"bad retry", table, lookupBackendFor(table, 0), []LookupOption{WithLookupRetryPolicy(RetryPolicy{})}, ErrInvalidConfig},
-		{"bad timeout", table, lookupBackendFor(table, 0), []LookupOption{WithLookupTimeout(0)}, ErrInvalidConfig},
+		{"bad timeout", table, lookupBackendFor(table, 0), []LookupOption{WithLookupRequestTimeout(0)}, ErrInvalidConfig},
 		{"bad insert request", table, lookupBackendFor(table, 0), []LookupOption{WithLookupInsertIfNotExists(0, 2)}, ErrInvalidConfig},
 		{"required insert value", requiredValue, lookupBackendFor(requiredValue, 0), []LookupOption{WithLookupInsertIfNotExists(time.Second, -1)}, ErrInvalidSchema},
 		{"metadata", table, &fakeLookupBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", table, lookupBackendFor(table), nil, ErrMetadata},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := newLookupClient(context.Background(), test.backend, test.table, test.options...)
+			_, err := newLookuper(context.Background(), test.backend, test.table, test.options...)
 			if !errors.Is(err, test.target) {
-				t.Fatalf("newLookupClient() error = %v, want %v", err, test.target)
+				t.Fatalf("newLookuper() error = %v, want %v", err, test.target)
 			}
 		})
 	}
@@ -750,9 +751,9 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 			return response, nil
 		},
 	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
+	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
-	lookup, err := client.NewLookupClient(context.Background(), table)
+	lookup, err := client.NewLookuper(context.Background(), table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -764,9 +765,15 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 	}
 	backend := clientLookupBackend{client: client}
 	if _, err := backend.lookup(context.Background(), lookupRequest{
-		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: table.ID, partitionID: -1,
+		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: table.ID, partitionID: 23,
 		keys: [][]byte{{1}}, insertIfNotExist: true, timeout: 2 * time.Second, acks: -1,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.prefixLookup(
+		context.Background(), PhysicalTablePath{TablePath: path},
+		0, table.ID, 23, [][]byte{{1}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if len(pointRequests) != 2 || pointRequests[0].InsertIfNotExists != nil ||
@@ -774,8 +781,10 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 		!pointRequests[1].GetInsertIfNotExists() || pointRequests[1].GetAcks() != -1 ||
 		pointRequests[1].GetTimeoutMs() != 2000 ||
 		pointRequests[1].GetTableId() != table.ID ||
+		pointRequests[1].GetBucketsReq()[0].GetPartitionId() != 23 ||
 		len(pointRequests[1].GetBucketsReq()[0].GetKeys()) != 1 ||
-		prefixRequest.GetTableId() != table.ID {
+		prefixRequest.GetTableId() != table.ID ||
+		prefixRequest.GetBucketsReq()[0].GetPartitionId() != 23 {
 		t.Fatalf("requests = %#v / %#v", pointRequests, prefixRequest)
 	}
 	_ = lookup.Close()
@@ -783,38 +792,90 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 
 func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 	table := lookupTable()
-	client := routedWriterClient(t,
-		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
-			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-			metadata := metadataResponse(table.Path)
-			metadata.TableMetadata[0].TableId = proto.Int64(table.ID)
-			proto.Merge(response.Message().(*fmsg.MetadataResponse), metadata)
-			return response, nil
-		},
-		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
-			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-			switch message := response.Message().(type) {
-			case *fmsg.LookupResponse:
-				message.BucketsResp = []*fmsg.PbLookupRespForBucket{{
-					BucketId: proto.Int32(0), ErrorCode: proto.Int32(int32(fmsg.ErrorCodeAuthorizationException)),
-				}}
-			case *fmsg.PrefixLookupResponse:
-				message.BucketsResp = []*fmsg.PbPrefixLookupRespForBucket{{BucketId: proto.Int32(0)}}
+	for _, test := range []struct {
+		name     string
+		prefix   bool
+		mode     string
+		target   error
+		contains string
+	}{
+		{name: "lookup request", mode: "request", target: context.Canceled},
+		{name: "lookup response type", mode: "unexpected", contains: "lookup: unexpected response"},
+		{name: "lookup omitted bucket", mode: "omitted", target: ErrValidation},
+		{name: "lookup mismatched bucket", mode: "mismatched", target: ErrValidation},
+		{name: "lookup server error", mode: "server", target: ErrAuthorization},
+		{name: "lookup value count", mode: "count", target: ErrValidation},
+		{name: "prefix request", prefix: true, mode: "request", target: context.Canceled},
+		{name: "prefix response type", prefix: true, mode: "unexpected", contains: "prefix lookup: unexpected response"},
+		{name: "prefix omitted bucket", prefix: true, mode: "omitted", target: ErrValidation},
+		{name: "prefix mismatched bucket", prefix: true, mode: "mismatched", target: ErrValidation},
+		{name: "prefix server error", prefix: true, mode: "server", target: ErrAuthorization},
+		{name: "prefix value count", prefix: true, mode: "count", target: ErrValidation},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := routedWriterClient(t,
+				func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+					response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+					metadata := metadataResponse(table.Path)
+					metadata.TableMetadata[0].TableId = proto.Int64(table.ID)
+					proto.Merge(response.Message().(*fmsg.MetadataResponse), metadata)
+					return response, nil
+				},
+				func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+					if test.mode == "request" {
+						return nil, context.Canceled
+					}
+					if test.mode == "unexpected" {
+						response, _ := fmsg.NewResponse(fmsg.APIKeyApiVersions, 0)
+						return response, nil
+					}
+					response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+					switch message := response.Message().(type) {
+					case *fmsg.LookupResponse:
+						if test.mode != "omitted" {
+							bucket := int32(0)
+							if test.mode == "mismatched" {
+								bucket = 1
+							}
+							result := &fmsg.PbLookupRespForBucket{BucketId: proto.Int32(bucket)}
+							if test.mode == "server" {
+								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
+							}
+							message.BucketsResp = []*fmsg.PbLookupRespForBucket{result}
+						}
+					case *fmsg.PrefixLookupResponse:
+						if test.mode != "omitted" {
+							bucket := int32(0)
+							if test.mode == "mismatched" {
+								bucket = 1
+							}
+							result := &fmsg.PbPrefixLookupRespForBucket{BucketId: proto.Int32(bucket)}
+							if test.mode == "server" {
+								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
+							}
+							message.BucketsResp = []*fmsg.PbPrefixLookupRespForBucket{result}
+						}
+					}
+					return response, nil
+				},
+			)
+			tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
+			tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
+			backend := clientLookupBackend{client: client}
+			path := PhysicalTablePath{TablePath: table.Path}
+			var err error
+			if test.prefix {
+				_, err = backend.prefixLookup(context.Background(), path, 0, table.ID, -1, [][]byte{{1}})
+			} else {
+				_, err = backend.lookup(context.Background(), lookupRequest{
+					path: path, bucket: 0, tableID: table.ID, partitionID: -1, keys: [][]byte{{1}},
+				})
 			}
-			return response, nil
-		},
-	)
-	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", role: TabletServer}]
-	tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
-	backend := clientLookupBackend{client: client}
-	path := PhysicalTablePath{TablePath: table.Path}
-	if _, err := backend.lookup(context.Background(), lookupRequest{
-		path: path, bucket: 0, tableID: table.ID, partitionID: -1, keys: [][]byte{{1}},
-	}); !errors.Is(err, ErrAuthorization) {
-		t.Fatalf("lookup body error = %v", err)
-	}
-	if _, err := backend.prefixLookup(context.Background(), path, 0, table.ID, -1, [][]byte{{1}}); !errors.Is(err, ErrValidation) {
-		t.Fatalf("prefix count error = %v", err)
+			if err == nil || (test.target != nil && !errors.Is(err, test.target)) ||
+				(test.contains != "" && !strings.Contains(err.Error(), test.contains)) {
+				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
+			}
+		})
 	}
 }
 
@@ -839,9 +900,9 @@ func benchmarkLookupCrossCallBatching(b *testing.B, batch int, delay time.Durati
 	backend.delay = 100 * time.Microsecond
 	key := PrimaryKey{"bench", int32(1)}
 	putLookupValue(b, backend, table, key, Row{"bench", int32(1), "one"})
-	client, err := newLookupClient(
+	client, err := newLookuper(
 		context.Background(), backend, table,
-		WithLookupBatch(batch, 8),
+		WithLookupBatchLimits(batch, 8),
 		WithLookupQueue(1024, delay),
 	)
 	if err != nil {

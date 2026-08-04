@@ -603,7 +603,7 @@ func TestReadRemoteLogSegmentsRejectsInvalidAndPartialData(t *testing.T) {
 }
 
 func TestRemoteAndLocalLogPayloadsMergeWithoutGaps(t *testing.T) {
-	table := logWriterTable()
+	table := appendWriterTable()
 	remote, err := (LogBatch{
 		Magic: 1, BaseOffset: 0, SchemaID: int16(table.SchemaID), AppendOnly: true,
 		Records: []Record{{Change: Append, Value: Row{int32(1), "remote"}}},

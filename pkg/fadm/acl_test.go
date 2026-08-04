@@ -10,8 +10,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func validACL() ACL {
-	return ACL{
+func validACL() ACLBinding {
+	return ACLBinding{
 		ResourceName:  "analytics",
 		ResourceType:  ACLResourceDatabase,
 		PrincipalName: "alice",
@@ -22,8 +22,8 @@ func validACL() ACL {
 	}
 }
 
-func validACLFilter() ACLFilter {
-	return ACLFilter{
+func validACLBindingFilter() ACLBindingFilter {
+	return ACLBindingFilter{
 		ResourceType: ACLResourceAny,
 		Operation:    ACLOperationAny,
 		Permission:   ACLPermissionAny,
@@ -122,31 +122,31 @@ func TestACLValidationAndMessage(t *testing.T) {
 		message.GetOperationType() != 8 ||
 		message.GetPermissionType() != 2 ||
 		message.GetPrincipalType() != "User" {
-		t.Fatalf("ACL message = %#v", message)
+		t.Fatalf("ACLBinding message = %#v", message)
 	}
 
-	tests := map[string]func(*ACL){
-		"resource name":    func(acl *ACL) { acl.ResourceName = "" },
-		"resource zero":    func(acl *ACL) { acl.ResourceType = 0 },
-		"resource unknown": func(acl *ACL) { acl.ResourceType = 99 },
-		"resource any":     func(acl *ACL) { acl.ResourceType = ACLResourceAny },
-		"principal name":   func(acl *ACL) { acl.PrincipalName = "" },
-		"principal type":   func(acl *ACL) { acl.PrincipalType = "" },
-		"principal spaces": func(acl *ACL) { acl.PrincipalType = " User " },
-		"principal case":   func(acl *ACL) { acl.PrincipalType = "USER" },
-		"wildcard name": func(acl *ACL) {
+	tests := map[string]func(*ACLBinding){
+		"resource name":    func(acl *ACLBinding) { acl.ResourceName = "" },
+		"resource zero":    func(acl *ACLBinding) { acl.ResourceType = 0 },
+		"resource unknown": func(acl *ACLBinding) { acl.ResourceType = 99 },
+		"resource any":     func(acl *ACLBinding) { acl.ResourceType = ACLResourceAny },
+		"principal name":   func(acl *ACLBinding) { acl.PrincipalName = "" },
+		"principal type":   func(acl *ACLBinding) { acl.PrincipalType = "" },
+		"principal spaces": func(acl *ACLBinding) { acl.PrincipalType = " User " },
+		"principal case":   func(acl *ACLBinding) { acl.PrincipalType = "USER" },
+		"wildcard name": func(acl *ACLBinding) {
 			acl.PrincipalName = ACLWildcardPrincipalName
 		},
-		"wildcard type":     func(acl *ACL) { acl.PrincipalType = ACLPrincipalWildcard },
-		"host":              func(acl *ACL) { acl.Host = "" },
-		"operation zero":    func(acl *ACL) { acl.Operation = 0 },
-		"operation unknown": func(acl *ACL) { acl.Operation = 99 },
-		"operation any":     func(acl *ACL) { acl.Operation = ACLOperationAny },
-		"permission zero":   func(acl *ACL) { acl.Permission = 0 },
-		"permission unknown": func(acl *ACL) {
+		"wildcard type":     func(acl *ACLBinding) { acl.PrincipalType = ACLPrincipalWildcard },
+		"host":              func(acl *ACLBinding) { acl.Host = "" },
+		"operation zero":    func(acl *ACLBinding) { acl.Operation = 0 },
+		"operation unknown": func(acl *ACLBinding) { acl.Operation = 99 },
+		"operation any":     func(acl *ACLBinding) { acl.Operation = ACLOperationAny },
+		"permission zero":   func(acl *ACLBinding) { acl.Permission = 0 },
+		"permission unknown": func(acl *ACLBinding) {
 			acl.Permission = 99
 		},
-		"permission any": func(acl *ACL) { acl.Permission = ACLPermissionAny },
+		"permission any": func(acl *ACLBinding) { acl.Permission = ACLPermissionAny },
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -172,8 +172,8 @@ func TestACLValidationAndMessage(t *testing.T) {
 	}
 }
 
-func TestACLFilterValidationAndMessage(t *testing.T) {
-	filter := validACLFilter()
+func TestACLBindingFilterValidationAndMessage(t *testing.T) {
+	filter := validACLBindingFilter()
 	if err := filter.validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -183,14 +183,14 @@ func TestACLFilterValidationAndMessage(t *testing.T) {
 		message.GetPermissionType() != 1 ||
 		message.PrincipalName != nil ||
 		message.PrincipalType != nil {
-		t.Fatalf("ACL filter message = %#v", message)
+		t.Fatalf("ACLBinding filter message = %#v", message)
 	}
 
 	resourceName := "analytics"
 	principalName := "alice"
 	principalType := ACLPrincipalUser
 	host := ACLWildcardHost
-	filter = ACLFilter{
+	filter = ACLBindingFilter{
 		ResourceName:  &resourceName,
 		ResourceType:  ACLResourceDatabase,
 		PrincipalName: &principalName,
@@ -204,12 +204,12 @@ func TestACLFilterValidationAndMessage(t *testing.T) {
 	}
 	message = filter.message()
 	if message.GetPrincipalType() != "User" || message.GetPrincipalName() != "alice" {
-		t.Fatalf("specific ACL filter message = %#v", message)
+		t.Fatalf("specific ACLBinding filter message = %#v", message)
 	}
 
 	empty := ""
 	upperUser := ACLPrincipalType("USER")
-	tests := map[string]ACLFilter{
+	tests := map[string]ACLBindingFilter{
 		"zero":                {},
 		"resource unknown":    {ResourceType: 99, Operation: ACLOperationAny, Permission: ACLPermissionAny},
 		"resource name empty": {ResourceName: &empty, ResourceType: ACLResourceAny, Operation: ACLOperationAny, Permission: ACLPermissionAny},

@@ -4,7 +4,7 @@ Status: accepted for the Apache Fluss 0.9.1 client.
 
 ## Design
 
-Each `LookupClient` owns one bounded scheduler for point and prefix requests.
+Each `Lookuper` owns one bounded scheduler for point and prefix requests.
 Compatible keys share a batch only when they target the same physical table,
 bucket, lookup mode, and insert-if-not-exists policy. The client configuration
 bounds every scheduling dimension:
@@ -37,7 +37,7 @@ a generic batcher, semaphore, and retry package would retain the same lifecycle
 state while spreading it across dependencies. The implementation uses standard
 channels, contexts, timers, and a fixed worker set.
 
-The scheduler is intentionally per lookup client rather than connection-wide.
+The scheduler is intentionally per lookuper rather than connection-wide.
 One client has one table, partition, schema resolver, and insertion policy, so
 its compatibility key stays small and close ownership remains clear. A shared
 connection-wide scheduler would need cross-client fairness and schema lifetime

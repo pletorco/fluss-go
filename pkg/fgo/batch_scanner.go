@@ -166,7 +166,7 @@ func (c *Client) ResolveTableBuckets(
 
 func resolvedTableBuckets(
 	tableID, partitionID int64,
-	locations map[int32]Node,
+	locations map[int32]ServerNode,
 ) ([]TableBucket, error) {
 	buckets, err := sortedBuckets(locations)
 	if err != nil {
@@ -435,7 +435,7 @@ func (s *BatchScanner) decodeCurrent(ctx context.Context, isLog bool, encoded []
 	}
 	compacted := !strings.EqualFold(
 		strings.TrimSpace(s.table.Properties["table.log.format"]),
-		string(LogWriteFormatIndexed),
+		string(LogFormatIndexed),
 	)
 	_, records, arrows, err := decodeFetchedLogWithResolver(
 		ctx, s.resolver, s.table, s.bucket.BucketID, 0, encoded, compacted,

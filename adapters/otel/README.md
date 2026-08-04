@@ -9,7 +9,7 @@ This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.9
+go get github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.10
 ```
 
 Create `Observer` with an application-owned `metric.MeterProvider`, then pass it
@@ -43,7 +43,7 @@ Every measurement uses the same bounded attributes:
 - `fluss.operation`
 - `fluss.error.class`
 - `fluss.api.key`
-- `fluss.server.role`
+- `fluss.server.type`
 - `fluss.failed`
 
 Enum attributes are numeric values from `fgo`. Addresses, table and object

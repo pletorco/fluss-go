@@ -46,7 +46,7 @@ func testTLSRoutedData(t *testing.T, coordinator string, tlsConfig *tls.Config) 
 	database := fmt.Sprintf("go_tls_it_%d", time.Now().UnixNano())
 	logPath := fgo.TablePath{Database: database, Table: "events"}
 	kvPath := fgo.TablePath{Database: database, Table: "users"}
-	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDefinition{
+	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDescriptor{
 		Comment: "fluss-go TLS integration",
 	}, false); err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func testTLSSASL(t *testing.T, tlsConfig *tls.Config) {
 	address := net.JoinHostPort("127.0.0.1", "19423")
 	client := openClient(
 		t, []string{address}, fgo.WithTLSConfig(tlsConfig),
-		fgo.WithAuthenticator(fgo.PlainAuthenticator(
+		fgo.WithAuthenticator(fgo.SASLPlainAuthenticator(
 			os.Getenv("FLUSS_SASL_USERNAME"), os.Getenv("FLUSS_SASL_PASSWORD"),
 		)),
 	)
@@ -74,11 +74,11 @@ func testTLSSASL(t *testing.T, tlsConfig *tls.Config) {
 	}
 	database := fmt.Sprintf("go_tls_sasl_it_%d", time.Now().UnixNano())
 	path := fgo.TablePath{Database: database, Table: "events"}
-	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDefinition{}, false); err != nil {
+	if err := admin.CreateDatabase(context.Background(), database, fadm.DatabaseDescriptor{}, false); err != nil {
 		t.Fatal(err)
 	}
 	defer dropTLSDatabase(t, admin, database, "TLS SASL")()
-	if err := admin.CreateTable(context.Background(), path, fadm.TableDefinition{
+	if err := admin.CreateTable(context.Background(), path, fadm.TableDescriptor{
 		Schema: fgo.Schema{Columns: []fgo.Column{
 			{Name: "id", Type: fgo.IntType},
 			{Name: "message", Type: fgo.StringType},
@@ -129,7 +129,7 @@ func testTLSProtocolMismatches(t *testing.T, coordinator string, tlsConfig *tls.
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	client, err := fgo.Open(ctx, fgo.WithSeedBrokers(coordinator), fgo.WithDialTimeout(time.Second))
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers(coordinator), fgo.WithConnectTimeout(time.Second))
 	if client != nil {
 		_ = client.Close()
 	}
@@ -156,7 +156,7 @@ func testTLSCanceledHandshake(t *testing.T, tlsConfig *tls.Config) {
 	}()
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers(net.JoinHostPort("127.0.0.1", "19327")),
+		fgo.WithBootstrapServers(net.JoinHostPort("127.0.0.1", "19327")),
 		fgo.WithTLSConfig(tlsConfig),
 		fgo.WithDialContext(func(ctx context.Context, network, address string) (net.Conn, error) {
 			connection, dialErr := dialer.DialContext(ctx, network, address)
@@ -194,9 +194,9 @@ func tlsOpenError(address string, config *tls.Config) error {
 	defer cancel()
 	client, err := fgo.Open(
 		ctx,
-		fgo.WithSeedBrokers(address),
+		fgo.WithBootstrapServers(address),
 		fgo.WithTLSConfig(config),
-		fgo.WithDialTimeout(time.Second),
+		fgo.WithConnectTimeout(time.Second),
 	)
 	if client != nil {
 		_ = client.Close()

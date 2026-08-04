@@ -234,7 +234,7 @@ NOTICE, 업데이트 방법과 보안 패치 책임을 함께 기록한다.
 | frame과 transport | unit, `net.Pipe` 또는 통제된 test server, timeout/cancel, race, fuzz |
 | metadata와 routing | table-driven unit, refresh coalescing, stale metadata, partial failure, race |
 | schema, Row, key와 Arrow codec | round-trip, golden, boundary, malformed input, fuzz, benchmark |
-| writer | batching, bucket assignment, backpressure, retry/idempotence, cancel/close, race, integration |
+| writer | batching, keyed routing and no-key assignment, backpressure, retry/idempotence, cancel/close, race, integration |
 | scanner와 lookup | ordering, offset, projection, partial failure, retry, cancel/close, race, integration |
 | `fadm` | request mapping, typed result/error, partial failure, resource lifecycle integration |
 
@@ -387,6 +387,26 @@ gate로 취급하지 않는다.
 - 내부 transport와 codec 타입을 공개 API로 노출하지 않는다.
 - Apache Arrow 타입을 공개 API에 노출할 때는 Arrow-Go 버전 결합과 일반 Row API에
   미치는 영향을 먼저 검토한다.
+
+### 공개 API와 설정 명명
+
+- `fgo`와 `fadm`의 exported identifier, option, config field와 문서 용어는 지원하는
+  Apache Fluss 버전의 공식 공개 개념과 이름을 우선한다. Fluss 용어가 존재하면 Kafka에서
+  유래한 이름, wire 구현 세부사항 또는 의미가 넓은 로컬 별칭을 새로 만들지 않는다.
+- 명명과 설정 의미의 source of truth는 고정된 Fluss 버전의 공식 public Java client 및
+  admin API, `ConfigOptions`, 생성된 configuration reference 순서로 확인한다. Protocol
+  schema는 wire 계약의 기준이며 사용자용 API 이름을 정당화하는 단독 근거로 사용하지
+  않는다.
+- 공개 API 또는 설정을 추가하거나 개편할 때는 관련 항목만 표본 확인하지 않고 해당
+  영역의 upstream 공개 표면을 전수 대조한다. 직접 대응, Go에 맞춘 의미 차이, Fluss에는
+  있지만 미지원인 항목과 Go 전용 확장을 각각 기록한다.
+- Go 전용 transport, `context`, TLS termination, callback, resource safety option은 필요한
+  경우 제공할 수 있다. 이 경우 공식 Fluss 기능이나 동일 설정의 직접 구현으로 오해되지
+  않도록 차이와 지원 경계를 문서화한다.
+- 설정 표면이 변경되면 [`docs/client-configuration.md`](docs/client-configuration.md), API
+  baseline, example, migration guidance와 changelog의 영향을 같은 PR에서 검토한다.
+- 생성된 `pkg/fmsg` 이름과 field는 pinned protocol 입력을 그대로 따르며 명명 통일을 위해
+  손으로 수정하지 않는다. 사용자 친화적인 용어는 `fgo` 또는 `fadm` 경계에서 제공한다.
 
 ### 프로토콜 호환성
 

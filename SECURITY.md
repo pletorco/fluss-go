@@ -12,7 +12,7 @@ latest beta line rather than backported to every earlier prerelease.
 
 | Version | Security updates |
 | --- | --- |
-| `v0.1.0-beta.9` | Supported |
+| `v0.1.0-beta.10` | Supported |
 | Earlier prereleases | Not supported; upgrade to the latest beta |
 | Untagged branches and commits | Not supported |
 

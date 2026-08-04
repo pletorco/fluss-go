@@ -154,7 +154,7 @@ func TestArrowLogBatchRoundTripAndOwnership(t *testing.T) {
 	allocator := memory.NewCheckedAllocator(memory.DefaultAllocator)
 	record := testArrowRecord(t, allocator, 64<<10)
 
-	for _, compression := range []ArrowCompression{ArrowCompressionNone, ArrowCompressionLZ4, ArrowCompressionZSTD} {
+	for _, compression := range []ArrowCompressionType{ArrowCompressionNone, ArrowCompressionLZ4, ArrowCompressionZSTD} {
 		for _, magic := range []byte{0, 1} {
 			batch := ArrowLogBatch{
 				Magic: magic, BaseOffset: 10, CommitTime: 20, LeaderEpoch: 3, SchemaID: 4,
@@ -319,7 +319,7 @@ func TestArrowLogBatchRejectsInvalidInput(t *testing.T) {
 			t.Fatalf("DecodeArrowLogBatch(%x) succeeded", encoded)
 		}
 	}
-	if _, err := EncodeArrowLogBatch(ArrowLogBatch{Magic: 0, Record: record, Changes: []ChangeType{Append, Insert, UpdateAfter, Delete}}, ArrowCompression(99), allocator); !errors.Is(err, ErrInvalidConfig) {
+	if _, err := EncodeArrowLogBatch(ArrowLogBatch{Magic: 0, Record: record, Changes: []ChangeType{Append, Insert, UpdateAfter, Delete}}, ArrowCompressionType(99), allocator); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("invalid compression error = %v", err)
 	}
 	record.Release()

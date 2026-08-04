@@ -17,15 +17,15 @@ type ServerNode struct {
 	Host string
 	// Port is the advertised service port.
 	Port int32
-	// Role is the Fluss coordinator or tablet role.
-	Role fgo.ServerRole
+	// ServerType identifies a Fluss coordinator or tablet server.
+	ServerType fgo.ServerType
 	// Rack is optional placement metadata.
 	Rack string
 }
 
-// ServerNodes returns the current coordinator followed by the alive tablet servers.
+// GetServerNodes returns the current coordinator followed by the alive tablet servers.
 // Tablet servers are sorted by node ID, host, and port for deterministic results.
-func (c *Client) ServerNodes(ctx context.Context) ([]ServerNode, error) {
+func (c *Client) GetServerNodes(ctx context.Context) ([]ServerNode, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyGetMetadata, 0)
 	if err != nil {
 		return nil, err
@@ -61,11 +61,11 @@ func (c *Client) ServerNodes(ctx context.Context) ([]ServerNode, error) {
 	return append([]ServerNode{coordinator}, tablets...), nil
 }
 
-func serverNode(node *fmsg.PbServerNode, role fgo.ServerRole) (ServerNode, error) {
+func serverNode(node *fmsg.PbServerNode, serverType fgo.ServerType) (ServerNode, error) {
 	if node == nil || node.GetHost() == "" || node.GetPort() <= 0 || node.GetPort() > 65535 {
-		return ServerNode{}, fmt.Errorf("%w: invalid %v server node", fgo.ErrMetadata, role)
+		return ServerNode{}, fmt.Errorf("%w: invalid %v server node", fgo.ErrMetadata, serverType)
 	}
 	return ServerNode{
-		ID: node.GetNodeId(), Host: node.GetHost(), Port: node.GetPort(), Role: role, Rack: node.GetRack(),
+		ID: node.GetNodeId(), Host: node.GetHost(), Port: node.GetPort(), ServerType: serverType, Rack: node.GetRack(),
 	}, nil
 }

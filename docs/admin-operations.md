@@ -32,7 +32,7 @@ See the compile-checked
 
 ## Server tags
 
-`ServerNodes` returns the coordinator followed by alive tablet servers.
+`GetServerNodes` returns the coordinator followed by alive tablet servers.
 `AddServerTag` and `RemoveServerTag` accept server IDs from that current
 snapshot and one of `ServerTagPermanentOffline` or
 `ServerTagTemporaryOffline`. Apache Fluss 0.9.1 rejects every other numeric
@@ -50,12 +50,12 @@ the [live evidence matrix](live-evidence.md).
 
 ## Rebalance lifecycle
 
-`StartRebalance` requires one or more Fluss 0.9.1 goal IDs and returns a
+`Rebalance` requires one or more Fluss 0.9.1 goal IDs and returns a
 server-assigned rebalance ID. Preserve that ID for progress queries and
 cancellation. Goal IDs and status values are raw protocol codes because Fluss
 0.9.1 does not expose a stable named enum through this client.
 
-`RebalanceProgress` performs one query. `WaitRebalance` polls at the requested
+`ListRebalanceProgress` performs one query. `WaitRebalance` polls at the requested
 positive interval until the top-level status is not zero, where zero means
 running. A nonzero status is terminal but is not necessarily success; inspect
 the top-level and per-bucket status codes according to the target cluster's
@@ -95,7 +95,7 @@ See the compile-checked
 
 ## KV snapshots and leases
 
-`LatestKVSnapshots` resolves a logical table path and optional partition name
+`GetLatestKVSnapshots` resolves a logical table path and optional partition name
 to current physical IDs and one result per bucket. `KVSnapshot.Available`
 distinguishes no snapshot from a valid snapshot whose ID is zero.
 `KVSnapshotMetadata` then returns the immutable files and inclusive log offset
