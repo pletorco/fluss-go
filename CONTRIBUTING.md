@@ -56,6 +56,11 @@ the integration can remain isolated in its existing adapter module.
   `task generate` when an approved protocol change requires regeneration.
 - Preserve error causes, cancellation, resource ownership, and partial-result
   behavior at public boundaries.
+- Align exported `fgo` and `fadm` names, options, and configuration semantics
+  with the pinned Fluss public client and configuration terminology. Compare
+  the complete affected upstream surface, document intentional Go-specific
+  differences in `docs/client-configuration.md`, and do not hand-edit generated
+  `pkg/fmsg` names for ergonomic consistency.
 - Add tests for changed behavior, important errors, boundary conditions,
   cancellation, and cleanup. Bug fixes should include a regression test.
 - Update API baselines, examples, compatibility evidence, and the changelog
