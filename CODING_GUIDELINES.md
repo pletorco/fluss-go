@@ -234,7 +234,7 @@ NOTICE, 업데이트 방법과 보안 패치 책임을 함께 기록한다.
 | frame과 transport | unit, `net.Pipe` 또는 통제된 test server, timeout/cancel, race, fuzz |
 | metadata와 routing | table-driven unit, refresh coalescing, stale metadata, partial failure, race |
 | schema, Row, key와 Arrow codec | round-trip, golden, boundary, malformed input, fuzz, benchmark |
-| writer | batching, bucket assignment, backpressure, retry/idempotence, cancel/close, race, integration |
+| writer | batching, keyed routing and no-key assignment, backpressure, retry/idempotence, cancel/close, race, integration |
 | scanner와 lookup | ordering, offset, projection, partial failure, retry, cancel/close, race, integration |
 | `fadm` | request mapping, typed result/error, partial failure, resource lifecycle integration |
 

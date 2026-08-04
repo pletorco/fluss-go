@@ -40,7 +40,7 @@ const (
 )
 
 // AppendWriterConfig controls batching, buffering, acknowledgements, routing, and
-// encoding for a append writer.
+// encoding for an append writer.
 type AppendWriterConfig struct {
 	// MaxBatchBytes bounds encoded bytes in one produce request.
 	MaxBatchBytes int
