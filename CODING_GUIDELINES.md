@@ -268,6 +268,15 @@ NOTICE, 업데이트 방법과 보안 패치 책임을 함께 기록한다.
 - `task sonar`: release 준비 branch에서 PR 생성 전에 실행하고 Quality Gate 완료까지
   기다리는 로컬 검증
 
+릴리스가 결정되면 최신 review 완료 `main`에서 하나의 release 준비 branch를 만들고,
+남은 release blocker와 전체 release 준비를 하나의 PR에 포함한다. dependency, toolchain,
+security와 version 정렬 수정, changelog, release note, 영향받은 사용자 문서, adapter
+requirement와 설치 예시를 별도 선행 PR과 후속 release PR로 나누지 않는다. 독립적으로
+긴급 배포해야 하거나 별도의 설계·호환성 review가 필요한 변경, 또는 기존 release 준비
+PR을 폐기하고 release 결정을 다시 내린 경우에만 선행 PR을 허용한다. check, Sonar 또는
+review 실패는 같은 branch와 PR에서 수정한다. 이 PR이 merge된 뒤에는 정확한 commit
+검증, tagging, publication과 discovery 확인만 남아야 한다.
+
 Release 준비 PR은 문서와 코드를 모두 완성한 뒤 `task ci`와 `task sonar`를 통과해야
 생성한다. SonarQube Community Edition은 로컬 분석을 단일 `main` branch로 표시하므로
 그 branch label은 판정에 사용하지 않는다. scanner가 보고한 SCM revision과 작업 branch의

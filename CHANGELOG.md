@@ -8,10 +8,17 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.1.0-beta.11] - 2026-09-07
+
 ### Changed
 
 - Raised the recommended Go toolchain to 1.26.6 and the supported patched Go
   minimums to 1.25.13 and 1.26.6.
+- Updated the root protobuf runtime to 1.36.12, the optional OpenTelemetry API
+  adapter to 1.46.0, the optional Alibaba Cloud OSS SDK adapter to 1.6.0, and
+  the optional AWS SDK adapter to core 1.45.1 and S3 1.110.0. These maintenance
+  updates do not change the exported fluss-go API or Fluss wire behavior.
+- Updated the GitHub Actions Task installer to 2.2.0.
 
 ### Security
 
@@ -304,7 +311,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.10...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.11...HEAD
+[v0.1.0-beta.11]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.10...v0.1.0-beta.11
 [v0.1.0-beta.10]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.9...v0.1.0-beta.10
 [v0.1.0-beta.9]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.8...v0.1.0-beta.9
 [v0.1.0-beta.8]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.7...v0.1.0-beta.8

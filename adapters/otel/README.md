@@ -9,7 +9,7 @@ This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.10
+go get github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.11
 ```
 
 Create `Observer` with an application-owned `metric.MeterProvider`, then pass it
@@ -52,8 +52,8 @@ text are never attached.
 
 ## Dependency review
 
-The initial reviewed API version is OpenTelemetry Go v1.44.0, released on
-2026-05-27, requiring Go 1.25 and licensed Apache-2.0. Only
+The initial reviewed API version was OpenTelemetry Go v1.44.0; v1.46.0 is the
+current reviewed pin. It requires Go 1.25 and is licensed Apache-2.0. Only
 `go.opentelemetry.io/otel` and `go.opentelemetry.io/otel/metric` are imported.
 The SDK and exporters remain application choices. `task security` checks the
 resulting graph with `govulncheck` and Trivy.

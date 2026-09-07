@@ -8,7 +8,7 @@ This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.10
+go get github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.11
 ```
 
 Create an `aws.Config` with the official `config.LoadDefaultConfig` credential
@@ -35,11 +35,12 @@ reclassified by this package.
 
 ## Dependency review
 
-The initial reviewed version is `github.com/aws/aws-sdk-go-v2/service/s3`
-v1.106.2, released on 2026-07-29 with Go 1.24 support and the Apache-2.0
-license. It brings the official AWS SDK core, Smithy runtime, event-stream,
-endpoint, checksum, signing, and S3 internal modules. `task security` checks
-the resulting graph with `govulncheck` and Trivy.
+The initial reviewed `github.com/aws/aws-sdk-go-v2/service/s3` version was
+v1.106.2. The current reviewed pins are AWS SDK core v1.45.1 and S3 v1.110.0;
+they support Go 1.24 and use the Apache-2.0 license. They bring the official AWS
+SDK core, Smithy runtime, event-stream, endpoint, checksum, signing, and S3
+internal modules. `task security` checks the resulting graph with
+`govulncheck` and Trivy.
 
 The SDK is preferred over custom S3 signing, endpoint, retry, checksum, and
 HTTP protocol code. Dependency version, maintenance, license, CVEs, and

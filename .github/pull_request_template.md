@@ -29,3 +29,11 @@
 - [ ] No credentials, tokens, or private keys are included.
 - [ ] Dependency, license, and generated-artifact changes are explained.
 - [ ] Relevant Apache Fluss version assumptions are recorded.
+
+## Release preparation
+
+- [ ] N/A, or this single PR contains all remaining release blockers, versions,
+      release notes, affected manuals, adapter requirements, and publication
+      commands.
+- [ ] Release gates were run on this branch before opening the PR; failures are
+      fixed in this same PR rather than a follow-up preparation PR.

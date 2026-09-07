@@ -4,21 +4,35 @@ Releases are made only from a reviewed commit on `main`. A feature branch may
 prepare the changelog and release notes, but it must not publish a tag or
 GitHub Release before merge.
 
-Before opening a release-preparation PR, finish the versioned changelog,
-release notes, and affected user manuals together on that branch. The PR is
-the review boundary for the complete release documentation, not a placeholder
-that is filled after merge. Run `task ci` and `task sonar` on the completed
-branch before opening the PR. `task sonar` is a local pre-PR gate: it waits for
-the Quality Gate and must pass before review begins. Fix findings on the same
-branch rather than discovering them after merge.
+Once a release is chosen, create one release-preparation branch from the latest
+reviewed `main`. Put every remaining release blocker and the complete release
+preparation in that branch: dependency, toolchain, security, and version
+alignment fixes; the versioned changelog and release notes; affected user
+manuals; adapter requirements and installation examples; and publication
+commands. Do not merge a prerequisite PR merely to prepare the release and
+then open a second release PR. Fix failed checks, Sonar findings, and review
+findings on the same branch and PR.
+
+Use a separate prerequisite PR only when a change must ship independently and
+urgently, requires an independent design or compatibility review, or the
+release-preparation PR is abandoned and the release decision is reset. After
+the single release-preparation PR merges, only exact-commit verification,
+tagging, publication, and discovery checks should remain.
+
+Before opening that PR, finish the versioned changelog, release notes, and
+affected user manuals together on the branch. The PR is the review boundary
+for the complete release, not a placeholder that is filled after merge. Run
+`task ci` and `task sonar` on the completed branch before opening the PR.
+`task sonar` is a local pre-PR gate: it waits for the Quality Gate and must
+pass before review begins.
 
 SonarQube Community Edition records these local analyses under its single
 `main` branch. Ignore that displayed branch label. Validate the SCM revision
 reported by the scanner against `git rev-parse HEAD` and use the Quality Gate
 result for that revision.
 
-The current prepared prerelease is `v0.1.0-beta.10`, with release notes in
-`.github/releases/v0.1.0-beta.10.md`.
+The current prepared prerelease is `v0.1.0-beta.11`, with release notes in
+`.github/releases/v0.1.0-beta.11.md`.
 
 ## Before publication
 
@@ -60,28 +74,28 @@ fix `main` through another reviewed PR and release the corrected commit.
 Create an annotated tag on the verified `main` commit:
 
 ```sh
-git tag -a v0.1.0-beta.10 -m "fluss-go v0.1.0-beta.10"
-git show --no-patch --decorate v0.1.0-beta.10
-git push origin v0.1.0-beta.10
+git tag -a v0.1.0-beta.11 -m "fluss-go v0.1.0-beta.11"
+git show --no-patch --decorate v0.1.0-beta.11
+git push origin v0.1.0-beta.11
 ```
 
 Then create the GitHub prerelease from the committed notes:
 
 ```sh
-gh release create v0.1.0-beta.10 \
+gh release create v0.1.0-beta.11 \
   --repo pletorco/fluss-go \
   --verify-tag \
   --prerelease \
-  --title "fluss-go v0.1.0-beta.10" \
-  --notes-file .github/releases/v0.1.0-beta.10.md
+  --title "fluss-go v0.1.0-beta.11" \
+  --notes-file .github/releases/v0.1.0-beta.11.md
 ```
 
 Verify that the release target SHA equals the peeled annotated tag and the
 reviewed `main` commit:
 
 ```sh
-test "$(git rev-parse v0.1.0-beta.10^{})" = "$(git rev-parse origin/main)"
-gh release view v0.1.0-beta.10 --repo pletorco/fluss-go
+test "$(git rev-parse v0.1.0-beta.11^{})" = "$(git rev-parse origin/main)"
+gh release view v0.1.0-beta.11 --repo pletorco/fluss-go
 ```
 
 ### Adapter module tags
@@ -91,12 +105,12 @@ root tag first, wait until the public Go proxy resolves it, and then publish
 path-prefixed adapter tags on the same reviewed commit:
 
 ```sh
-git tag -a adapters/hdfs/v0.1.0-beta.10 -m "fluss-go HDFS adapter v0.1.0-beta.10"
-git tag -a adapters/oss/v0.1.0-beta.10 -m "fluss-go OSS adapter v0.1.0-beta.10"
-git tag -a adapters/otel/v0.1.0-beta.10 -m "fluss-go OpenTelemetry adapter v0.1.0-beta.10"
-git tag -a adapters/s3/v0.1.0-beta.10 -m "fluss-go S3 adapter v0.1.0-beta.10"
-git push origin adapters/hdfs/v0.1.0-beta.10 adapters/oss/v0.1.0-beta.10 \
-  adapters/otel/v0.1.0-beta.10 adapters/s3/v0.1.0-beta.10
+git tag -a adapters/hdfs/v0.1.0-beta.11 -m "fluss-go HDFS adapter v0.1.0-beta.11"
+git tag -a adapters/oss/v0.1.0-beta.11 -m "fluss-go OSS adapter v0.1.0-beta.11"
+git tag -a adapters/otel/v0.1.0-beta.11 -m "fluss-go OpenTelemetry adapter v0.1.0-beta.11"
+git tag -a adapters/s3/v0.1.0-beta.11 -m "fluss-go S3 adapter v0.1.0-beta.11"
+git push origin adapters/hdfs/v0.1.0-beta.11 adapters/oss/v0.1.0-beta.11 \
+  adapters/otel/v0.1.0-beta.11 adapters/s3/v0.1.0-beta.11
 ```
 
 The adapter `go.mod` files use a repository-local `replace` for development.
@@ -113,10 +127,10 @@ direct VCS fallback:
 
 ```sh
 GOPROXY=https://proxy.golang.org GONOSUMDB= \
-  go list -m -json github.com/pletorco/fluss-go@v0.1.0-beta.10
+  go list -m -json github.com/pletorco/fluss-go@v0.1.0-beta.11
 ```
 
-Confirm that the returned `Version` is `v0.1.0-beta.10` and that its origin hash
+Confirm that the returned `Version` is `v0.1.0-beta.11` and that its origin hash
 matches the released commit. The proxy may need a short propagation interval,
 but a failed lookup must not be hidden by `GOPROXY=direct`.
 
@@ -124,19 +138,19 @@ For beta.7 and later, repeat the proxy check for every published adapter:
 
 ```sh
 GOPROXY=https://proxy.golang.org GONOSUMDB= \
-  go list -m -json github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.10
+  go list -m -json github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.11
 ```
 
 Open the version-pinned online references and verify their package manuals,
 exported contracts, and examples:
 
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.1.0-beta.10`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.1.0-beta.10`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.1.0-beta.10`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.10`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.10`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.10`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.10`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.1.0-beta.11`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.1.0-beta.11`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.1.0-beta.11`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.11`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.11`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.11`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.11`
 
 Check at minimum the `fgo` TLS/SASL and error examples and the `fadm` advanced
 administration examples. Record any pkg.go.dev indexing delay on the release
