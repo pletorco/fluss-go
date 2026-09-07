@@ -2,7 +2,7 @@ module github.com/pletorco/fluss-go/adapters/oss
 
 go 1.25.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.0

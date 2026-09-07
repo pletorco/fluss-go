@@ -2,7 +2,7 @@ module github.com/pletorco/fluss-go
 
 go 1.25.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/apache/arrow-go/v18 v18.7.0

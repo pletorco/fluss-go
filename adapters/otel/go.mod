@@ -2,7 +2,7 @@ module github.com/pletorco/fluss-go/adapters/otel
 
 go 1.25.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/pletorco/fluss-go v0.1.0-beta.10
