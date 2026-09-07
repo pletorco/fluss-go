@@ -165,7 +165,7 @@ Protocol generation requires protoc v3.21.12. Local security scans require
 Trivy v0.72.0. Integration and reliability tests require Docker, Docker
 Compose, and OpenSSL; the tasks create and remove isolated clusters. The
 module recommends Go
-1.26.5 so the Go command can automatically avoid known standard-library
+1.26.6 so the Go command can automatically avoid known standard-library
 vulnerabilities; set `GOTOOLCHAIN=local` only when intentionally testing
 another supported, patched Go release.
 
@@ -174,7 +174,7 @@ another supported, patched Go release.
 | Component | Supported versions |
 | --- | --- |
 | Apache Fluss | `0.9.1-incubating` at commit `6bf969f71af8d6f9cc37383ab89ae46a58b0e227` only |
-| Go | `1.25.12` or newer in the 1.25 series; `1.26.5` or newer in the 1.26 series; module language baseline `1.25.0` |
+| Go | `1.25.13` or newer in the 1.25 series; `1.26.6` or newer in the 1.26 series; module language baseline `1.25.0` |
 | Task | `3.51.1` |
 | protoc | `3.21.12` |
 | Trivy | `0.72.0` |

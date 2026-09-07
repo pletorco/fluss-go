@@ -8,6 +8,16 @@ breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the recommended Go toolchain to 1.26.6 and the supported patched Go
+  minimums to 1.25.13 and 1.26.6.
+
+### Security
+
+- Required Go releases containing the standard-library fixes for
+  `GO-2026-5972` and `GO-2026-6090`.
+
 ## [v0.1.0-beta.10] - 2026-08-04
 
 ### Added
