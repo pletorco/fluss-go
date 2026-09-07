@@ -1,16 +1,17 @@
 # Alibaba Cloud OSS adapter
 
 Package `adapters/oss` adapts the official Alibaba Cloud OSS SDK for Go v2 to
-`fgo.RemoteFileStreamReader`. Version `v1.5.3` is the initial reviewed pin. The
-SDK is Apache-2.0 licensed, maintained by Alibaba Cloud, supports context-aware
-operations, V4 signing, standard range requests, endpoint configuration, and
-SDK-owned credentials and retries.
+`fgo.RemoteFileStreamReader`. Version `v1.5.3` was the initial reviewed pin;
+`v1.6.0` is the current reviewed pin. The SDK is Apache-2.0 licensed,
+maintained by Alibaba Cloud, supports context-aware operations, V4 signing,
+standard range requests, endpoint configuration, and SDK-owned credentials
+and retries.
 
 This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.10
+go get github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.11
 ```
 
 Create an `oss.Config` with `oss.LoadDefaultConfig`, pass it to

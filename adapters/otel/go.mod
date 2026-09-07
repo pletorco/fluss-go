@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.26.6
 
 require (
-	github.com/pletorco/fluss-go v0.1.0-beta.10
+	github.com/pletorco/fluss-go v0.1.0-beta.11
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
 )

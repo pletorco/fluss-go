@@ -105,6 +105,12 @@ the scanner's SCM revision against the release branch `HEAD` instead of using
 that branch label. Resolve findings before opening the release PR. Sonar is not
 part of the post-merge GitHub Actions workflows.
 
+Once a release is chosen, put every remaining release blocker and the complete
+version, changelog, release-note, manual, adapter, and publication preparation
+in one release PR. Update that same PR when a check, Sonar, or review finding
+fails. Do not merge a prerequisite PR merely to open a second release PR;
+separate independently urgent or separately designed changes only.
+
 ## Commits and pull requests
 
 - Write focused commits with an imperative summary, for example
