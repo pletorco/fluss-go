@@ -6,7 +6,7 @@ toolchain go1.26.6
 
 require (
 	github.com/apache/arrow-go/v18 v18.8.0
-	github.com/yuin/goldmark v1.8.5
+	github.com/yuin/goldmark v1.8.6
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
