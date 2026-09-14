@@ -473,7 +473,7 @@ func newLogScanner(
 	if strings.EqualFold(strings.TrimSpace(table.Properties["table.log.format"]), string(LogFormatIndexed)) {
 		scanner.compacted = false
 	}
-	scanner.life, scanner.cancel = context.WithCancel(context.Background())
+	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
 	if path.Partition != "" {
 		scanner.partitionID = physicalID
 	}

@@ -277,7 +277,7 @@ func (c *Client) NewSnapshotBatchScanner(
 	scanner := &BatchScanner{
 		table: table, bucket: bucket, config: config, snapshot: reader, projection: projection,
 	}
-	scanner.life, scanner.cancel = context.WithCancel(context.Background())
+	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
 	return scanner, nil
 }
 
@@ -300,7 +300,7 @@ func newBatchScanner(
 		table: table, bucket: bucket, config: config, backend: backend,
 		snapshot: snapshot, projection: projection, resolver: resolverFor(backend, table),
 	}
-	scanner.life, scanner.cancel = context.WithCancel(context.Background())
+	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
 	return scanner, nil
 }
 

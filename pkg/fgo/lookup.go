@@ -346,7 +346,7 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 	if path.Partition != "" {
 		client.partitionID = physicalID
 	}
-	client.life, client.cancel = context.WithCancel(context.Background())
+	client.life, client.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the lookuper lifecycle.
 	go client.runScheduler()
 	return client, nil
 }
