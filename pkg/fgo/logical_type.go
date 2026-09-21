@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// LogicalType is the Fluss 0.9.1 schema JSON type representation. It supports
+// LogicalType is the Fluss 1.0 schema JSON type representation. It supports
 // parameterized and nested roots without exposing protobuf implementation details.
 type LogicalType struct {
 	// Root identifies the Fluss logical type.

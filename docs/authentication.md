@@ -1,6 +1,6 @@
 # Secure client connections
 
-Apache Fluss 0.9.1 provides native `PLAINTEXT` and `SASL/PLAIN` client
+Apache Fluss 1.0 provides native `PLAINTEXT` and `SASL/PLAIN` client
 listeners, but it does not provide a native TLS listener. `fluss-go` can use
 TLS when every coordinator and tablet endpoint is exposed through an
 application- or infrastructure-owned TLS TCP terminator. Production
@@ -103,7 +103,7 @@ cancellation wins.
 
 ## Verification
 
-`task test:integration` starts digest-pinned Apache Fluss 0.9.1 plaintext and
+`task test:integration` starts digest-pinned Apache Fluss 1.0 plaintext and
 SASL PLAIN clusters. A digest-pinned HAProxy test dependency terminates TLS for
 the coordinator and every advertised tablet. The task generates an ephemeral
 CA, certificate, and passwords, removes them on exit, and redacts credentials

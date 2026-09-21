@@ -9,7 +9,7 @@ response-time or production-availability SLA.
 The issue tracker accepts reproducible questions and defects involving:
 
 - the latest tagged fluss-go beta;
-- Apache Fluss `0.9.1-incubating` at the pinned compatibility target;
+- Apache Fluss `1.0.0` at the pinned compatibility target;
 - supported Go versions from the README compatibility matrix;
 - the public `fmsg`, `fgo`, and `fadm` packages; and
 - the separately versioned HDFS, OSS, OpenTelemetry, and S3 adapters.
@@ -56,5 +56,5 @@ library or extension boundary cannot satisfy the need.
 - Contribution workflow: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Security reports: [SECURITY.md](SECURITY.md)
 - Expected community behavior: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- Supported functionality: [README feature matrix](README.md#fluss-091-feature-matrix)
+- Supported functionality: [README feature matrix](README.md#fluss-10-feature-matrix)
 - Error handling and recovery: [docs/error-handling.md](docs/error-handling.md)

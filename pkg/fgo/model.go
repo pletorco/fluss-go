@@ -24,7 +24,7 @@ var (
 // DataType is the portable root type of a Fluss column.
 type DataType string
 
-// Data types supported by Apache Fluss 0.9.1 schemas.
+// Data types supported by Apache Fluss 1.0 schemas.
 const (
 	BoolType         DataType = "BOOLEAN"
 	CharType         DataType = "CHAR"
@@ -136,7 +136,7 @@ func validateSchemaKeys(columns map[string]Column, keys []string) error {
 	return nil
 }
 
-// JSON validates and encodes the Fluss 0.9.1 schema JSON representation.
+// JSON validates and encodes the Fluss 1.0 schema JSON representation.
 func (s Schema) JSON() ([]byte, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func assignLogicalFieldIDs(logicalType *LogicalType, nextID *int) {
 	}
 }
 
-// ParseSchemaJSON decodes and validates a Fluss 0.9.1 schema.
+// ParseSchemaJSON decodes and validates a Fluss 1.0 schema.
 func ParseSchemaJSON(data []byte) (Schema, error) {
 	var encoded schemaJSON
 	if err := json.Unmarshal(data, &encoded); err != nil {
@@ -474,7 +474,7 @@ func mapEntries(value any) (Map, bool) {
 // TableKind distinguishes append-only log tables from primary-key tables.
 type TableKind string
 
-// Table kinds supported by Apache Fluss 0.9.1.
+// Table kinds supported by Apache Fluss 1.0.
 const (
 	LogTable        TableKind = "LOG"
 	PrimaryKeyTable TableKind = "PRIMARY_KEY"
@@ -494,6 +494,12 @@ type Table struct {
 	Schema Schema
 	// BucketCount is the logical table bucket count.
 	BucketCount int
+	// BucketCountEpoch is the server generation for bucket-count changes when BucketCountEpochKnown is true.
+	BucketCountEpoch int64
+	// BucketCountEpochKnown reports whether Fluss supplied a bucket-count epoch.
+	BucketCountEpochKnown bool
+	// RemoteDataDirectory is the server-advertised remote storage directory.
+	RemoteDataDirectory string
 	// Properties contains server-reported table properties.
 	Properties map[string]string
 }
@@ -563,7 +569,8 @@ func (c *Client) GetTable(ctx context.Context, path TablePath) (Table, error) {
 	table := Table{
 		ID: info.GetTableId(), SchemaID: info.GetSchemaId(), Path: path,
 		Kind: kind, Schema: schema, BucketCount: descriptor.BucketCount,
-		Properties: descriptor.Properties,
+		BucketCountEpoch: info.GetBucketCountEpoch(), BucketCountEpochKnown: info.BucketCountEpoch != nil,
+		RemoteDataDirectory: info.GetRemoteDataDir(), Properties: descriptor.Properties,
 	}
 	if c.schemas != nil {
 		c.schemas.store(path, table.SchemaID, schema)

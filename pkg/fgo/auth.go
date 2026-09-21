@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// SASLPlainAuthenticator returns a factory for the SASL PLAIN mechanism supported by Fluss 0.9.1.
+// SASLPlainAuthenticator returns a factory for the SASL PLAIN mechanism supported by Fluss 1.0.
 // Each connection receives its own credentials buffer, which is cleared when the connection closes.
 func SASLPlainAuthenticator(username, password string) AuthenticatorFactory {
 	return func() (Authenticator, error) {

@@ -396,6 +396,111 @@ func (*CreateDatabaseResponse) Descriptor() ([]byte, []int) {
 	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{6}
 }
 
+// alter database request and response
+type AlterDatabaseRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	DatabaseName      *string                `protobuf:"bytes,1,req,name=database_name,json=databaseName" json:"database_name,omitempty"`
+	IgnoreIfNotExists *bool                  `protobuf:"varint,2,req,name=ignore_if_not_exists,json=ignoreIfNotExists" json:"ignore_if_not_exists,omitempty"`
+	ConfigChanges     []*PbAlterConfig       `protobuf:"bytes,3,rep,name=config_changes,json=configChanges" json:"config_changes,omitempty"`
+	Comment           *string                `protobuf:"bytes,4,opt,name=comment" json:"comment,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AlterDatabaseRequest) Reset() {
+	*x = AlterDatabaseRequest{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AlterDatabaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AlterDatabaseRequest) ProtoMessage() {}
+
+func (x *AlterDatabaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AlterDatabaseRequest.ProtoReflect.Descriptor instead.
+func (*AlterDatabaseRequest) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AlterDatabaseRequest) GetDatabaseName() string {
+	if x != nil && x.DatabaseName != nil {
+		return *x.DatabaseName
+	}
+	return ""
+}
+
+func (x *AlterDatabaseRequest) GetIgnoreIfNotExists() bool {
+	if x != nil && x.IgnoreIfNotExists != nil {
+		return *x.IgnoreIfNotExists
+	}
+	return false
+}
+
+func (x *AlterDatabaseRequest) GetConfigChanges() []*PbAlterConfig {
+	if x != nil {
+		return x.ConfigChanges
+	}
+	return nil
+}
+
+func (x *AlterDatabaseRequest) GetComment() string {
+	if x != nil && x.Comment != nil {
+		return *x.Comment
+	}
+	return ""
+}
+
+type AlterDatabaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AlterDatabaseResponse) Reset() {
+	*x = AlterDatabaseResponse{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AlterDatabaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AlterDatabaseResponse) ProtoMessage() {}
+
+func (x *AlterDatabaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AlterDatabaseResponse.ProtoReflect.Descriptor instead.
+func (*AlterDatabaseResponse) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{8}
+}
+
 // get table request and response
 type GetDatabaseInfoRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -406,7 +511,7 @@ type GetDatabaseInfoRequest struct {
 
 func (x *GetDatabaseInfoRequest) Reset() {
 	*x = GetDatabaseInfoRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[7]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +523,7 @@ func (x *GetDatabaseInfoRequest) String() string {
 func (*GetDatabaseInfoRequest) ProtoMessage() {}
 
 func (x *GetDatabaseInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[7]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +536,7 @@ func (x *GetDatabaseInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDatabaseInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetDatabaseInfoRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{7}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetDatabaseInfoRequest) GetDatabaseName() string {
@@ -452,7 +557,7 @@ type GetDatabaseInfoResponse struct {
 
 func (x *GetDatabaseInfoResponse) Reset() {
 	*x = GetDatabaseInfoResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[8]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +569,7 @@ func (x *GetDatabaseInfoResponse) String() string {
 func (*GetDatabaseInfoResponse) ProtoMessage() {}
 
 func (x *GetDatabaseInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[8]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -477,7 +582,7 @@ func (x *GetDatabaseInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDatabaseInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetDatabaseInfoResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{8}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetDatabaseInfoResponse) GetDatabaseJson() []byte {
@@ -513,7 +618,7 @@ type DropDatabaseRequest struct {
 
 func (x *DropDatabaseRequest) Reset() {
 	*x = DropDatabaseRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[9]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +630,7 @@ func (x *DropDatabaseRequest) String() string {
 func (*DropDatabaseRequest) ProtoMessage() {}
 
 func (x *DropDatabaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[9]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +643,7 @@ func (x *DropDatabaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropDatabaseRequest.ProtoReflect.Descriptor instead.
 func (*DropDatabaseRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{9}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DropDatabaseRequest) GetDatabaseName() string {
@@ -570,7 +675,7 @@ type DropDatabaseResponse struct {
 
 func (x *DropDatabaseResponse) Reset() {
 	*x = DropDatabaseResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[10]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -582,7 +687,7 @@ func (x *DropDatabaseResponse) String() string {
 func (*DropDatabaseResponse) ProtoMessage() {}
 
 func (x *DropDatabaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[10]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -595,7 +700,7 @@ func (x *DropDatabaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropDatabaseResponse.ProtoReflect.Descriptor instead.
 func (*DropDatabaseResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{10}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{12}
 }
 
 // database exists request and response
@@ -608,7 +713,7 @@ type DatabaseExistsRequest struct {
 
 func (x *DatabaseExistsRequest) Reset() {
 	*x = DatabaseExistsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[11]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -620,7 +725,7 @@ func (x *DatabaseExistsRequest) String() string {
 func (*DatabaseExistsRequest) ProtoMessage() {}
 
 func (x *DatabaseExistsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[11]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -633,7 +738,7 @@ func (x *DatabaseExistsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseExistsRequest.ProtoReflect.Descriptor instead.
 func (*DatabaseExistsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{11}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DatabaseExistsRequest) GetDatabaseName() string {
@@ -652,7 +757,7 @@ type DatabaseExistsResponse struct {
 
 func (x *DatabaseExistsResponse) Reset() {
 	*x = DatabaseExistsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[12]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -664,7 +769,7 @@ func (x *DatabaseExistsResponse) String() string {
 func (*DatabaseExistsResponse) ProtoMessage() {}
 
 func (x *DatabaseExistsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[12]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -677,7 +782,7 @@ func (x *DatabaseExistsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseExistsResponse.ProtoReflect.Descriptor instead.
 func (*DatabaseExistsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{12}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DatabaseExistsResponse) GetExists() bool {
@@ -697,7 +802,7 @@ type ListDatabasesRequest struct {
 
 func (x *ListDatabasesRequest) Reset() {
 	*x = ListDatabasesRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[13]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +814,7 @@ func (x *ListDatabasesRequest) String() string {
 func (*ListDatabasesRequest) ProtoMessage() {}
 
 func (x *ListDatabasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[13]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,7 +827,7 @@ func (x *ListDatabasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDatabasesRequest.ProtoReflect.Descriptor instead.
 func (*ListDatabasesRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{13}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListDatabasesRequest) GetIncludeSummary() bool {
@@ -742,7 +847,7 @@ type ListDatabasesResponse struct {
 
 func (x *ListDatabasesResponse) Reset() {
 	*x = ListDatabasesResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[14]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -754,7 +859,7 @@ func (x *ListDatabasesResponse) String() string {
 func (*ListDatabasesResponse) ProtoMessage() {}
 
 func (x *ListDatabasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[14]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -767,7 +872,7 @@ func (x *ListDatabasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDatabasesResponse.ProtoReflect.Descriptor instead.
 func (*ListDatabasesResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{14}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListDatabasesResponse) GetDatabaseName() []string {
@@ -796,7 +901,7 @@ type CreateTableRequest struct {
 
 func (x *CreateTableRequest) Reset() {
 	*x = CreateTableRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[15]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -808,7 +913,7 @@ func (x *CreateTableRequest) String() string {
 func (*CreateTableRequest) ProtoMessage() {}
 
 func (x *CreateTableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[15]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -821,7 +926,7 @@ func (x *CreateTableRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTableRequest.ProtoReflect.Descriptor instead.
 func (*CreateTableRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{15}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateTableRequest) GetTablePath() *PbTablePath {
@@ -853,7 +958,7 @@ type CreateTableResponse struct {
 
 func (x *CreateTableResponse) Reset() {
 	*x = CreateTableResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[16]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -865,7 +970,7 @@ func (x *CreateTableResponse) String() string {
 func (*CreateTableResponse) ProtoMessage() {}
 
 func (x *CreateTableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[16]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -878,7 +983,7 @@ func (x *CreateTableResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTableResponse.ProtoReflect.Descriptor instead.
 func (*CreateTableResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{16}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{18}
 }
 
 // alter table request and response
@@ -891,13 +996,14 @@ type AlterTableRequest struct {
 	DropColumns       []*PbDropColumn        `protobuf:"bytes,5,rep,name=drop_columns,json=dropColumns" json:"drop_columns,omitempty"`
 	RenameColumns     []*PbRenameColumn      `protobuf:"bytes,6,rep,name=rename_columns,json=renameColumns" json:"rename_columns,omitempty"`
 	ModifyColumns     []*PbModifyColumn      `protobuf:"bytes,7,rep,name=modify_columns,json=modifyColumns" json:"modify_columns,omitempty"`
+	ModifyBucketCount *PbModifyBucketCount   `protobuf:"bytes,8,opt,name=modify_bucket_count,json=modifyBucketCount" json:"modify_bucket_count,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *AlterTableRequest) Reset() {
 	*x = AlterTableRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[17]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -909,7 +1015,7 @@ func (x *AlterTableRequest) String() string {
 func (*AlterTableRequest) ProtoMessage() {}
 
 func (x *AlterTableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[17]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -922,7 +1028,7 @@ func (x *AlterTableRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlterTableRequest.ProtoReflect.Descriptor instead.
 func (*AlterTableRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{17}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *AlterTableRequest) GetTablePath() *PbTablePath {
@@ -974,6 +1080,57 @@ func (x *AlterTableRequest) GetModifyColumns() []*PbModifyColumn {
 	return nil
 }
 
+func (x *AlterTableRequest) GetModifyBucketCount() *PbModifyBucketCount {
+	if x != nil {
+		return x.ModifyBucketCount
+	}
+	return nil
+}
+
+type PbModifyBucketCount struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NewBucketCount *int32                 `protobuf:"varint,1,req,name=new_bucket_count,json=newBucketCount" json:"new_bucket_count,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PbModifyBucketCount) Reset() {
+	*x = PbModifyBucketCount{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbModifyBucketCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbModifyBucketCount) ProtoMessage() {}
+
+func (x *PbModifyBucketCount) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbModifyBucketCount.ProtoReflect.Descriptor instead.
+func (*PbModifyBucketCount) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *PbModifyBucketCount) GetNewBucketCount() int32 {
+	if x != nil && x.NewBucketCount != nil {
+		return *x.NewBucketCount
+	}
+	return 0
+}
+
 type AlterTableResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -982,7 +1139,7 @@ type AlterTableResponse struct {
 
 func (x *AlterTableResponse) Reset() {
 	*x = AlterTableResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[18]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -994,7 +1151,7 @@ func (x *AlterTableResponse) String() string {
 func (*AlterTableResponse) ProtoMessage() {}
 
 func (x *AlterTableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[18]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1007,7 +1164,7 @@ func (x *AlterTableResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlterTableResponse.ProtoReflect.Descriptor instead.
 func (*AlterTableResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{18}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{21}
 }
 
 // get table request and response
@@ -1020,7 +1177,7 @@ type GetTableInfoRequest struct {
 
 func (x *GetTableInfoRequest) Reset() {
 	*x = GetTableInfoRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[19]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1032,7 +1189,7 @@ func (x *GetTableInfoRequest) String() string {
 func (*GetTableInfoRequest) ProtoMessage() {}
 
 func (x *GetTableInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[19]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1045,7 +1202,7 @@ func (x *GetTableInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTableInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetTableInfoRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{19}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetTableInfoRequest) GetTablePath() *PbTablePath {
@@ -1056,19 +1213,21 @@ func (x *GetTableInfoRequest) GetTablePath() *PbTablePath {
 }
 
 type GetTableInfoResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TableId       *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
-	SchemaId      *int32                 `protobuf:"varint,2,req,name=schema_id,json=schemaId" json:"schema_id,omitempty"`
-	TableJson     []byte                 `protobuf:"bytes,3,req,name=table_json,json=tableJson" json:"table_json,omitempty"`
-	CreatedTime   *int64                 `protobuf:"varint,4,req,name=created_time,json=createdTime" json:"created_time,omitempty"`
-	ModifiedTime  *int64                 `protobuf:"varint,5,req,name=modified_time,json=modifiedTime" json:"modified_time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TableId          *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	SchemaId         *int32                 `protobuf:"varint,2,req,name=schema_id,json=schemaId" json:"schema_id,omitempty"`
+	TableJson        []byte                 `protobuf:"bytes,3,req,name=table_json,json=tableJson" json:"table_json,omitempty"`
+	CreatedTime      *int64                 `protobuf:"varint,4,req,name=created_time,json=createdTime" json:"created_time,omitempty"`
+	ModifiedTime     *int64                 `protobuf:"varint,5,req,name=modified_time,json=modifiedTime" json:"modified_time,omitempty"`
+	RemoteDataDir    *string                `protobuf:"bytes,6,opt,name=remote_data_dir,json=remoteDataDir" json:"remote_data_dir,omitempty"`
+	BucketCountEpoch *int64                 `protobuf:"varint,7,opt,name=bucket_count_epoch,json=bucketCountEpoch" json:"bucket_count_epoch,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetTableInfoResponse) Reset() {
 	*x = GetTableInfoResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[20]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1080,7 +1239,7 @@ func (x *GetTableInfoResponse) String() string {
 func (*GetTableInfoResponse) ProtoMessage() {}
 
 func (x *GetTableInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[20]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1093,7 +1252,7 @@ func (x *GetTableInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTableInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetTableInfoResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{20}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GetTableInfoResponse) GetTableId() int64 {
@@ -1131,6 +1290,20 @@ func (x *GetTableInfoResponse) GetModifiedTime() int64 {
 	return 0
 }
 
+func (x *GetTableInfoResponse) GetRemoteDataDir() string {
+	if x != nil && x.RemoteDataDir != nil {
+		return *x.RemoteDataDir
+	}
+	return ""
+}
+
+func (x *GetTableInfoResponse) GetBucketCountEpoch() int64 {
+	if x != nil && x.BucketCountEpoch != nil {
+		return *x.BucketCountEpoch
+	}
+	return 0
+}
+
 // list tables request and response
 type ListTablesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1141,7 +1314,7 @@ type ListTablesRequest struct {
 
 func (x *ListTablesRequest) Reset() {
 	*x = ListTablesRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[21]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1153,7 +1326,7 @@ func (x *ListTablesRequest) String() string {
 func (*ListTablesRequest) ProtoMessage() {}
 
 func (x *ListTablesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[21]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1166,7 +1339,7 @@ func (x *ListTablesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTablesRequest.ProtoReflect.Descriptor instead.
 func (*ListTablesRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{21}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListTablesRequest) GetDatabaseName() string {
@@ -1185,7 +1358,7 @@ type ListTablesResponse struct {
 
 func (x *ListTablesResponse) Reset() {
 	*x = ListTablesResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[22]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1197,7 +1370,7 @@ func (x *ListTablesResponse) String() string {
 func (*ListTablesResponse) ProtoMessage() {}
 
 func (x *ListTablesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[22]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1210,7 +1383,7 @@ func (x *ListTablesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTablesResponse.ProtoReflect.Descriptor instead.
 func (*ListTablesResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{22}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListTablesResponse) GetTableName() []string {
@@ -1231,7 +1404,7 @@ type DropTableRequest struct {
 
 func (x *DropTableRequest) Reset() {
 	*x = DropTableRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[23]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1243,7 +1416,7 @@ func (x *DropTableRequest) String() string {
 func (*DropTableRequest) ProtoMessage() {}
 
 func (x *DropTableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[23]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1256,7 +1429,7 @@ func (x *DropTableRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropTableRequest.ProtoReflect.Descriptor instead.
 func (*DropTableRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{23}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DropTableRequest) GetTablePath() *PbTablePath {
@@ -1281,7 +1454,7 @@ type DropTableResponse struct {
 
 func (x *DropTableResponse) Reset() {
 	*x = DropTableResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[24]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1293,7 +1466,7 @@ func (x *DropTableResponse) String() string {
 func (*DropTableResponse) ProtoMessage() {}
 
 func (x *DropTableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[24]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1306,7 +1479,7 @@ func (x *DropTableResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropTableResponse.ProtoReflect.Descriptor instead.
 func (*DropTableResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{24}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{27}
 }
 
 // table exists request and response
@@ -1319,7 +1492,7 @@ type TableExistsRequest struct {
 
 func (x *TableExistsRequest) Reset() {
 	*x = TableExistsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[25]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1331,7 +1504,7 @@ func (x *TableExistsRequest) String() string {
 func (*TableExistsRequest) ProtoMessage() {}
 
 func (x *TableExistsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[25]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1344,7 +1517,7 @@ func (x *TableExistsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TableExistsRequest.ProtoReflect.Descriptor instead.
 func (*TableExistsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{25}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *TableExistsRequest) GetTablePath() *PbTablePath {
@@ -1363,7 +1536,7 @@ type TableExistsResponse struct {
 
 func (x *TableExistsResponse) Reset() {
 	*x = TableExistsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[26]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1375,7 +1548,7 @@ func (x *TableExistsResponse) String() string {
 func (*TableExistsResponse) ProtoMessage() {}
 
 func (x *TableExistsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[26]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1388,7 +1561,7 @@ func (x *TableExistsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TableExistsResponse.ProtoReflect.Descriptor instead.
 func (*TableExistsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{26}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *TableExistsResponse) GetExists() bool {
@@ -1413,7 +1586,7 @@ type MetadataRequest struct {
 
 func (x *MetadataRequest) Reset() {
 	*x = MetadataRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[27]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1425,7 +1598,7 @@ func (x *MetadataRequest) String() string {
 func (*MetadataRequest) ProtoMessage() {}
 
 func (x *MetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[27]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1438,7 +1611,7 @@ func (x *MetadataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataRequest.ProtoReflect.Descriptor instead.
 func (*MetadataRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{27}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *MetadataRequest) GetTablePath() []*PbTablePath {
@@ -1474,7 +1647,7 @@ type MetadataResponse struct {
 
 func (x *MetadataResponse) Reset() {
 	*x = MetadataResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[28]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +1659,7 @@ func (x *MetadataResponse) String() string {
 func (*MetadataResponse) ProtoMessage() {}
 
 func (x *MetadataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[28]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +1672,7 @@ func (x *MetadataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataResponse.ProtoReflect.Descriptor instead.
 func (*MetadataResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{28}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *MetadataResponse) GetCoordinatorServer() *PbServerNode {
@@ -1544,7 +1717,7 @@ type UpdateMetadataRequest struct {
 
 func (x *UpdateMetadataRequest) Reset() {
 	*x = UpdateMetadataRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[29]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1556,7 +1729,7 @@ func (x *UpdateMetadataRequest) String() string {
 func (*UpdateMetadataRequest) ProtoMessage() {}
 
 func (x *UpdateMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[29]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1569,7 +1742,7 @@ func (x *UpdateMetadataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMetadataRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{29}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *UpdateMetadataRequest) GetCoordinatorServer() *PbServerNode {
@@ -1615,7 +1788,7 @@ type UpdateMetadataResponse struct {
 
 func (x *UpdateMetadataResponse) Reset() {
 	*x = UpdateMetadataResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[30]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1627,7 +1800,7 @@ func (x *UpdateMetadataResponse) String() string {
 func (*UpdateMetadataResponse) ProtoMessage() {}
 
 func (x *UpdateMetadataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[30]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1640,7 +1813,7 @@ func (x *UpdateMetadataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMetadataResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMetadataResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{30}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{33}
 }
 
 // produce log request and response
@@ -1656,7 +1829,7 @@ type ProduceLogRequest struct {
 
 func (x *ProduceLogRequest) Reset() {
 	*x = ProduceLogRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[31]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1668,7 +1841,7 @@ func (x *ProduceLogRequest) String() string {
 func (*ProduceLogRequest) ProtoMessage() {}
 
 func (x *ProduceLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[31]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1681,7 +1854,7 @@ func (x *ProduceLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProduceLogRequest.ProtoReflect.Descriptor instead.
 func (*ProduceLogRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{31}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ProduceLogRequest) GetAcks() int32 {
@@ -1721,7 +1894,7 @@ type ProduceLogResponse struct {
 
 func (x *ProduceLogResponse) Reset() {
 	*x = ProduceLogResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[32]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1733,7 +1906,7 @@ func (x *ProduceLogResponse) String() string {
 func (*ProduceLogResponse) ProtoMessage() {}
 
 func (x *ProduceLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[32]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1746,7 +1919,7 @@ func (x *ProduceLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProduceLogResponse.ProtoReflect.Descriptor instead.
 func (*ProduceLogResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{32}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ProduceLogResponse) GetBucketsResp() []*PbProduceLogRespForBucket {
@@ -1764,13 +1937,14 @@ type FetchLogRequest struct {
 	TablesReq        []*PbFetchLogReqForTable `protobuf:"bytes,3,rep,name=tables_req,json=tablesReq" json:"tables_req,omitempty"`
 	MaxWaitMs        *int32                   `protobuf:"varint,4,opt,name=max_wait_ms,json=maxWaitMs" json:"max_wait_ms,omitempty"`
 	MinBytes         *int32                   `protobuf:"varint,5,opt,name=min_bytes,json=minBytes" json:"min_bytes,omitempty"`
+	ReadPreference   *int32                   `protobuf:"varint,6,opt,name=read_preference,json=readPreference" json:"read_preference,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *FetchLogRequest) Reset() {
 	*x = FetchLogRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[33]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1782,7 +1956,7 @@ func (x *FetchLogRequest) String() string {
 func (*FetchLogRequest) ProtoMessage() {}
 
 func (x *FetchLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[33]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1795,7 +1969,7 @@ func (x *FetchLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchLogRequest.ProtoReflect.Descriptor instead.
 func (*FetchLogRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{33}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *FetchLogRequest) GetFollowerServerId() int32 {
@@ -1833,6 +2007,13 @@ func (x *FetchLogRequest) GetMinBytes() int32 {
 	return 0
 }
 
+func (x *FetchLogRequest) GetReadPreference() int32 {
+	if x != nil && x.ReadPreference != nil {
+		return *x.ReadPreference
+	}
+	return 0
+}
+
 type FetchLogResponse struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	TablesResp    []*PbFetchLogRespForTable `protobuf:"bytes,1,rep,name=tables_resp,json=tablesResp" json:"tables_resp,omitempty"`
@@ -1842,7 +2023,7 @@ type FetchLogResponse struct {
 
 func (x *FetchLogResponse) Reset() {
 	*x = FetchLogResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[34]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1854,7 +2035,7 @@ func (x *FetchLogResponse) String() string {
 func (*FetchLogResponse) ProtoMessage() {}
 
 func (x *FetchLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[34]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1867,7 +2048,7 @@ func (x *FetchLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchLogResponse.ProtoReflect.Descriptor instead.
 func (*FetchLogResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{34}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *FetchLogResponse) GetTablesResp() []*PbFetchLogRespForTable {
@@ -1896,7 +2077,7 @@ type PutKvRequest struct {
 
 func (x *PutKvRequest) Reset() {
 	*x = PutKvRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[35]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1908,7 +2089,7 @@ func (x *PutKvRequest) String() string {
 func (*PutKvRequest) ProtoMessage() {}
 
 func (x *PutKvRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[35]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1921,7 +2102,7 @@ func (x *PutKvRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutKvRequest.ProtoReflect.Descriptor instead.
 func (*PutKvRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{35}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *PutKvRequest) GetAcks() int32 {
@@ -1975,7 +2156,7 @@ type PutKvResponse struct {
 
 func (x *PutKvResponse) Reset() {
 	*x = PutKvResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[36]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1987,7 +2168,7 @@ func (x *PutKvResponse) String() string {
 func (*PutKvResponse) ProtoMessage() {}
 
 func (x *PutKvResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[36]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2000,7 +2181,7 @@ func (x *PutKvResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutKvResponse.ProtoReflect.Descriptor instead.
 func (*PutKvResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{36}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PutKvResponse) GetBucketsResp() []*PbPutKvRespForBucket {
@@ -2024,7 +2205,7 @@ type LookupRequest struct {
 
 func (x *LookupRequest) Reset() {
 	*x = LookupRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[37]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2036,7 +2217,7 @@ func (x *LookupRequest) String() string {
 func (*LookupRequest) ProtoMessage() {}
 
 func (x *LookupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[37]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2049,7 +2230,7 @@ func (x *LookupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupRequest.ProtoReflect.Descriptor instead.
 func (*LookupRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{37}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *LookupRequest) GetTableId() int64 {
@@ -2096,7 +2277,7 @@ type LookupResponse struct {
 
 func (x *LookupResponse) Reset() {
 	*x = LookupResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[38]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2108,7 +2289,7 @@ func (x *LookupResponse) String() string {
 func (*LookupResponse) ProtoMessage() {}
 
 func (x *LookupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[38]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2121,7 +2302,7 @@ func (x *LookupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupResponse.ProtoReflect.Descriptor instead.
 func (*LookupResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{38}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *LookupResponse) GetBucketsResp() []*PbLookupRespForBucket {
@@ -2142,7 +2323,7 @@ type PrefixLookupRequest struct {
 
 func (x *PrefixLookupRequest) Reset() {
 	*x = PrefixLookupRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[39]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2154,7 +2335,7 @@ func (x *PrefixLookupRequest) String() string {
 func (*PrefixLookupRequest) ProtoMessage() {}
 
 func (x *PrefixLookupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[39]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2167,7 +2348,7 @@ func (x *PrefixLookupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrefixLookupRequest.ProtoReflect.Descriptor instead.
 func (*PrefixLookupRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{39}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *PrefixLookupRequest) GetTableId() int64 {
@@ -2193,7 +2374,7 @@ type PrefixLookupResponse struct {
 
 func (x *PrefixLookupResponse) Reset() {
 	*x = PrefixLookupResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[40]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2205,7 +2386,7 @@ func (x *PrefixLookupResponse) String() string {
 func (*PrefixLookupResponse) ProtoMessage() {}
 
 func (x *PrefixLookupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[40]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2218,7 +2399,7 @@ func (x *PrefixLookupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrefixLookupResponse.ProtoReflect.Descriptor instead.
 func (*PrefixLookupResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{40}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *PrefixLookupResponse) GetBucketsResp() []*PbPrefixLookupRespForBucket {
@@ -2230,18 +2411,19 @@ func (x *PrefixLookupResponse) GetBucketsResp() []*PbPrefixLookupRespForBucket {
 
 // limit scan request and response
 type LimitScanRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TableId       *int64                 `protobuf:"varint,2,req,name=table_id,json=tableId" json:"table_id,omitempty"`
-	PartitionId   *int64                 `protobuf:"varint,3,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,4,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	Limit         *int32                 `protobuf:"varint,5,req,name=limit" json:"limit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	TableId            *int64                 `protobuf:"varint,2,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	PartitionId        *int64                 `protobuf:"varint,3,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId           *int32                 `protobuf:"varint,4,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	Limit              *int32                 `protobuf:"varint,5,req,name=limit" json:"limit,omitempty"`
+	RoutingBucketCount *int32                 `protobuf:"varint,6,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *LimitScanRequest) Reset() {
 	*x = LimitScanRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[41]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2253,7 +2435,7 @@ func (x *LimitScanRequest) String() string {
 func (*LimitScanRequest) ProtoMessage() {}
 
 func (x *LimitScanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[41]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2266,7 +2448,7 @@ func (x *LimitScanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LimitScanRequest.ProtoReflect.Descriptor instead.
 func (*LimitScanRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{41}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *LimitScanRequest) GetTableId() int64 {
@@ -2297,6 +2479,13 @@ func (x *LimitScanRequest) GetLimit() int32 {
 	return 0
 }
 
+func (x *LimitScanRequest) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
 type LimitScanResponse struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	ErrorCode    *int32                 `protobuf:"varint,1,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
@@ -2311,7 +2500,7 @@ type LimitScanResponse struct {
 
 func (x *LimitScanResponse) Reset() {
 	*x = LimitScanResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[42]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2323,7 +2512,7 @@ func (x *LimitScanResponse) String() string {
 func (*LimitScanResponse) ProtoMessage() {}
 
 func (x *LimitScanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[42]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2336,7 +2525,7 @@ func (x *LimitScanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LimitScanResponse.ProtoReflect.Descriptor instead.
 func (*LimitScanResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{42}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *LimitScanResponse) GetErrorCode() int32 {
@@ -2367,6 +2556,254 @@ func (x *LimitScanResponse) GetRecords() []byte {
 	return nil
 }
 
+// Full KV scan request and response.
+// A new scan is initiated with bucket_scan_req; subsequent batches use scanner_id.
+type PbScanReqForBucket struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	TableId     *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	PartitionId *int64                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId    *int32                 `protobuf:"varint,3,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	// If set, stops returning rows after this many records.
+	Limit              *int64 `protobuf:"varint,4,opt,name=limit" json:"limit,omitempty"`
+	RoutingBucketCount *int32 `protobuf:"varint,5,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PbScanReqForBucket) Reset() {
+	*x = PbScanReqForBucket{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbScanReqForBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbScanReqForBucket) ProtoMessage() {}
+
+func (x *PbScanReqForBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbScanReqForBucket.ProtoReflect.Descriptor instead.
+func (*PbScanReqForBucket) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *PbScanReqForBucket) GetTableId() int64 {
+	if x != nil && x.TableId != nil {
+		return *x.TableId
+	}
+	return 0
+}
+
+func (x *PbScanReqForBucket) GetPartitionId() int64 {
+	if x != nil && x.PartitionId != nil {
+		return *x.PartitionId
+	}
+	return 0
+}
+
+func (x *PbScanReqForBucket) GetBucketId() int32 {
+	if x != nil && x.BucketId != nil {
+		return *x.BucketId
+	}
+	return 0
+}
+
+func (x *PbScanReqForBucket) GetLimit() int64 {
+	if x != nil && x.Limit != nil {
+		return *x.Limit
+	}
+	return 0
+}
+
+func (x *PbScanReqForBucket) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
+type ScanKvRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Mutually exclusive: either scanner_id (continuation) or bucket_scan_req (new scan).
+	ScannerId     []byte              `protobuf:"bytes,1,opt,name=scanner_id,json=scannerId" json:"scanner_id,omitempty"`
+	BucketScanReq *PbScanReqForBucket `protobuf:"bytes,2,opt,name=bucket_scan_req,json=bucketScanReq" json:"bucket_scan_req,omitempty"`
+	// Monotonically increasing sequence number for in-order delivery validation.
+	CallSeqId *int32 `protobuf:"varint,3,opt,name=call_seq_id,json=callSeqId" json:"call_seq_id,omitempty"`
+	// Maximum number of bytes of record data to return in this batch.
+	BatchSizeBytes *int32 `protobuf:"varint,4,opt,name=batch_size_bytes,json=batchSizeBytes" json:"batch_size_bytes,omitempty"`
+	// If true, the server closes the scanner session immediately.
+	CloseScanner  *bool `protobuf:"varint,5,opt,name=close_scanner,json=closeScanner" json:"close_scanner,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanKvRequest) Reset() {
+	*x = ScanKvRequest{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanKvRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanKvRequest) ProtoMessage() {}
+
+func (x *ScanKvRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanKvRequest.ProtoReflect.Descriptor instead.
+func (*ScanKvRequest) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ScanKvRequest) GetScannerId() []byte {
+	if x != nil {
+		return x.ScannerId
+	}
+	return nil
+}
+
+func (x *ScanKvRequest) GetBucketScanReq() *PbScanReqForBucket {
+	if x != nil {
+		return x.BucketScanReq
+	}
+	return nil
+}
+
+func (x *ScanKvRequest) GetCallSeqId() int32 {
+	if x != nil && x.CallSeqId != nil {
+		return *x.CallSeqId
+	}
+	return 0
+}
+
+func (x *ScanKvRequest) GetBatchSizeBytes() int32 {
+	if x != nil && x.BatchSizeBytes != nil {
+		return *x.BatchSizeBytes
+	}
+	return 0
+}
+
+func (x *ScanKvRequest) GetCloseScanner() bool {
+	if x != nil && x.CloseScanner != nil {
+		return *x.CloseScanner
+	}
+	return false
+}
+
+type ScanKvResponse struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ErrorCode    *int32                 `protobuf:"varint,1,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
+	ErrorMessage *string                `protobuf:"bytes,2,opt,name=error_message,json=errorMessage" json:"error_message,omitempty"`
+	// Opaque server-assigned session identifier; echoed on every response.
+	ScannerId []byte `protobuf:"bytes,3,opt,name=scanner_id,json=scannerId" json:"scanner_id,omitempty"`
+	// False when the scan is complete and the scanner session has been closed.
+	HasMoreResults *bool `protobuf:"varint,4,opt,name=has_more_results,json=hasMoreResults" json:"has_more_results,omitempty"`
+	// Serialised DefaultValueRecordBatch; absent when the batch is empty.
+	Records []byte `protobuf:"bytes,5,opt,name=records" json:"records,omitempty"`
+	// Log high-watermark at the time the RocksDB snapshot was opened.
+	// Only set on the first response (new scan initiation).
+	LogOffset     *int64 `protobuf:"varint,6,opt,name=log_offset,json=logOffset" json:"log_offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanKvResponse) Reset() {
+	*x = ScanKvResponse{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanKvResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanKvResponse) ProtoMessage() {}
+
+func (x *ScanKvResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanKvResponse.ProtoReflect.Descriptor instead.
+func (*ScanKvResponse) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ScanKvResponse) GetErrorCode() int32 {
+	if x != nil && x.ErrorCode != nil {
+		return *x.ErrorCode
+	}
+	return 0
+}
+
+func (x *ScanKvResponse) GetErrorMessage() string {
+	if x != nil && x.ErrorMessage != nil {
+		return *x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *ScanKvResponse) GetScannerId() []byte {
+	if x != nil {
+		return x.ScannerId
+	}
+	return nil
+}
+
+func (x *ScanKvResponse) GetHasMoreResults() bool {
+	if x != nil && x.HasMoreResults != nil {
+		return *x.HasMoreResults
+	}
+	return false
+}
+
+func (x *ScanKvResponse) GetRecords() []byte {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+func (x *ScanKvResponse) GetLogOffset() int64 {
+	if x != nil && x.LogOffset != nil {
+		return *x.LogOffset
+	}
+	return 0
+}
+
 // Get table statistics request and response.
 // Sent to TabletServer to get per-bucket statistics.
 type GetTableStatsRequest struct {
@@ -2383,7 +2820,7 @@ type GetTableStatsRequest struct {
 
 func (x *GetTableStatsRequest) Reset() {
 	*x = GetTableStatsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[43]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2395,7 +2832,7 @@ func (x *GetTableStatsRequest) String() string {
 func (*GetTableStatsRequest) ProtoMessage() {}
 
 func (x *GetTableStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[43]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2408,7 +2845,7 @@ func (x *GetTableStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTableStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetTableStatsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{43}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *GetTableStatsRequest) GetTableId() int64 {
@@ -2441,7 +2878,7 @@ type GetTableStatsResponse struct {
 
 func (x *GetTableStatsResponse) Reset() {
 	*x = GetTableStatsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[44]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2453,7 +2890,7 @@ func (x *GetTableStatsResponse) String() string {
 func (*GetTableStatsResponse) ProtoMessage() {}
 
 func (x *GetTableStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[44]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2466,7 +2903,7 @@ func (x *GetTableStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTableStatsResponse.ProtoReflect.Descriptor instead.
 func (*GetTableStatsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{44}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *GetTableStatsResponse) GetBucketsResp() []*PbTableStatsRespForBucket {
@@ -2487,7 +2924,7 @@ type NotifyLeaderAndIsrRequest struct {
 
 func (x *NotifyLeaderAndIsrRequest) Reset() {
 	*x = NotifyLeaderAndIsrRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[45]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2499,7 +2936,7 @@ func (x *NotifyLeaderAndIsrRequest) String() string {
 func (*NotifyLeaderAndIsrRequest) ProtoMessage() {}
 
 func (x *NotifyLeaderAndIsrRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[45]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2512,7 +2949,7 @@ func (x *NotifyLeaderAndIsrRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyLeaderAndIsrRequest.ProtoReflect.Descriptor instead.
 func (*NotifyLeaderAndIsrRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{45}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *NotifyLeaderAndIsrRequest) GetCoordinatorEpoch() int32 {
@@ -2539,7 +2976,7 @@ type NotifyLeaderAndIsrResponse struct {
 
 func (x *NotifyLeaderAndIsrResponse) Reset() {
 	*x = NotifyLeaderAndIsrResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[46]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2551,7 +2988,7 @@ func (x *NotifyLeaderAndIsrResponse) String() string {
 func (*NotifyLeaderAndIsrResponse) ProtoMessage() {}
 
 func (x *NotifyLeaderAndIsrResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[46]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2564,7 +3001,7 @@ func (x *NotifyLeaderAndIsrResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyLeaderAndIsrResponse.ProtoReflect.Descriptor instead.
 func (*NotifyLeaderAndIsrResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{46}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *NotifyLeaderAndIsrResponse) GetNotifyBucketsLeaderResp() []*PbNotifyLeaderAndIsrRespForBucket {
@@ -2585,7 +3022,7 @@ type StopReplicaRequest struct {
 
 func (x *StopReplicaRequest) Reset() {
 	*x = StopReplicaRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[47]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2597,7 +3034,7 @@ func (x *StopReplicaRequest) String() string {
 func (*StopReplicaRequest) ProtoMessage() {}
 
 func (x *StopReplicaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[47]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2610,7 +3047,7 @@ func (x *StopReplicaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopReplicaRequest.ProtoReflect.Descriptor instead.
 func (*StopReplicaRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{47}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *StopReplicaRequest) GetCoordinatorEpoch() int32 {
@@ -2637,7 +3074,7 @@ type StopReplicaResponse struct {
 
 func (x *StopReplicaResponse) Reset() {
 	*x = StopReplicaResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[48]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2649,7 +3086,7 @@ func (x *StopReplicaResponse) String() string {
 func (*StopReplicaResponse) ProtoMessage() {}
 
 func (x *StopReplicaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[48]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2662,7 +3099,7 @@ func (x *StopReplicaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopReplicaResponse.ProtoReflect.Descriptor instead.
 func (*StopReplicaResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{48}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *StopReplicaResponse) GetStopReplicasResp() []*PbStopReplicaRespForBucket {
@@ -2683,7 +3120,7 @@ type AdjustIsrRequest struct {
 
 func (x *AdjustIsrRequest) Reset() {
 	*x = AdjustIsrRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[49]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2695,7 +3132,7 @@ func (x *AdjustIsrRequest) String() string {
 func (*AdjustIsrRequest) ProtoMessage() {}
 
 func (x *AdjustIsrRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[49]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2708,7 +3145,7 @@ func (x *AdjustIsrRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdjustIsrRequest.ProtoReflect.Descriptor instead.
 func (*AdjustIsrRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{49}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *AdjustIsrRequest) GetServerId() int32 {
@@ -2734,7 +3171,7 @@ type AdjustIsrResponse struct {
 
 func (x *AdjustIsrResponse) Reset() {
 	*x = AdjustIsrResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[50]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2746,7 +3183,7 @@ func (x *AdjustIsrResponse) String() string {
 func (*AdjustIsrResponse) ProtoMessage() {}
 
 func (x *AdjustIsrResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[50]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2759,7 +3196,7 @@ func (x *AdjustIsrResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdjustIsrResponse.ProtoReflect.Descriptor instead.
 func (*AdjustIsrResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{50}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *AdjustIsrResponse) GetTablesResp() []*PbAdjustIsrRespForTable {
@@ -2771,20 +3208,21 @@ func (x *AdjustIsrResponse) GetTablesResp() []*PbAdjustIsrRespForTable {
 
 // list offsets request and response
 type ListOffsetsRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	FollowerServerId *int32                 `protobuf:"varint,1,req,name=follower_server_id,json=followerServerId" json:"follower_server_id,omitempty"` // value -1 indicate the request from client.
-	OffsetType       *int32                 `protobuf:"varint,2,req,name=offset_type,json=offsetType" json:"offset_type,omitempty"`                     // value can be 0,1,2 (see ListOffsetsParam for more details)
-	TableId          *int64                 `protobuf:"varint,3,req,name=table_id,json=tableId" json:"table_id,omitempty"`
-	PartitionId      *int64                 `protobuf:"varint,4,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId         []int32                `protobuf:"varint,5,rep,packed,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"` // it is recommended to use packed for repeated numerics to get more efficient encoding
-	StartTimestamp   *int64                 `protobuf:"varint,6,opt,name=startTimestamp" json:"startTimestamp,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	FollowerServerId   *int32                 `protobuf:"varint,1,req,name=follower_server_id,json=followerServerId" json:"follower_server_id,omitempty"` // value -1 indicate the request from client.
+	OffsetType         *int32                 `protobuf:"varint,2,req,name=offset_type,json=offsetType" json:"offset_type,omitempty"`                     // value can be 0,1,2 (see ListOffsetsParam for more details)
+	TableId            *int64                 `protobuf:"varint,3,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	PartitionId        *int64                 `protobuf:"varint,4,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId           []int32                `protobuf:"varint,5,rep,packed,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"` // it is recommended to use packed for repeated numerics to get more efficient encoding
+	StartTimestamp     *int64                 `protobuf:"varint,6,opt,name=startTimestamp" json:"startTimestamp,omitempty"`
+	RoutingBucketCount *int32                 `protobuf:"varint,7,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ListOffsetsRequest) Reset() {
 	*x = ListOffsetsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[51]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2796,7 +3234,7 @@ func (x *ListOffsetsRequest) String() string {
 func (*ListOffsetsRequest) ProtoMessage() {}
 
 func (x *ListOffsetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[51]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2809,7 +3247,7 @@ func (x *ListOffsetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOffsetsRequest.ProtoReflect.Descriptor instead.
 func (*ListOffsetsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{51}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ListOffsetsRequest) GetFollowerServerId() int32 {
@@ -2854,6 +3292,13 @@ func (x *ListOffsetsRequest) GetStartTimestamp() int64 {
 	return 0
 }
 
+func (x *ListOffsetsRequest) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
 type ListOffsetsResponse struct {
 	state         protoimpl.MessageState        `protogen:"open.v1"`
 	BucketsResp   []*PbListOffsetsRespForBucket `protobuf:"bytes,1,rep,name=buckets_resp,json=bucketsResp" json:"buckets_resp,omitempty"`
@@ -2863,7 +3308,7 @@ type ListOffsetsResponse struct {
 
 func (x *ListOffsetsResponse) Reset() {
 	*x = ListOffsetsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[52]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2875,7 +3320,7 @@ func (x *ListOffsetsResponse) String() string {
 func (*ListOffsetsResponse) ProtoMessage() {}
 
 func (x *ListOffsetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[52]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2888,7 +3333,7 @@ func (x *ListOffsetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOffsetsResponse.ProtoReflect.Descriptor instead.
 func (*ListOffsetsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{52}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ListOffsetsResponse) GetBucketsResp() []*PbListOffsetsRespForBucket {
@@ -2910,7 +3355,7 @@ type CommitKvSnapshotRequest struct {
 
 func (x *CommitKvSnapshotRequest) Reset() {
 	*x = CommitKvSnapshotRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[53]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2922,7 +3367,7 @@ func (x *CommitKvSnapshotRequest) String() string {
 func (*CommitKvSnapshotRequest) ProtoMessage() {}
 
 func (x *CommitKvSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[53]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2935,7 +3380,7 @@ func (x *CommitKvSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitKvSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*CommitKvSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{53}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *CommitKvSnapshotRequest) GetCompletedSnapshot() []byte {
@@ -2967,7 +3412,7 @@ type CommitKvSnapshotResponse struct {
 
 func (x *CommitKvSnapshotResponse) Reset() {
 	*x = CommitKvSnapshotResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[54]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2979,7 +3424,7 @@ func (x *CommitKvSnapshotResponse) String() string {
 func (*CommitKvSnapshotResponse) ProtoMessage() {}
 
 func (x *CommitKvSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[54]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2992,7 +3437,7 @@ func (x *CommitKvSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitKvSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*CommitKvSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{54}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{60}
 }
 
 // notify the log offset about kv snapshot
@@ -3009,7 +3454,7 @@ type NotifyKvSnapshotOffsetRequest struct {
 
 func (x *NotifyKvSnapshotOffsetRequest) Reset() {
 	*x = NotifyKvSnapshotOffsetRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[55]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3021,7 +3466,7 @@ func (x *NotifyKvSnapshotOffsetRequest) String() string {
 func (*NotifyKvSnapshotOffsetRequest) ProtoMessage() {}
 
 func (x *NotifyKvSnapshotOffsetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[55]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3034,7 +3479,7 @@ func (x *NotifyKvSnapshotOffsetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyKvSnapshotOffsetRequest.ProtoReflect.Descriptor instead.
 func (*NotifyKvSnapshotOffsetRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{55}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *NotifyKvSnapshotOffsetRequest) GetTableId() int64 {
@@ -3080,7 +3525,7 @@ type NotifyKvSnapshotOffsetResponse struct {
 
 func (x *NotifyKvSnapshotOffsetResponse) Reset() {
 	*x = NotifyKvSnapshotOffsetResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[56]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3092,7 +3537,7 @@ func (x *NotifyKvSnapshotOffsetResponse) String() string {
 func (*NotifyKvSnapshotOffsetResponse) ProtoMessage() {}
 
 func (x *NotifyKvSnapshotOffsetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[56]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3105,7 +3550,7 @@ func (x *NotifyKvSnapshotOffsetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyKvSnapshotOffsetResponse.ProtoReflect.Descriptor instead.
 func (*NotifyKvSnapshotOffsetResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{56}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{62}
 }
 
 type GetLatestKvSnapshotsRequest struct {
@@ -3118,7 +3563,7 @@ type GetLatestKvSnapshotsRequest struct {
 
 func (x *GetLatestKvSnapshotsRequest) Reset() {
 	*x = GetLatestKvSnapshotsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[57]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3130,7 +3575,7 @@ func (x *GetLatestKvSnapshotsRequest) String() string {
 func (*GetLatestKvSnapshotsRequest) ProtoMessage() {}
 
 func (x *GetLatestKvSnapshotsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[57]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3143,7 +3588,7 @@ func (x *GetLatestKvSnapshotsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLatestKvSnapshotsRequest.ProtoReflect.Descriptor instead.
 func (*GetLatestKvSnapshotsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{57}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *GetLatestKvSnapshotsRequest) GetTablePath() *PbTablePath {
@@ -3172,7 +3617,7 @@ type GetLatestKvSnapshotsResponse struct {
 
 func (x *GetLatestKvSnapshotsResponse) Reset() {
 	*x = GetLatestKvSnapshotsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[58]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3184,7 +3629,7 @@ func (x *GetLatestKvSnapshotsResponse) String() string {
 func (*GetLatestKvSnapshotsResponse) ProtoMessage() {}
 
 func (x *GetLatestKvSnapshotsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[58]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3197,7 +3642,7 @@ func (x *GetLatestKvSnapshotsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLatestKvSnapshotsResponse.ProtoReflect.Descriptor instead.
 func (*GetLatestKvSnapshotsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{58}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *GetLatestKvSnapshotsResponse) GetTableId() int64 {
@@ -3233,7 +3678,7 @@ type GetKvSnapshotMetadataRequest struct {
 
 func (x *GetKvSnapshotMetadataRequest) Reset() {
 	*x = GetKvSnapshotMetadataRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[59]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3245,7 +3690,7 @@ func (x *GetKvSnapshotMetadataRequest) String() string {
 func (*GetKvSnapshotMetadataRequest) ProtoMessage() {}
 
 func (x *GetKvSnapshotMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[59]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3258,7 +3703,7 @@ func (x *GetKvSnapshotMetadataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetKvSnapshotMetadataRequest.ProtoReflect.Descriptor instead.
 func (*GetKvSnapshotMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{59}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *GetKvSnapshotMetadataRequest) GetTableId() int64 {
@@ -3299,7 +3744,7 @@ type GetKvSnapshotMetadataResponse struct {
 
 func (x *GetKvSnapshotMetadataResponse) Reset() {
 	*x = GetKvSnapshotMetadataResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[60]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3311,7 +3756,7 @@ func (x *GetKvSnapshotMetadataResponse) String() string {
 func (*GetKvSnapshotMetadataResponse) ProtoMessage() {}
 
 func (x *GetKvSnapshotMetadataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[60]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3324,7 +3769,7 @@ func (x *GetKvSnapshotMetadataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetKvSnapshotMetadataResponse.ProtoReflect.Descriptor instead.
 func (*GetKvSnapshotMetadataResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{60}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *GetKvSnapshotMetadataResponse) GetLogOffset() int64 {
@@ -3352,7 +3797,7 @@ type AcquireKvSnapshotLeaseRequest struct {
 
 func (x *AcquireKvSnapshotLeaseRequest) Reset() {
 	*x = AcquireKvSnapshotLeaseRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[61]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3364,7 +3809,7 @@ func (x *AcquireKvSnapshotLeaseRequest) String() string {
 func (*AcquireKvSnapshotLeaseRequest) ProtoMessage() {}
 
 func (x *AcquireKvSnapshotLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[61]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3377,7 +3822,7 @@ func (x *AcquireKvSnapshotLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireKvSnapshotLeaseRequest.ProtoReflect.Descriptor instead.
 func (*AcquireKvSnapshotLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{61}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *AcquireKvSnapshotLeaseRequest) GetLeaseId() string {
@@ -3410,7 +3855,7 @@ type AcquireKvSnapshotLeaseResponse struct {
 
 func (x *AcquireKvSnapshotLeaseResponse) Reset() {
 	*x = AcquireKvSnapshotLeaseResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[62]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3422,7 +3867,7 @@ func (x *AcquireKvSnapshotLeaseResponse) String() string {
 func (*AcquireKvSnapshotLeaseResponse) ProtoMessage() {}
 
 func (x *AcquireKvSnapshotLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[62]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3435,7 +3880,7 @@ func (x *AcquireKvSnapshotLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireKvSnapshotLeaseResponse.ProtoReflect.Descriptor instead.
 func (*AcquireKvSnapshotLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{62}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *AcquireKvSnapshotLeaseResponse) GetUnavailableSnapshots() []*PbKvSnapshotLeaseForTable {
@@ -3455,7 +3900,7 @@ type ReleaseKvSnapshotLeaseRequest struct {
 
 func (x *ReleaseKvSnapshotLeaseRequest) Reset() {
 	*x = ReleaseKvSnapshotLeaseRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[63]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3467,7 +3912,7 @@ func (x *ReleaseKvSnapshotLeaseRequest) String() string {
 func (*ReleaseKvSnapshotLeaseRequest) ProtoMessage() {}
 
 func (x *ReleaseKvSnapshotLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[63]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3480,7 +3925,7 @@ func (x *ReleaseKvSnapshotLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseKvSnapshotLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseKvSnapshotLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{63}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *ReleaseKvSnapshotLeaseRequest) GetLeaseId() string {
@@ -3505,7 +3950,7 @@ type ReleaseKvSnapshotLeaseResponse struct {
 
 func (x *ReleaseKvSnapshotLeaseResponse) Reset() {
 	*x = ReleaseKvSnapshotLeaseResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[64]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3517,7 +3962,7 @@ func (x *ReleaseKvSnapshotLeaseResponse) String() string {
 func (*ReleaseKvSnapshotLeaseResponse) ProtoMessage() {}
 
 func (x *ReleaseKvSnapshotLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[64]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3530,7 +3975,7 @@ func (x *ReleaseKvSnapshotLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseKvSnapshotLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseKvSnapshotLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{64}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{70}
 }
 
 type DropKvSnapshotLeaseRequest struct {
@@ -3542,7 +3987,7 @@ type DropKvSnapshotLeaseRequest struct {
 
 func (x *DropKvSnapshotLeaseRequest) Reset() {
 	*x = DropKvSnapshotLeaseRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[65]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3554,7 +3999,7 @@ func (x *DropKvSnapshotLeaseRequest) String() string {
 func (*DropKvSnapshotLeaseRequest) ProtoMessage() {}
 
 func (x *DropKvSnapshotLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[65]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3567,7 +4012,7 @@ func (x *DropKvSnapshotLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropKvSnapshotLeaseRequest.ProtoReflect.Descriptor instead.
 func (*DropKvSnapshotLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{65}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *DropKvSnapshotLeaseRequest) GetLeaseId() string {
@@ -3585,7 +4030,7 @@ type DropKvSnapshotLeaseResponse struct {
 
 func (x *DropKvSnapshotLeaseResponse) Reset() {
 	*x = DropKvSnapshotLeaseResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[66]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3597,7 +4042,7 @@ func (x *DropKvSnapshotLeaseResponse) String() string {
 func (*DropKvSnapshotLeaseResponse) ProtoMessage() {}
 
 func (x *DropKvSnapshotLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[66]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3610,7 +4055,7 @@ func (x *DropKvSnapshotLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropKvSnapshotLeaseResponse.ProtoReflect.Descriptor instead.
 func (*DropKvSnapshotLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{66}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{72}
 }
 
 type GetLakeSnapshotRequest struct {
@@ -3624,7 +4069,7 @@ type GetLakeSnapshotRequest struct {
 
 func (x *GetLakeSnapshotRequest) Reset() {
 	*x = GetLakeSnapshotRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[67]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3636,7 +4081,7 @@ func (x *GetLakeSnapshotRequest) String() string {
 func (*GetLakeSnapshotRequest) ProtoMessage() {}
 
 func (x *GetLakeSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[67]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3649,7 +4094,7 @@ func (x *GetLakeSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLakeSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetLakeSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{67}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *GetLakeSnapshotRequest) GetTablePath() *PbTablePath {
@@ -3684,7 +4129,7 @@ type GetLakeSnapshotResponse struct {
 
 func (x *GetLakeSnapshotResponse) Reset() {
 	*x = GetLakeSnapshotResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[68]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3696,7 +4141,7 @@ func (x *GetLakeSnapshotResponse) String() string {
 func (*GetLakeSnapshotResponse) ProtoMessage() {}
 
 func (x *GetLakeSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[68]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3709,7 +4154,7 @@ func (x *GetLakeSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLakeSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetLakeSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{68}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *GetLakeSnapshotResponse) GetTableId() int64 {
@@ -3741,7 +4186,7 @@ type GetFileSystemSecurityTokenRequest struct {
 
 func (x *GetFileSystemSecurityTokenRequest) Reset() {
 	*x = GetFileSystemSecurityTokenRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[69]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3753,7 +4198,7 @@ func (x *GetFileSystemSecurityTokenRequest) String() string {
 func (*GetFileSystemSecurityTokenRequest) ProtoMessage() {}
 
 func (x *GetFileSystemSecurityTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[69]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3766,7 +4211,7 @@ func (x *GetFileSystemSecurityTokenRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetFileSystemSecurityTokenRequest.ProtoReflect.Descriptor instead.
 func (*GetFileSystemSecurityTokenRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{69}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{75}
 }
 
 type GetFileSystemSecurityTokenResponse struct {
@@ -3781,7 +4226,7 @@ type GetFileSystemSecurityTokenResponse struct {
 
 func (x *GetFileSystemSecurityTokenResponse) Reset() {
 	*x = GetFileSystemSecurityTokenResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[70]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3793,7 +4238,7 @@ func (x *GetFileSystemSecurityTokenResponse) String() string {
 func (*GetFileSystemSecurityTokenResponse) ProtoMessage() {}
 
 func (x *GetFileSystemSecurityTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[70]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3806,7 +4251,7 @@ func (x *GetFileSystemSecurityTokenResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use GetFileSystemSecurityTokenResponse.ProtoReflect.Descriptor instead.
 func (*GetFileSystemSecurityTokenResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{70}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *GetFileSystemSecurityTokenResponse) GetSchema() string {
@@ -3847,7 +4292,7 @@ type InitWriterRequest struct {
 
 func (x *InitWriterRequest) Reset() {
 	*x = InitWriterRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[71]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3859,7 +4304,7 @@ func (x *InitWriterRequest) String() string {
 func (*InitWriterRequest) ProtoMessage() {}
 
 func (x *InitWriterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[71]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3872,7 +4317,7 @@ func (x *InitWriterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitWriterRequest.ProtoReflect.Descriptor instead.
 func (*InitWriterRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{71}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *InitWriterRequest) GetTablePath() []*PbTablePath {
@@ -3891,7 +4336,7 @@ type InitWriterResponse struct {
 
 func (x *InitWriterResponse) Reset() {
 	*x = InitWriterResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[72]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3903,7 +4348,7 @@ func (x *InitWriterResponse) String() string {
 func (*InitWriterResponse) ProtoMessage() {}
 
 func (x *InitWriterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[72]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3916,7 +4361,7 @@ func (x *InitWriterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitWriterResponse.ProtoReflect.Descriptor instead.
 func (*InitWriterResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{72}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *InitWriterResponse) GetWriterId() int64 {
@@ -3927,16 +4372,17 @@ func (x *InitWriterResponse) GetWriterId() int64 {
 }
 
 type ListPartitionInfosRequest struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	TablePath            *PbTablePath           `protobuf:"bytes,1,req,name=table_path,json=tablePath" json:"table_path,omitempty"`
-	PartialPartitionSpec *PbPartitionSpec       `protobuf:"bytes,2,opt,name=partial_partition_spec,json=partialPartitionSpec" json:"partial_partition_spec,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	TablePath               *PbTablePath           `protobuf:"bytes,1,req,name=table_path,json=tablePath" json:"table_path,omitempty"`
+	PartialPartitionSpec    *PbPartitionSpec       `protobuf:"bytes,2,opt,name=partial_partition_spec,json=partialPartitionSpec" json:"partial_partition_spec,omitempty"`
+	IncludeSystemPartitions *bool                  `protobuf:"varint,3,opt,name=include_system_partitions,json=includeSystemPartitions" json:"include_system_partitions,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *ListPartitionInfosRequest) Reset() {
 	*x = ListPartitionInfosRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[73]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3948,7 +4394,7 @@ func (x *ListPartitionInfosRequest) String() string {
 func (*ListPartitionInfosRequest) ProtoMessage() {}
 
 func (x *ListPartitionInfosRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[73]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3961,7 +4407,7 @@ func (x *ListPartitionInfosRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPartitionInfosRequest.ProtoReflect.Descriptor instead.
 func (*ListPartitionInfosRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{73}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ListPartitionInfosRequest) GetTablePath() *PbTablePath {
@@ -3978,16 +4424,24 @@ func (x *ListPartitionInfosRequest) GetPartialPartitionSpec() *PbPartitionSpec {
 	return nil
 }
 
+func (x *ListPartitionInfosRequest) GetIncludeSystemPartitions() bool {
+	if x != nil && x.IncludeSystemPartitions != nil {
+		return *x.IncludeSystemPartitions
+	}
+	return false
+}
+
 type ListPartitionInfosResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	PartitionsInfo []*PbPartitionInfo     `protobuf:"bytes,1,rep,name=partitions_info,json=partitionsInfo" json:"partitions_info,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	PartitionsInfo           []*PbPartitionInfo     `protobuf:"bytes,1,rep,name=partitions_info,json=partitionsInfo" json:"partitions_info,omitempty"`
+	SystemPartitionsIncluded *bool                  `protobuf:"varint,2,opt,name=system_partitions_included,json=systemPartitionsIncluded" json:"system_partitions_included,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *ListPartitionInfosResponse) Reset() {
 	*x = ListPartitionInfosResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[74]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3999,7 +4453,7 @@ func (x *ListPartitionInfosResponse) String() string {
 func (*ListPartitionInfosResponse) ProtoMessage() {}
 
 func (x *ListPartitionInfosResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[74]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4012,12 +4466,291 @@ func (x *ListPartitionInfosResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPartitionInfosResponse.ProtoReflect.Descriptor instead.
 func (*ListPartitionInfosResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{74}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ListPartitionInfosResponse) GetPartitionsInfo() []*PbPartitionInfo {
 	if x != nil {
 		return x.PartitionsInfo
+	}
+	return nil
+}
+
+func (x *ListPartitionInfosResponse) GetSystemPartitionsIncluded() bool {
+	if x != nil && x.SystemPartitionsIncluded != nil {
+		return *x.SystemPartitionsIncluded
+	}
+	return false
+}
+
+// list remote log manifest entries (one per bucket of a table or partition)
+type ListRemoteLogManifestsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TableId       *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	PartitionId   *int64                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"` // required if table is partitioned
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRemoteLogManifestsRequest) Reset() {
+	*x = ListRemoteLogManifestsRequest{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[81]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRemoteLogManifestsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRemoteLogManifestsRequest) ProtoMessage() {}
+
+func (x *ListRemoteLogManifestsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[81]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRemoteLogManifestsRequest.ProtoReflect.Descriptor instead.
+func (*ListRemoteLogManifestsRequest) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{81}
+}
+
+func (x *ListRemoteLogManifestsRequest) GetTableId() int64 {
+	if x != nil && x.TableId != nil {
+		return *x.TableId
+	}
+	return 0
+}
+
+func (x *ListRemoteLogManifestsRequest) GetPartitionId() int64 {
+	if x != nil && x.PartitionId != nil {
+		return *x.PartitionId
+	}
+	return 0
+}
+
+type ListRemoteLogManifestsResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Manifests     []*PbRemoteLogManifestEntry `protobuf:"bytes,1,rep,name=manifests" json:"manifests,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRemoteLogManifestsResponse) Reset() {
+	*x = ListRemoteLogManifestsResponse{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[82]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRemoteLogManifestsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRemoteLogManifestsResponse) ProtoMessage() {}
+
+func (x *ListRemoteLogManifestsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[82]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRemoteLogManifestsResponse.ProtoReflect.Descriptor instead.
+func (*ListRemoteLogManifestsResponse) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{82}
+}
+
+func (x *ListRemoteLogManifestsResponse) GetManifests() []*PbRemoteLogManifestEntry {
+	if x != nil {
+		return x.Manifests
+	}
+	return nil
+}
+
+type PbRemoteLogManifestEntry struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	TableBucket           *PbTableBucket         `protobuf:"bytes,1,req,name=table_bucket,json=tableBucket" json:"table_bucket,omitempty"`
+	RemoteLogManifestPath *string                `protobuf:"bytes,2,req,name=remote_log_manifest_path,json=remoteLogManifestPath" json:"remote_log_manifest_path,omitempty"`
+	RemoteLogEndOffset    *int64                 `protobuf:"varint,3,req,name=remote_log_end_offset,json=remoteLogEndOffset" json:"remote_log_end_offset,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *PbRemoteLogManifestEntry) Reset() {
+	*x = PbRemoteLogManifestEntry{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[83]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbRemoteLogManifestEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbRemoteLogManifestEntry) ProtoMessage() {}
+
+func (x *PbRemoteLogManifestEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[83]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbRemoteLogManifestEntry.ProtoReflect.Descriptor instead.
+func (*PbRemoteLogManifestEntry) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{83}
+}
+
+func (x *PbRemoteLogManifestEntry) GetTableBucket() *PbTableBucket {
+	if x != nil {
+		return x.TableBucket
+	}
+	return nil
+}
+
+func (x *PbRemoteLogManifestEntry) GetRemoteLogManifestPath() string {
+	if x != nil && x.RemoteLogManifestPath != nil {
+		return *x.RemoteLogManifestPath
+	}
+	return ""
+}
+
+func (x *PbRemoteLogManifestEntry) GetRemoteLogEndOffset() int64 {
+	if x != nil && x.RemoteLogEndOffset != nil {
+		return *x.RemoteLogEndOffset
+	}
+	return 0
+}
+
+// list active KV snapshot dirs (retained_N + still-in-use) for a unit
+type ListKvSnapshotsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TableId       *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	PartitionId   *int64                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListKvSnapshotsRequest) Reset() {
+	*x = ListKvSnapshotsRequest{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListKvSnapshotsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListKvSnapshotsRequest) ProtoMessage() {}
+
+func (x *ListKvSnapshotsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListKvSnapshotsRequest.ProtoReflect.Descriptor instead.
+func (*ListKvSnapshotsRequest) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *ListKvSnapshotsRequest) GetTableId() int64 {
+	if x != nil && x.TableId != nil {
+		return *x.TableId
+	}
+	return 0
+}
+
+func (x *ListKvSnapshotsRequest) GetPartitionId() int64 {
+	if x != nil && x.PartitionId != nil {
+		return *x.PartitionId
+	}
+	return 0
+}
+
+type ListKvSnapshotsResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	TableId *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	// null if it is a non-partitioned table, otherwise, it must be not null
+	PartitionId *int64 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	// Active snapshots = retained_N ∪ still-in-use; multiple entries per bucket allowed.
+	ActiveSnapshots []*PbKvSnapshot `protobuf:"bytes,3,rep,name=active_snapshots,json=activeSnapshots" json:"active_snapshots,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListKvSnapshotsResponse) Reset() {
+	*x = ListKvSnapshotsResponse{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListKvSnapshotsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListKvSnapshotsResponse) ProtoMessage() {}
+
+func (x *ListKvSnapshotsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListKvSnapshotsResponse.ProtoReflect.Descriptor instead.
+func (*ListKvSnapshotsResponse) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *ListKvSnapshotsResponse) GetTableId() int64 {
+	if x != nil && x.TableId != nil {
+		return *x.TableId
+	}
+	return 0
+}
+
+func (x *ListKvSnapshotsResponse) GetPartitionId() int64 {
+	if x != nil && x.PartitionId != nil {
+		return *x.PartitionId
+	}
+	return 0
+}
+
+func (x *ListKvSnapshotsResponse) GetActiveSnapshots() []*PbKvSnapshot {
+	if x != nil {
+		return x.ActiveSnapshots
 	}
 	return nil
 }
@@ -4034,7 +4767,7 @@ type CreatePartitionRequest struct {
 
 func (x *CreatePartitionRequest) Reset() {
 	*x = CreatePartitionRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[75]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4046,7 +4779,7 @@ func (x *CreatePartitionRequest) String() string {
 func (*CreatePartitionRequest) ProtoMessage() {}
 
 func (x *CreatePartitionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[75]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4059,7 +4792,7 @@ func (x *CreatePartitionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePartitionRequest.ProtoReflect.Descriptor instead.
 func (*CreatePartitionRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{75}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *CreatePartitionRequest) GetTablePath() *PbTablePath {
@@ -4091,7 +4824,7 @@ type CreatePartitionResponse struct {
 
 func (x *CreatePartitionResponse) Reset() {
 	*x = CreatePartitionResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[76]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4103,7 +4836,7 @@ func (x *CreatePartitionResponse) String() string {
 func (*CreatePartitionResponse) ProtoMessage() {}
 
 func (x *CreatePartitionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[76]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4116,7 +4849,7 @@ func (x *CreatePartitionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePartitionResponse.ProtoReflect.Descriptor instead.
 func (*CreatePartitionResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{76}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{87}
 }
 
 // drop partition request and response
@@ -4131,7 +4864,7 @@ type DropPartitionRequest struct {
 
 func (x *DropPartitionRequest) Reset() {
 	*x = DropPartitionRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[77]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4143,7 +4876,7 @@ func (x *DropPartitionRequest) String() string {
 func (*DropPartitionRequest) ProtoMessage() {}
 
 func (x *DropPartitionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[77]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4156,7 +4889,7 @@ func (x *DropPartitionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropPartitionRequest.ProtoReflect.Descriptor instead.
 func (*DropPartitionRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{77}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *DropPartitionRequest) GetTablePath() *PbTablePath {
@@ -4188,7 +4921,7 @@ type DropPartitionResponse struct {
 
 func (x *DropPartitionResponse) Reset() {
 	*x = DropPartitionResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[78]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4200,7 +4933,7 @@ func (x *DropPartitionResponse) String() string {
 func (*DropPartitionResponse) ProtoMessage() {}
 
 func (x *DropPartitionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[78]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4213,27 +4946,28 @@ func (x *DropPartitionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropPartitionResponse.ProtoReflect.Descriptor instead.
 func (*DropPartitionResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{78}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{89}
 }
 
 // commit remote log manifest request and response
 type CommitRemoteLogManifestRequest struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	TableId               *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
-	PartitionId           *int64                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId              *int32                 `protobuf:"varint,3,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	RemoteLogManifestPath *string                `protobuf:"bytes,4,req,name=remote_log_manifest_path,json=remoteLogManifestPath" json:"remote_log_manifest_path,omitempty"`
-	RemoteLogStartOffset  *int64                 `protobuf:"varint,5,req,name=remote_log_start_offset,json=remoteLogStartOffset" json:"remote_log_start_offset,omitempty"`
-	RemoteLogEndOffset    *int64                 `protobuf:"varint,6,req,name=remote_log_end_offset,json=remoteLogEndOffset" json:"remote_log_end_offset,omitempty"`
-	CoordinatorEpoch      *int32                 `protobuf:"varint,7,req,name=coordinator_epoch,json=coordinatorEpoch" json:"coordinator_epoch,omitempty"`
-	BucketLeaderEpoch     *int32                 `protobuf:"varint,8,req,name=bucket_leader_epoch,json=bucketLeaderEpoch" json:"bucket_leader_epoch,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	TableId                *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	PartitionId            *int64                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId               *int32                 `protobuf:"varint,3,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	RemoteLogManifestPath  *string                `protobuf:"bytes,4,req,name=remote_log_manifest_path,json=remoteLogManifestPath" json:"remote_log_manifest_path,omitempty"`
+	RemoteLogStartOffset   *int64                 `protobuf:"varint,5,req,name=remote_log_start_offset,json=remoteLogStartOffset" json:"remote_log_start_offset,omitempty"`
+	RemoteLogEndOffset     *int64                 `protobuf:"varint,6,req,name=remote_log_end_offset,json=remoteLogEndOffset" json:"remote_log_end_offset,omitempty"`
+	CoordinatorEpoch       *int32                 `protobuf:"varint,7,req,name=coordinator_epoch,json=coordinatorEpoch" json:"coordinator_epoch,omitempty"`
+	BucketLeaderEpoch      *int32                 `protobuf:"varint,8,req,name=bucket_leader_epoch,json=bucketLeaderEpoch" json:"bucket_leader_epoch,omitempty"`
+	HighestCopiedEndOffset *int64                 `protobuf:"varint,9,opt,name=highest_copied_end_offset,json=highestCopiedEndOffset" json:"highest_copied_end_offset,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *CommitRemoteLogManifestRequest) Reset() {
 	*x = CommitRemoteLogManifestRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[79]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4245,7 +4979,7 @@ func (x *CommitRemoteLogManifestRequest) String() string {
 func (*CommitRemoteLogManifestRequest) ProtoMessage() {}
 
 func (x *CommitRemoteLogManifestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[79]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4258,7 +4992,7 @@ func (x *CommitRemoteLogManifestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitRemoteLogManifestRequest.ProtoReflect.Descriptor instead.
 func (*CommitRemoteLogManifestRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{79}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *CommitRemoteLogManifestRequest) GetTableId() int64 {
@@ -4317,6 +5051,13 @@ func (x *CommitRemoteLogManifestRequest) GetBucketLeaderEpoch() int32 {
 	return 0
 }
 
+func (x *CommitRemoteLogManifestRequest) GetHighestCopiedEndOffset() int64 {
+	if x != nil && x.HighestCopiedEndOffset != nil {
+		return *x.HighestCopiedEndOffset
+	}
+	return 0
+}
+
 type CommitRemoteLogManifestResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommitSuccess *bool                  `protobuf:"varint,1,req,name=commitSuccess" json:"commitSuccess,omitempty"`
@@ -4326,7 +5067,7 @@ type CommitRemoteLogManifestResponse struct {
 
 func (x *CommitRemoteLogManifestResponse) Reset() {
 	*x = CommitRemoteLogManifestResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[80]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4338,7 +5079,7 @@ func (x *CommitRemoteLogManifestResponse) String() string {
 func (*CommitRemoteLogManifestResponse) ProtoMessage() {}
 
 func (x *CommitRemoteLogManifestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[80]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4351,7 +5092,7 @@ func (x *CommitRemoteLogManifestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitRemoteLogManifestResponse.ProtoReflect.Descriptor instead.
 func (*CommitRemoteLogManifestResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{80}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *CommitRemoteLogManifestResponse) GetCommitSuccess() bool {
@@ -4363,20 +5104,21 @@ func (x *CommitRemoteLogManifestResponse) GetCommitSuccess() bool {
 
 // notify remote log offsets request and response
 type NotifyRemoteLogOffsetsRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TableId           *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
-	PartitionId       *int64                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId          *int32                 `protobuf:"varint,3,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	CoordinatorEpoch  *int32                 `protobuf:"varint,4,req,name=coordinator_epoch,json=coordinatorEpoch" json:"coordinator_epoch,omitempty"`
-	RemoteStartOffset *int64                 `protobuf:"varint,5,req,name=remote_start_offset,json=remoteStartOffset" json:"remote_start_offset,omitempty"`
-	RemoteEndOffset   *int64                 `protobuf:"varint,6,req,name=remote_end_offset,json=remoteEndOffset" json:"remote_end_offset,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	TableId                *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
+	PartitionId            *int64                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId               *int32                 `protobuf:"varint,3,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	CoordinatorEpoch       *int32                 `protobuf:"varint,4,req,name=coordinator_epoch,json=coordinatorEpoch" json:"coordinator_epoch,omitempty"`
+	RemoteStartOffset      *int64                 `protobuf:"varint,5,req,name=remote_start_offset,json=remoteStartOffset" json:"remote_start_offset,omitempty"`
+	RemoteEndOffset        *int64                 `protobuf:"varint,6,req,name=remote_end_offset,json=remoteEndOffset" json:"remote_end_offset,omitempty"`
+	HighestCopiedEndOffset *int64                 `protobuf:"varint,7,opt,name=highest_copied_end_offset,json=highestCopiedEndOffset" json:"highest_copied_end_offset,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *NotifyRemoteLogOffsetsRequest) Reset() {
 	*x = NotifyRemoteLogOffsetsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[81]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4388,7 +5130,7 @@ func (x *NotifyRemoteLogOffsetsRequest) String() string {
 func (*NotifyRemoteLogOffsetsRequest) ProtoMessage() {}
 
 func (x *NotifyRemoteLogOffsetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[81]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4401,7 +5143,7 @@ func (x *NotifyRemoteLogOffsetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyRemoteLogOffsetsRequest.ProtoReflect.Descriptor instead.
 func (*NotifyRemoteLogOffsetsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{81}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *NotifyRemoteLogOffsetsRequest) GetTableId() int64 {
@@ -4446,6 +5188,13 @@ func (x *NotifyRemoteLogOffsetsRequest) GetRemoteEndOffset() int64 {
 	return 0
 }
 
+func (x *NotifyRemoteLogOffsetsRequest) GetHighestCopiedEndOffset() int64 {
+	if x != nil && x.HighestCopiedEndOffset != nil {
+		return *x.HighestCopiedEndOffset
+	}
+	return 0
+}
+
 type NotifyRemoteLogOffsetsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -4454,7 +5203,7 @@ type NotifyRemoteLogOffsetsResponse struct {
 
 func (x *NotifyRemoteLogOffsetsResponse) Reset() {
 	*x = NotifyRemoteLogOffsetsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[82]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4466,7 +5215,7 @@ func (x *NotifyRemoteLogOffsetsResponse) String() string {
 func (*NotifyRemoteLogOffsetsResponse) ProtoMessage() {}
 
 func (x *NotifyRemoteLogOffsetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[82]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4479,7 +5228,7 @@ func (x *NotifyRemoteLogOffsetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyRemoteLogOffsetsResponse.ProtoReflect.Descriptor instead.
 func (*NotifyRemoteLogOffsetsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{82}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{93}
 }
 
 type PrepareLakeTableSnapshotRequest struct {
@@ -4496,7 +5245,7 @@ type PrepareLakeTableSnapshotRequest struct {
 
 func (x *PrepareLakeTableSnapshotRequest) Reset() {
 	*x = PrepareLakeTableSnapshotRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[83]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4508,7 +5257,7 @@ func (x *PrepareLakeTableSnapshotRequest) String() string {
 func (*PrepareLakeTableSnapshotRequest) ProtoMessage() {}
 
 func (x *PrepareLakeTableSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[83]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4521,7 +5270,7 @@ func (x *PrepareLakeTableSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareLakeTableSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*PrepareLakeTableSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{83}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *PrepareLakeTableSnapshotRequest) GetBucketOffsets() []*PbTableOffsets {
@@ -4547,7 +5296,7 @@ type PrepareLakeTableSnapshotResponse struct {
 
 func (x *PrepareLakeTableSnapshotResponse) Reset() {
 	*x = PrepareLakeTableSnapshotResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[84]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4559,7 +5308,7 @@ func (x *PrepareLakeTableSnapshotResponse) String() string {
 func (*PrepareLakeTableSnapshotResponse) ProtoMessage() {}
 
 func (x *PrepareLakeTableSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[84]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4572,7 +5321,7 @@ func (x *PrepareLakeTableSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareLakeTableSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*PrepareLakeTableSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{84}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *PrepareLakeTableSnapshotResponse) GetPrepareLakeTableResp() []*PbPrepareLakeTableRespForTable {
@@ -4602,7 +5351,7 @@ type CommitLakeTableSnapshotRequest struct {
 
 func (x *CommitLakeTableSnapshotRequest) Reset() {
 	*x = CommitLakeTableSnapshotRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[85]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4614,7 +5363,7 @@ func (x *CommitLakeTableSnapshotRequest) String() string {
 func (*CommitLakeTableSnapshotRequest) ProtoMessage() {}
 
 func (x *CommitLakeTableSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[85]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4627,7 +5376,7 @@ func (x *CommitLakeTableSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitLakeTableSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*CommitLakeTableSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{85}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *CommitLakeTableSnapshotRequest) GetTablesReq() []*PbLakeTableSnapshotInfo {
@@ -4653,7 +5402,7 @@ type CommitLakeTableSnapshotResponse struct {
 
 func (x *CommitLakeTableSnapshotResponse) Reset() {
 	*x = CommitLakeTableSnapshotResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[86]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4665,7 +5414,7 @@ func (x *CommitLakeTableSnapshotResponse) String() string {
 func (*CommitLakeTableSnapshotResponse) ProtoMessage() {}
 
 func (x *CommitLakeTableSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[86]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4678,7 +5427,7 @@ func (x *CommitLakeTableSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitLakeTableSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*CommitLakeTableSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{86}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *CommitLakeTableSnapshotResponse) GetTableResp() []*PbCommitLakeTableSnapshotRespForTable {
@@ -4699,7 +5448,7 @@ type PbCommitLakeTableSnapshotRespForTable struct {
 
 func (x *PbCommitLakeTableSnapshotRespForTable) Reset() {
 	*x = PbCommitLakeTableSnapshotRespForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[87]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4711,7 +5460,7 @@ func (x *PbCommitLakeTableSnapshotRespForTable) String() string {
 func (*PbCommitLakeTableSnapshotRespForTable) ProtoMessage() {}
 
 func (x *PbCommitLakeTableSnapshotRespForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[87]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4724,7 +5473,7 @@ func (x *PbCommitLakeTableSnapshotRespForTable) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use PbCommitLakeTableSnapshotRespForTable.ProtoReflect.Descriptor instead.
 func (*PbCommitLakeTableSnapshotRespForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{87}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *PbCommitLakeTableSnapshotRespForTable) GetErrorCode() int32 {
@@ -4758,7 +5507,7 @@ type NotifyLakeTableOffsetRequest struct {
 
 func (x *NotifyLakeTableOffsetRequest) Reset() {
 	*x = NotifyLakeTableOffsetRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[88]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4770,7 +5519,7 @@ func (x *NotifyLakeTableOffsetRequest) String() string {
 func (*NotifyLakeTableOffsetRequest) ProtoMessage() {}
 
 func (x *NotifyLakeTableOffsetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[88]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4783,7 +5532,7 @@ func (x *NotifyLakeTableOffsetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyLakeTableOffsetRequest.ProtoReflect.Descriptor instead.
 func (*NotifyLakeTableOffsetRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{88}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *NotifyLakeTableOffsetRequest) GetCoordinatorEpoch() int32 {
@@ -4815,7 +5564,7 @@ type PbNotifyLakeTableOffsetReqForBucket struct {
 
 func (x *PbNotifyLakeTableOffsetReqForBucket) Reset() {
 	*x = PbNotifyLakeTableOffsetReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[89]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4827,7 +5576,7 @@ func (x *PbNotifyLakeTableOffsetReqForBucket) String() string {
 func (*PbNotifyLakeTableOffsetReqForBucket) ProtoMessage() {}
 
 func (x *PbNotifyLakeTableOffsetReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[89]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4840,7 +5589,7 @@ func (x *PbNotifyLakeTableOffsetReqForBucket) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use PbNotifyLakeTableOffsetReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbNotifyLakeTableOffsetReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{89}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *PbNotifyLakeTableOffsetReqForBucket) GetTableId() int64 {
@@ -4900,7 +5649,7 @@ type NotifyLakeTableOffsetResponse struct {
 
 func (x *NotifyLakeTableOffsetResponse) Reset() {
 	*x = NotifyLakeTableOffsetResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[90]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4912,7 +5661,7 @@ func (x *NotifyLakeTableOffsetResponse) String() string {
 func (*NotifyLakeTableOffsetResponse) ProtoMessage() {}
 
 func (x *NotifyLakeTableOffsetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[90]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4925,7 +5674,7 @@ func (x *NotifyLakeTableOffsetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyLakeTableOffsetResponse.ProtoReflect.Descriptor instead.
 func (*NotifyLakeTableOffsetResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{90}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{101}
 }
 
 type AuthenticateRequest struct {
@@ -4938,7 +5687,7 @@ type AuthenticateRequest struct {
 
 func (x *AuthenticateRequest) Reset() {
 	*x = AuthenticateRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[91]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4950,7 +5699,7 @@ func (x *AuthenticateRequest) String() string {
 func (*AuthenticateRequest) ProtoMessage() {}
 
 func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[91]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4963,7 +5712,7 @@ func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticateRequest.ProtoReflect.Descriptor instead.
 func (*AuthenticateRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{91}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *AuthenticateRequest) GetProtocol() string {
@@ -4989,7 +5738,7 @@ type AuthenticateResponse struct {
 
 func (x *AuthenticateResponse) Reset() {
 	*x = AuthenticateResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[92]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5001,7 +5750,7 @@ func (x *AuthenticateResponse) String() string {
 func (*AuthenticateResponse) ProtoMessage() {}
 
 func (x *AuthenticateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[92]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5014,7 +5763,7 @@ func (x *AuthenticateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticateResponse.ProtoReflect.Descriptor instead.
 func (*AuthenticateResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{92}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *AuthenticateResponse) GetChallenge() []byte {
@@ -5034,7 +5783,7 @@ type ListAclsRequest struct {
 
 func (x *ListAclsRequest) Reset() {
 	*x = ListAclsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[93]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5046,7 +5795,7 @@ func (x *ListAclsRequest) String() string {
 func (*ListAclsRequest) ProtoMessage() {}
 
 func (x *ListAclsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[93]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5059,7 +5808,7 @@ func (x *ListAclsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAclsRequest.ProtoReflect.Descriptor instead.
 func (*ListAclsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{93}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *ListAclsRequest) GetAclFilter() *PbAclFilter {
@@ -5078,7 +5827,7 @@ type ListAclsResponse struct {
 
 func (x *ListAclsResponse) Reset() {
 	*x = ListAclsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[94]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5090,7 +5839,7 @@ func (x *ListAclsResponse) String() string {
 func (*ListAclsResponse) ProtoMessage() {}
 
 func (x *ListAclsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[94]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5103,7 +5852,7 @@ func (x *ListAclsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAclsResponse.ProtoReflect.Descriptor instead.
 func (*ListAclsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{94}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *ListAclsResponse) GetAcl() []*PbAclInfo {
@@ -5122,7 +5871,7 @@ type CreateAclsRequest struct {
 
 func (x *CreateAclsRequest) Reset() {
 	*x = CreateAclsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[95]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5134,7 +5883,7 @@ func (x *CreateAclsRequest) String() string {
 func (*CreateAclsRequest) ProtoMessage() {}
 
 func (x *CreateAclsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[95]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5147,7 +5896,7 @@ func (x *CreateAclsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAclsRequest.ProtoReflect.Descriptor instead.
 func (*CreateAclsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{95}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *CreateAclsRequest) GetAcl() []*PbAclInfo {
@@ -5166,7 +5915,7 @@ type CreateAclsResponse struct {
 
 func (x *CreateAclsResponse) Reset() {
 	*x = CreateAclsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[96]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5178,7 +5927,7 @@ func (x *CreateAclsResponse) String() string {
 func (*CreateAclsResponse) ProtoMessage() {}
 
 func (x *CreateAclsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[96]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5191,7 +5940,7 @@ func (x *CreateAclsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAclsResponse.ProtoReflect.Descriptor instead.
 func (*CreateAclsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{96}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *CreateAclsResponse) GetAclRes() []*PbCreateAclRespInfo {
@@ -5210,7 +5959,7 @@ type DropAclsRequest struct {
 
 func (x *DropAclsRequest) Reset() {
 	*x = DropAclsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[97]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5222,7 +5971,7 @@ func (x *DropAclsRequest) String() string {
 func (*DropAclsRequest) ProtoMessage() {}
 
 func (x *DropAclsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[97]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5235,7 +5984,7 @@ func (x *DropAclsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropAclsRequest.ProtoReflect.Descriptor instead.
 func (*DropAclsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{97}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *DropAclsRequest) GetAclFilter() []*PbAclFilter {
@@ -5254,7 +6003,7 @@ type DropAclsResponse struct {
 
 func (x *DropAclsResponse) Reset() {
 	*x = DropAclsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[98]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5266,7 +6015,7 @@ func (x *DropAclsResponse) String() string {
 func (*DropAclsResponse) ProtoMessage() {}
 
 func (x *DropAclsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[98]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5279,7 +6028,7 @@ func (x *DropAclsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DropAclsResponse.ProtoReflect.Descriptor instead.
 func (*DropAclsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{98}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *DropAclsResponse) GetFilterResults() []*PbDropAclsFilterResult {
@@ -5308,7 +6057,7 @@ type LakeTieringHeartbeatRequest struct {
 
 func (x *LakeTieringHeartbeatRequest) Reset() {
 	*x = LakeTieringHeartbeatRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[99]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5320,7 +6069,7 @@ func (x *LakeTieringHeartbeatRequest) String() string {
 func (*LakeTieringHeartbeatRequest) ProtoMessage() {}
 
 func (x *LakeTieringHeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[99]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5333,7 +6082,7 @@ func (x *LakeTieringHeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LakeTieringHeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*LakeTieringHeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{99}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *LakeTieringHeartbeatRequest) GetTieringTables() []*PbHeartbeatReqForTable {
@@ -5386,7 +6135,7 @@ type LakeTieringHeartbeatResponse struct {
 
 func (x *LakeTieringHeartbeatResponse) Reset() {
 	*x = LakeTieringHeartbeatResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[100]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5398,7 +6147,7 @@ func (x *LakeTieringHeartbeatResponse) String() string {
 func (*LakeTieringHeartbeatResponse) ProtoMessage() {}
 
 func (x *LakeTieringHeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[100]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5411,7 +6160,7 @@ func (x *LakeTieringHeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LakeTieringHeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*LakeTieringHeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{100}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *LakeTieringHeartbeatResponse) GetCoordinatorEpoch() int32 {
@@ -5459,7 +6208,7 @@ type ControlledShutdownRequest struct {
 
 func (x *ControlledShutdownRequest) Reset() {
 	*x = ControlledShutdownRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[101]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5471,7 +6220,7 @@ func (x *ControlledShutdownRequest) String() string {
 func (*ControlledShutdownRequest) ProtoMessage() {}
 
 func (x *ControlledShutdownRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[101]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5484,7 +6233,7 @@ func (x *ControlledShutdownRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlledShutdownRequest.ProtoReflect.Descriptor instead.
 func (*ControlledShutdownRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{101}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *ControlledShutdownRequest) GetTabletServerId() int32 {
@@ -5510,7 +6259,7 @@ type ControlledShutdownResponse struct {
 
 func (x *ControlledShutdownResponse) Reset() {
 	*x = ControlledShutdownResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[102]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5522,7 +6271,7 @@ func (x *ControlledShutdownResponse) String() string {
 func (*ControlledShutdownResponse) ProtoMessage() {}
 
 func (x *ControlledShutdownResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[102]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5535,7 +6284,7 @@ func (x *ControlledShutdownResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlledShutdownResponse.ProtoReflect.Descriptor instead.
 func (*ControlledShutdownResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{102}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *ControlledShutdownResponse) GetRemainingLeaderBuckets() []*PbTableBucket {
@@ -5553,7 +6302,7 @@ type DescribeClusterConfigsRequest struct {
 
 func (x *DescribeClusterConfigsRequest) Reset() {
 	*x = DescribeClusterConfigsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[103]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5565,7 +6314,7 @@ func (x *DescribeClusterConfigsRequest) String() string {
 func (*DescribeClusterConfigsRequest) ProtoMessage() {}
 
 func (x *DescribeClusterConfigsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[103]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5578,7 +6327,7 @@ func (x *DescribeClusterConfigsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeClusterConfigsRequest.ProtoReflect.Descriptor instead.
 func (*DescribeClusterConfigsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{103}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{114}
 }
 
 type DescribeClusterConfigsResponse struct {
@@ -5590,7 +6339,7 @@ type DescribeClusterConfigsResponse struct {
 
 func (x *DescribeClusterConfigsResponse) Reset() {
 	*x = DescribeClusterConfigsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[104]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5602,7 +6351,7 @@ func (x *DescribeClusterConfigsResponse) String() string {
 func (*DescribeClusterConfigsResponse) ProtoMessage() {}
 
 func (x *DescribeClusterConfigsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[104]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5615,7 +6364,7 @@ func (x *DescribeClusterConfigsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeClusterConfigsResponse.ProtoReflect.Descriptor instead.
 func (*DescribeClusterConfigsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{104}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *DescribeClusterConfigsResponse) GetConfigs() []*PbDescribeConfig {
@@ -5634,7 +6383,7 @@ type AlterClusterConfigsRequest struct {
 
 func (x *AlterClusterConfigsRequest) Reset() {
 	*x = AlterClusterConfigsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[105]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5646,7 +6395,7 @@ func (x *AlterClusterConfigsRequest) String() string {
 func (*AlterClusterConfigsRequest) ProtoMessage() {}
 
 func (x *AlterClusterConfigsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[105]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5659,7 +6408,7 @@ func (x *AlterClusterConfigsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlterClusterConfigsRequest.ProtoReflect.Descriptor instead.
 func (*AlterClusterConfigsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{105}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *AlterClusterConfigsRequest) GetAlterConfigs() []*PbAlterConfig {
@@ -5677,7 +6426,7 @@ type AlterClusterConfigsResponse struct {
 
 func (x *AlterClusterConfigsResponse) Reset() {
 	*x = AlterClusterConfigsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[106]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5689,7 +6438,7 @@ func (x *AlterClusterConfigsResponse) String() string {
 func (*AlterClusterConfigsResponse) ProtoMessage() {}
 
 func (x *AlterClusterConfigsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[106]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5702,7 +6451,7 @@ func (x *AlterClusterConfigsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlterClusterConfigsResponse.ProtoReflect.Descriptor instead.
 func (*AlterClusterConfigsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{106}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{117}
 }
 
 type AddServerTagRequest struct {
@@ -5715,7 +6464,7 @@ type AddServerTagRequest struct {
 
 func (x *AddServerTagRequest) Reset() {
 	*x = AddServerTagRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[107]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5727,7 +6476,7 @@ func (x *AddServerTagRequest) String() string {
 func (*AddServerTagRequest) ProtoMessage() {}
 
 func (x *AddServerTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[107]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5740,7 +6489,7 @@ func (x *AddServerTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddServerTagRequest.ProtoReflect.Descriptor instead.
 func (*AddServerTagRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{107}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *AddServerTagRequest) GetServerIds() []int32 {
@@ -5765,7 +6514,7 @@ type AddServerTagResponse struct {
 
 func (x *AddServerTagResponse) Reset() {
 	*x = AddServerTagResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[108]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5777,7 +6526,7 @@ func (x *AddServerTagResponse) String() string {
 func (*AddServerTagResponse) ProtoMessage() {}
 
 func (x *AddServerTagResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[108]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5790,7 +6539,95 @@ func (x *AddServerTagResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddServerTagResponse.ProtoReflect.Descriptor instead.
 func (*AddServerTagResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{108}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{119}
+}
+
+type AddServerTagByRackRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Racks         []string               `protobuf:"bytes,1,rep,name=racks" json:"racks,omitempty"`
+	ServerTag     *int32                 `protobuf:"varint,2,req,name=server_tag,json=serverTag" json:"server_tag,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddServerTagByRackRequest) Reset() {
+	*x = AddServerTagByRackRequest{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[120]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddServerTagByRackRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddServerTagByRackRequest) ProtoMessage() {}
+
+func (x *AddServerTagByRackRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[120]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddServerTagByRackRequest.ProtoReflect.Descriptor instead.
+func (*AddServerTagByRackRequest) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{120}
+}
+
+func (x *AddServerTagByRackRequest) GetRacks() []string {
+	if x != nil {
+		return x.Racks
+	}
+	return nil
+}
+
+func (x *AddServerTagByRackRequest) GetServerTag() int32 {
+	if x != nil && x.ServerTag != nil {
+		return *x.ServerTag
+	}
+	return 0
+}
+
+type AddServerTagByRackResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddServerTagByRackResponse) Reset() {
+	*x = AddServerTagByRackResponse{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[121]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddServerTagByRackResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddServerTagByRackResponse) ProtoMessage() {}
+
+func (x *AddServerTagByRackResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[121]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddServerTagByRackResponse.ProtoReflect.Descriptor instead.
+func (*AddServerTagByRackResponse) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{121}
 }
 
 type RemoveServerTagRequest struct {
@@ -5803,7 +6640,7 @@ type RemoveServerTagRequest struct {
 
 func (x *RemoveServerTagRequest) Reset() {
 	*x = RemoveServerTagRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[109]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5815,7 +6652,7 @@ func (x *RemoveServerTagRequest) String() string {
 func (*RemoveServerTagRequest) ProtoMessage() {}
 
 func (x *RemoveServerTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[109]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5828,7 +6665,7 @@ func (x *RemoveServerTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveServerTagRequest.ProtoReflect.Descriptor instead.
 func (*RemoveServerTagRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{109}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *RemoveServerTagRequest) GetServerIds() []int32 {
@@ -5853,7 +6690,7 @@ type RemoveServerTagResponse struct {
 
 func (x *RemoveServerTagResponse) Reset() {
 	*x = RemoveServerTagResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[110]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5865,7 +6702,7 @@ func (x *RemoveServerTagResponse) String() string {
 func (*RemoveServerTagResponse) ProtoMessage() {}
 
 func (x *RemoveServerTagResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[110]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5878,7 +6715,95 @@ func (x *RemoveServerTagResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveServerTagResponse.ProtoReflect.Descriptor instead.
 func (*RemoveServerTagResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{110}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{123}
+}
+
+type RemoveServerTagByRackRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Racks         []string               `protobuf:"bytes,1,rep,name=racks" json:"racks,omitempty"`
+	ServerTag     *int32                 `protobuf:"varint,2,req,name=server_tag,json=serverTag" json:"server_tag,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveServerTagByRackRequest) Reset() {
+	*x = RemoveServerTagByRackRequest{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[124]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveServerTagByRackRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveServerTagByRackRequest) ProtoMessage() {}
+
+func (x *RemoveServerTagByRackRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[124]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveServerTagByRackRequest.ProtoReflect.Descriptor instead.
+func (*RemoveServerTagByRackRequest) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{124}
+}
+
+func (x *RemoveServerTagByRackRequest) GetRacks() []string {
+	if x != nil {
+		return x.Racks
+	}
+	return nil
+}
+
+func (x *RemoveServerTagByRackRequest) GetServerTag() int32 {
+	if x != nil && x.ServerTag != nil {
+		return *x.ServerTag
+	}
+	return 0
+}
+
+type RemoveServerTagByRackResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveServerTagByRackResponse) Reset() {
+	*x = RemoveServerTagByRackResponse{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[125]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveServerTagByRackResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveServerTagByRackResponse) ProtoMessage() {}
+
+func (x *RemoveServerTagByRackResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[125]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveServerTagByRackResponse.ProtoReflect.Descriptor instead.
+func (*RemoveServerTagByRackResponse) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{125}
 }
 
 type RebalanceRequest struct {
@@ -5890,7 +6815,7 @@ type RebalanceRequest struct {
 
 func (x *RebalanceRequest) Reset() {
 	*x = RebalanceRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[111]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5902,7 +6827,7 @@ func (x *RebalanceRequest) String() string {
 func (*RebalanceRequest) ProtoMessage() {}
 
 func (x *RebalanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[111]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5915,7 +6840,7 @@ func (x *RebalanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RebalanceRequest.ProtoReflect.Descriptor instead.
 func (*RebalanceRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{111}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *RebalanceRequest) GetGoals() []int32 {
@@ -5934,7 +6859,7 @@ type RebalanceResponse struct {
 
 func (x *RebalanceResponse) Reset() {
 	*x = RebalanceResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[112]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5946,7 +6871,7 @@ func (x *RebalanceResponse) String() string {
 func (*RebalanceResponse) ProtoMessage() {}
 
 func (x *RebalanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[112]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5959,7 +6884,7 @@ func (x *RebalanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RebalanceResponse.ProtoReflect.Descriptor instead.
 func (*RebalanceResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{112}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *RebalanceResponse) GetRebalanceId() string {
@@ -5978,7 +6903,7 @@ type ListRebalanceProgressRequest struct {
 
 func (x *ListRebalanceProgressRequest) Reset() {
 	*x = ListRebalanceProgressRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[113]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5990,7 +6915,7 @@ func (x *ListRebalanceProgressRequest) String() string {
 func (*ListRebalanceProgressRequest) ProtoMessage() {}
 
 func (x *ListRebalanceProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[113]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6003,7 +6928,7 @@ func (x *ListRebalanceProgressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRebalanceProgressRequest.ProtoReflect.Descriptor instead.
 func (*ListRebalanceProgressRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{113}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *ListRebalanceProgressRequest) GetRebalanceId() string {
@@ -6024,7 +6949,7 @@ type ListRebalanceProgressResponse struct {
 
 func (x *ListRebalanceProgressResponse) Reset() {
 	*x = ListRebalanceProgressResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[114]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6036,7 +6961,7 @@ func (x *ListRebalanceProgressResponse) String() string {
 func (*ListRebalanceProgressResponse) ProtoMessage() {}
 
 func (x *ListRebalanceProgressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[114]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6049,7 +6974,7 @@ func (x *ListRebalanceProgressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRebalanceProgressResponse.ProtoReflect.Descriptor instead.
 func (*ListRebalanceProgressResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{114}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *ListRebalanceProgressResponse) GetRebalanceId() string {
@@ -6082,7 +7007,7 @@ type CancelRebalanceRequest struct {
 
 func (x *CancelRebalanceRequest) Reset() {
 	*x = CancelRebalanceRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[115]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6094,7 +7019,7 @@ func (x *CancelRebalanceRequest) String() string {
 func (*CancelRebalanceRequest) ProtoMessage() {}
 
 func (x *CancelRebalanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[115]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6107,7 +7032,7 @@ func (x *CancelRebalanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRebalanceRequest.ProtoReflect.Descriptor instead.
 func (*CancelRebalanceRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{115}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *CancelRebalanceRequest) GetRebalanceId() string {
@@ -6125,7 +7050,7 @@ type CancelRebalanceResponse struct {
 
 func (x *CancelRebalanceResponse) Reset() {
 	*x = CancelRebalanceResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[116]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6137,7 +7062,7 @@ func (x *CancelRebalanceResponse) String() string {
 func (*CancelRebalanceResponse) ProtoMessage() {}
 
 func (x *CancelRebalanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[116]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6150,7 +7075,7 @@ func (x *CancelRebalanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRebalanceResponse.ProtoReflect.Descriptor instead.
 func (*CancelRebalanceResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{116}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{131}
 }
 
 // Register producer offsets request and response
@@ -6165,7 +7090,7 @@ type RegisterProducerOffsetsRequest struct {
 
 func (x *RegisterProducerOffsetsRequest) Reset() {
 	*x = RegisterProducerOffsetsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[117]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6177,7 +7102,7 @@ func (x *RegisterProducerOffsetsRequest) String() string {
 func (*RegisterProducerOffsetsRequest) ProtoMessage() {}
 
 func (x *RegisterProducerOffsetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[117]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6190,7 +7115,7 @@ func (x *RegisterProducerOffsetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterProducerOffsetsRequest.ProtoReflect.Descriptor instead.
 func (*RegisterProducerOffsetsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{117}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *RegisterProducerOffsetsRequest) GetProducerId() string {
@@ -6224,7 +7149,7 @@ type RegisterProducerOffsetsResponse struct {
 
 func (x *RegisterProducerOffsetsResponse) Reset() {
 	*x = RegisterProducerOffsetsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[118]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6236,7 +7161,7 @@ func (x *RegisterProducerOffsetsResponse) String() string {
 func (*RegisterProducerOffsetsResponse) ProtoMessage() {}
 
 func (x *RegisterProducerOffsetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[118]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6249,7 +7174,7 @@ func (x *RegisterProducerOffsetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterProducerOffsetsResponse.ProtoReflect.Descriptor instead.
 func (*RegisterProducerOffsetsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{118}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *RegisterProducerOffsetsResponse) GetResult() int32 {
@@ -6269,7 +7194,7 @@ type GetProducerOffsetsRequest struct {
 
 func (x *GetProducerOffsetsRequest) Reset() {
 	*x = GetProducerOffsetsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[119]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6281,7 +7206,7 @@ func (x *GetProducerOffsetsRequest) String() string {
 func (*GetProducerOffsetsRequest) ProtoMessage() {}
 
 func (x *GetProducerOffsetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[119]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6294,7 +7219,7 @@ func (x *GetProducerOffsetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProducerOffsetsRequest.ProtoReflect.Descriptor instead.
 func (*GetProducerOffsetsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{119}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *GetProducerOffsetsRequest) GetProducerId() string {
@@ -6315,7 +7240,7 @@ type GetProducerOffsetsResponse struct {
 
 func (x *GetProducerOffsetsResponse) Reset() {
 	*x = GetProducerOffsetsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[120]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6327,7 +7252,7 @@ func (x *GetProducerOffsetsResponse) String() string {
 func (*GetProducerOffsetsResponse) ProtoMessage() {}
 
 func (x *GetProducerOffsetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[120]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6340,7 +7265,7 @@ func (x *GetProducerOffsetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProducerOffsetsResponse.ProtoReflect.Descriptor instead.
 func (*GetProducerOffsetsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{120}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *GetProducerOffsetsResponse) GetProducerId() string {
@@ -6374,7 +7299,7 @@ type DeleteProducerOffsetsRequest struct {
 
 func (x *DeleteProducerOffsetsRequest) Reset() {
 	*x = DeleteProducerOffsetsRequest{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[121]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6386,7 +7311,7 @@ func (x *DeleteProducerOffsetsRequest) String() string {
 func (*DeleteProducerOffsetsRequest) ProtoMessage() {}
 
 func (x *DeleteProducerOffsetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[121]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6399,7 +7324,7 @@ func (x *DeleteProducerOffsetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProducerOffsetsRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProducerOffsetsRequest) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{121}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *DeleteProducerOffsetsRequest) GetProducerId() string {
@@ -6417,7 +7342,7 @@ type DeleteProducerOffsetsResponse struct {
 
 func (x *DeleteProducerOffsetsResponse) Reset() {
 	*x = DeleteProducerOffsetsResponse{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[122]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6429,7 +7354,7 @@ func (x *DeleteProducerOffsetsResponse) String() string {
 func (*DeleteProducerOffsetsResponse) ProtoMessage() {}
 
 func (x *DeleteProducerOffsetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[122]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6442,7 +7367,119 @@ func (x *DeleteProducerOffsetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProducerOffsetsResponse.ProtoReflect.Descriptor instead.
 func (*DeleteProducerOffsetsResponse) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{122}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{137}
+}
+
+type GetClusterHealthRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetClusterHealthRequest) Reset() {
+	*x = GetClusterHealthRequest{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[138]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetClusterHealthRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetClusterHealthRequest) ProtoMessage() {}
+
+func (x *GetClusterHealthRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[138]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetClusterHealthRequest.ProtoReflect.Descriptor instead.
+func (*GetClusterHealthRequest) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{138}
+}
+
+type GetClusterHealthResponse struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	NumReplicas          *int32                 `protobuf:"varint,1,req,name=num_replicas,json=numReplicas" json:"num_replicas,omitempty"`
+	InSyncReplicas       *int32                 `protobuf:"varint,2,req,name=in_sync_replicas,json=inSyncReplicas" json:"in_sync_replicas,omitempty"`
+	NumLeaderReplicas    *int32                 `protobuf:"varint,3,req,name=num_leader_replicas,json=numLeaderReplicas" json:"num_leader_replicas,omitempty"`
+	ActiveLeaderReplicas *int32                 `protobuf:"varint,4,req,name=active_leader_replicas,json=activeLeaderReplicas" json:"active_leader_replicas,omitempty"`
+	Status               *int32                 `protobuf:"varint,5,req,name=status" json:"status,omitempty"` // PbClusterHealthStatus: GREEN=0, YELLOW=1, RED=2, UNKNOWN=3
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *GetClusterHealthResponse) Reset() {
+	*x = GetClusterHealthResponse{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[139]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetClusterHealthResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetClusterHealthResponse) ProtoMessage() {}
+
+func (x *GetClusterHealthResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[139]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetClusterHealthResponse.ProtoReflect.Descriptor instead.
+func (*GetClusterHealthResponse) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{139}
+}
+
+func (x *GetClusterHealthResponse) GetNumReplicas() int32 {
+	if x != nil && x.NumReplicas != nil {
+		return *x.NumReplicas
+	}
+	return 0
+}
+
+func (x *GetClusterHealthResponse) GetInSyncReplicas() int32 {
+	if x != nil && x.InSyncReplicas != nil {
+		return *x.InSyncReplicas
+	}
+	return 0
+}
+
+func (x *GetClusterHealthResponse) GetNumLeaderReplicas() int32 {
+	if x != nil && x.NumLeaderReplicas != nil {
+		return *x.NumLeaderReplicas
+	}
+	return 0
+}
+
+func (x *GetClusterHealthResponse) GetActiveLeaderReplicas() int32 {
+	if x != nil && x.ActiveLeaderReplicas != nil {
+		return *x.ActiveLeaderReplicas
+	}
+	return 0
+}
+
+func (x *GetClusterHealthResponse) GetStatus() int32 {
+	if x != nil && x.Status != nil {
+		return *x.Status
+	}
+	return 0
 }
 
 // --------------- Inner classes ----------------
@@ -6457,7 +7494,7 @@ type PbApiVersion struct {
 
 func (x *PbApiVersion) Reset() {
 	*x = PbApiVersion{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[123]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6469,7 +7506,7 @@ func (x *PbApiVersion) String() string {
 func (*PbApiVersion) ProtoMessage() {}
 
 func (x *PbApiVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[123]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6482,7 +7519,7 @@ func (x *PbApiVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbApiVersion.ProtoReflect.Descriptor instead.
 func (*PbApiVersion) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{123}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{140}
 }
 
 func (x *PbApiVersion) GetApiKey() int32 {
@@ -6516,7 +7553,7 @@ type PbTablePath struct {
 
 func (x *PbTablePath) Reset() {
 	*x = PbTablePath{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[124]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6528,7 +7565,7 @@ func (x *PbTablePath) String() string {
 func (*PbTablePath) ProtoMessage() {}
 
 func (x *PbTablePath) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[124]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6541,7 +7578,7 @@ func (x *PbTablePath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbTablePath.ProtoReflect.Descriptor instead.
 func (*PbTablePath) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{124}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *PbTablePath) GetDatabaseName() string {
@@ -6569,7 +7606,7 @@ type PbPhysicalTablePath struct {
 
 func (x *PbPhysicalTablePath) Reset() {
 	*x = PbPhysicalTablePath{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[125]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6581,7 +7618,7 @@ func (x *PbPhysicalTablePath) String() string {
 func (*PbPhysicalTablePath) ProtoMessage() {}
 
 func (x *PbPhysicalTablePath) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[125]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6594,7 +7631,7 @@ func (x *PbPhysicalTablePath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPhysicalTablePath.ProtoReflect.Descriptor instead.
 func (*PbPhysicalTablePath) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{125}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *PbPhysicalTablePath) GetDatabaseName() string {
@@ -6637,7 +7674,7 @@ type PbServerNode struct {
 
 func (x *PbServerNode) Reset() {
 	*x = PbServerNode{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[126]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6649,7 +7686,7 @@ func (x *PbServerNode) String() string {
 func (*PbServerNode) ProtoMessage() {}
 
 func (x *PbServerNode) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[126]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6662,7 +7699,7 @@ func (x *PbServerNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbServerNode.ProtoReflect.Descriptor instead.
 func (*PbServerNode) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{126}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *PbServerNode) GetNodeId() int32 {
@@ -6713,13 +7750,16 @@ type PbTableMetadata struct {
 	BucketMetadata []*PbBucketMetadata `protobuf:"bytes,5,rep,name=bucket_metadata,json=bucketMetadata" json:"bucket_metadata,omitempty"`
 	CreatedTime    *int64              `protobuf:"varint,6,req,name=created_time,json=createdTime" json:"created_time,omitempty"`
 	ModifiedTime   *int64              `protobuf:"varint,7,req,name=modified_time,json=modifiedTime" json:"modified_time,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	RemoteDataDir  *string             `protobuf:"bytes,8,opt,name=remote_data_dir,json=remoteDataDir" json:"remote_data_dir,omitempty"`
+	// A table-level, monotonically increasing version for bucket.num changes.
+	BucketCountEpoch *int64 `protobuf:"varint,9,opt,name=bucket_count_epoch,json=bucketCountEpoch" json:"bucket_count_epoch,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PbTableMetadata) Reset() {
 	*x = PbTableMetadata{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[127]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6731,7 +7771,7 @@ func (x *PbTableMetadata) String() string {
 func (*PbTableMetadata) ProtoMessage() {}
 
 func (x *PbTableMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[127]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6744,7 +7784,7 @@ func (x *PbTableMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbTableMetadata.ProtoReflect.Descriptor instead.
 func (*PbTableMetadata) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{127}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *PbTableMetadata) GetTablePath() *PbTablePath {
@@ -6796,6 +7836,20 @@ func (x *PbTableMetadata) GetModifiedTime() int64 {
 	return 0
 }
 
+func (x *PbTableMetadata) GetRemoteDataDir() string {
+	if x != nil && x.RemoteDataDir != nil {
+		return *x.RemoteDataDir
+	}
+	return ""
+}
+
+func (x *PbTableMetadata) GetBucketCountEpoch() int64 {
+	if x != nil && x.BucketCountEpoch != nil {
+		return *x.BucketCountEpoch
+	}
+	return 0
+}
+
 type PbPartitionMetadata struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	TableId *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
@@ -6803,13 +7857,15 @@ type PbPartitionMetadata struct {
 	PartitionName  *string             `protobuf:"bytes,2,req,name=partition_name,json=partitionName" json:"partition_name,omitempty"`
 	PartitionId    *int64              `protobuf:"varint,3,req,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
 	BucketMetadata []*PbBucketMetadata `protobuf:"bytes,4,rep,name=bucket_metadata,json=bucketMetadata" json:"bucket_metadata,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// the actual bucket count for this partition, used for per-partition bucket rescale
+	BucketCount   *int32 `protobuf:"varint,5,opt,name=bucket_count,json=bucketCount" json:"bucket_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PbPartitionMetadata) Reset() {
 	*x = PbPartitionMetadata{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[128]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6821,7 +7877,7 @@ func (x *PbPartitionMetadata) String() string {
 func (*PbPartitionMetadata) ProtoMessage() {}
 
 func (x *PbPartitionMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[128]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6834,7 +7890,7 @@ func (x *PbPartitionMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPartitionMetadata.ProtoReflect.Descriptor instead.
 func (*PbPartitionMetadata) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{128}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *PbPartitionMetadata) GetTableId() int64 {
@@ -6865,21 +7921,31 @@ func (x *PbPartitionMetadata) GetBucketMetadata() []*PbBucketMetadata {
 	return nil
 }
 
+func (x *PbPartitionMetadata) GetBucketCount() int32 {
+	if x != nil && x.BucketCount != nil {
+		return *x.BucketCount
+	}
+	return 0
+}
+
 type PbBucketMetadata struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	BucketId *int32                 `protobuf:"varint,1,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
 	// optional as some time the leader may not elected yet
-	LeaderId  *int32  `protobuf:"varint,2,opt,name=leader_id,json=leaderId" json:"leader_id,omitempty"`
-	ReplicaId []int32 `protobuf:"varint,3,rep,packed,name=replica_id,json=replicaId" json:"replica_id,omitempty"`
-	// TODO: Add isr here.
-	LeaderEpoch   *int32 `protobuf:"varint,4,opt,name=leader_epoch,json=leaderEpoch" json:"leader_epoch,omitempty"`
+	LeaderId    *int32  `protobuf:"varint,2,opt,name=leader_id,json=leaderId" json:"leader_id,omitempty"`
+	ReplicaId   []int32 `protobuf:"varint,3,rep,packed,name=replica_id,json=replicaId" json:"replica_id,omitempty"`
+	LeaderEpoch *int32  `protobuf:"varint,4,opt,name=leader_epoch,json=leaderEpoch" json:"leader_epoch,omitempty"`
+	// Generation of the complete leader/ISR state.
+	// Absence indicates legacy metadata; -1 indicates no leader/ISR state exists.
+	BucketEpoch   *int32  `protobuf:"varint,5,opt,name=bucket_epoch,json=bucketEpoch" json:"bucket_epoch,omitempty"`
+	Isr           []int32 `protobuf:"varint,6,rep,packed,name=isr" json:"isr,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PbBucketMetadata) Reset() {
 	*x = PbBucketMetadata{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[129]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6891,7 +7957,7 @@ func (x *PbBucketMetadata) String() string {
 func (*PbBucketMetadata) ProtoMessage() {}
 
 func (x *PbBucketMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[129]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6904,7 +7970,7 @@ func (x *PbBucketMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbBucketMetadata.ProtoReflect.Descriptor instead.
 func (*PbBucketMetadata) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{129}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *PbBucketMetadata) GetBucketId() int32 {
@@ -6935,18 +8001,35 @@ func (x *PbBucketMetadata) GetLeaderEpoch() int32 {
 	return 0
 }
 
+func (x *PbBucketMetadata) GetBucketEpoch() int32 {
+	if x != nil && x.BucketEpoch != nil {
+		return *x.BucketEpoch
+	}
+	return 0
+}
+
+func (x *PbBucketMetadata) GetIsr() []int32 {
+	if x != nil {
+		return x.Isr
+	}
+	return nil
+}
+
 type PbProduceLogReqForBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	Records       []byte                 `protobuf:"bytes,3,req,name=records" json:"records,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId    *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	Records     []byte                 `protobuf:"bytes,3,req,name=records" json:"records,omitempty"`
+	// The original partition name for a historical write; unset for a normal write.
+	OriginalPartitionName *string `protobuf:"bytes,4,opt,name=original_partition_name,json=originalPartitionName" json:"original_partition_name,omitempty"`
+	RoutingBucketCount    *int32  `protobuf:"varint,5,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PbProduceLogReqForBucket) Reset() {
 	*x = PbProduceLogReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[130]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6958,7 +8041,7 @@ func (x *PbProduceLogReqForBucket) String() string {
 func (*PbProduceLogReqForBucket) ProtoMessage() {}
 
 func (x *PbProduceLogReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[130]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6971,7 +8054,7 @@ func (x *PbProduceLogReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbProduceLogReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbProduceLogReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{130}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{147}
 }
 
 func (x *PbProduceLogReqForBucket) GetPartitionId() int64 {
@@ -6995,20 +8078,36 @@ func (x *PbProduceLogReqForBucket) GetRecords() []byte {
 	return nil
 }
 
+func (x *PbProduceLogReqForBucket) GetOriginalPartitionName() string {
+	if x != nil && x.OriginalPartitionName != nil {
+		return *x.OriginalPartitionName
+	}
+	return ""
+}
+
+func (x *PbProduceLogReqForBucket) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
 type PbProduceLogRespForBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	ErrorCode     *int32                 `protobuf:"varint,3,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
-	ErrorMessage  *string                `protobuf:"bytes,4,opt,name=error_message,json=errorMessage" json:"error_message,omitempty"`
-	BaseOffset    *int64                 `protobuf:"varint,5,opt,name=base_offset,json=baseOffset" json:"base_offset,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId  *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId     *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	ErrorCode    *int32                 `protobuf:"varint,3,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
+	ErrorMessage *string                `protobuf:"bytes,4,opt,name=error_message,json=errorMessage" json:"error_message,omitempty"`
+	BaseOffset   *int64                 `protobuf:"varint,5,opt,name=base_offset,json=baseOffset" json:"base_offset,omitempty"`
+	// The original partition name echoed from a historical write request; unset for a normal write.
+	OriginalPartitionName *string `protobuf:"bytes,6,opt,name=original_partition_name,json=originalPartitionName" json:"original_partition_name,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PbProduceLogRespForBucket) Reset() {
 	*x = PbProduceLogRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[131]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7020,7 +8119,7 @@ func (x *PbProduceLogRespForBucket) String() string {
 func (*PbProduceLogRespForBucket) ProtoMessage() {}
 
 func (x *PbProduceLogRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[131]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7033,7 +8132,7 @@ func (x *PbProduceLogRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbProduceLogRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbProduceLogRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{131}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *PbProduceLogRespForBucket) GetPartitionId() int64 {
@@ -7071,19 +8170,31 @@ func (x *PbProduceLogRespForBucket) GetBaseOffset() int64 {
 	return 0
 }
 
+func (x *PbProduceLogRespForBucket) GetOriginalPartitionName() string {
+	if x != nil && x.OriginalPartitionName != nil {
+		return *x.OriginalPartitionName
+	}
+	return ""
+}
+
 type PbFetchLogReqForTable struct {
 	state                     protoimpl.MessageState    `protogen:"open.v1"`
 	TableId                   *int64                    `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
 	ProjectionPushdownEnabled *bool                     `protobuf:"varint,2,req,name=projection_pushdown_enabled,json=projectionPushdownEnabled" json:"projection_pushdown_enabled,omitempty"`
 	ProjectedFields           []int32                   `protobuf:"varint,3,rep,packed,name=projected_fields,json=projectedFields" json:"projected_fields,omitempty"`
 	BucketsReq                []*PbFetchLogReqForBucket `protobuf:"bytes,4,rep,name=buckets_req,json=bucketsReq" json:"buckets_req,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// filter_predicate and filter_schema_id MUST be set together.
+	// filter_predicate is the serialized predicate; filter_schema_id identifies
+	// the schema against which the predicate was compiled.
+	FilterPredicate *PbPredicate `protobuf:"bytes,5,opt,name=filter_predicate,json=filterPredicate" json:"filter_predicate,omitempty"`
+	FilterSchemaId  *int32       `protobuf:"varint,6,opt,name=filter_schema_id,json=filterSchemaId" json:"filter_schema_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *PbFetchLogReqForTable) Reset() {
 	*x = PbFetchLogReqForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[132]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7095,7 +8206,7 @@ func (x *PbFetchLogReqForTable) String() string {
 func (*PbFetchLogReqForTable) ProtoMessage() {}
 
 func (x *PbFetchLogReqForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[132]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7108,7 +8219,7 @@ func (x *PbFetchLogReqForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbFetchLogReqForTable.ProtoReflect.Descriptor instead.
 func (*PbFetchLogReqForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{132}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{149}
 }
 
 func (x *PbFetchLogReqForTable) GetTableId() int64 {
@@ -7139,20 +8250,35 @@ func (x *PbFetchLogReqForTable) GetBucketsReq() []*PbFetchLogReqForBucket {
 	return nil
 }
 
+func (x *PbFetchLogReqForTable) GetFilterPredicate() *PbPredicate {
+	if x != nil {
+		return x.FilterPredicate
+	}
+	return nil
+}
+
+func (x *PbFetchLogReqForTable) GetFilterSchemaId() int32 {
+	if x != nil && x.FilterSchemaId != nil {
+		return *x.FilterSchemaId
+	}
+	return 0
+}
+
 type PbFetchLogReqForBucket struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	PartitionId *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
 	BucketId    *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
 	// TODO leader epoch
-	FetchOffset   *int64 `protobuf:"varint,3,req,name=fetch_offset,json=fetchOffset" json:"fetch_offset,omitempty"`
-	MaxFetchBytes *int32 `protobuf:"varint,4,req,name=max_fetch_bytes,json=maxFetchBytes" json:"max_fetch_bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	FetchOffset        *int64 `protobuf:"varint,3,req,name=fetch_offset,json=fetchOffset" json:"fetch_offset,omitempty"`
+	MaxFetchBytes      *int32 `protobuf:"varint,4,req,name=max_fetch_bytes,json=maxFetchBytes" json:"max_fetch_bytes,omitempty"`
+	RoutingBucketCount *int32 `protobuf:"varint,5,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PbFetchLogReqForBucket) Reset() {
 	*x = PbFetchLogReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[133]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[150]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7164,7 +8290,7 @@ func (x *PbFetchLogReqForBucket) String() string {
 func (*PbFetchLogReqForBucket) ProtoMessage() {}
 
 func (x *PbFetchLogReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[133]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[150]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7177,7 +8303,7 @@ func (x *PbFetchLogReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbFetchLogReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbFetchLogReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{133}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{150}
 }
 
 func (x *PbFetchLogReqForBucket) GetPartitionId() int64 {
@@ -7208,6 +8334,13 @@ func (x *PbFetchLogReqForBucket) GetMaxFetchBytes() int32 {
 	return 0
 }
 
+func (x *PbFetchLogReqForBucket) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
 type PbFetchLogRespForTable struct {
 	state         protoimpl.MessageState     `protogen:"open.v1"`
 	TableId       *int64                     `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
@@ -7218,7 +8351,7 @@ type PbFetchLogRespForTable struct {
 
 func (x *PbFetchLogRespForTable) Reset() {
 	*x = PbFetchLogRespForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[134]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[151]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7230,7 +8363,7 @@ func (x *PbFetchLogRespForTable) String() string {
 func (*PbFetchLogRespForTable) ProtoMessage() {}
 
 func (x *PbFetchLogRespForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[134]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[151]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7243,7 +8376,7 @@ func (x *PbFetchLogRespForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbFetchLogRespForTable.ProtoReflect.Descriptor instead.
 func (*PbFetchLogRespForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{134}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{151}
 }
 
 func (x *PbFetchLogRespForTable) GetTableId() int64 {
@@ -7270,13 +8403,20 @@ type PbFetchLogRespForBucket struct {
 	LogStartOffset     *int64                 `protobuf:"varint,6,opt,name=log_start_offset,json=logStartOffset" json:"log_start_offset,omitempty"` // TODO now we don't introduce log start offset, but remain it in protobuf
 	RemoteLogFetchInfo *PbRemoteLogFetchInfo  `protobuf:"bytes,7,opt,name=remote_log_fetch_info,json=remoteLogFetchInfo" json:"remote_log_fetch_info,omitempty"`
 	Records            []byte                 `protobuf:"bytes,8,opt,name=records" json:"records,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The offset the server scanned up to while filtering out batches, which may accompany a
+	// non-empty records field when only trailing batches were filtered. The client should start
+	// its next fetch from the later of this offset and the end of the records it received.
+	FilteredEndOffset *int64 `protobuf:"varint,9,opt,name=filtered_end_offset,json=filteredEndOffset" json:"filtered_end_offset,omitempty"`
+	// The safe local log retention boundary confirmed by a committed KV snapshot. This is only
+	// returned for KV follower fetches and is distinct from the physical log_start_offset.
+	MinRetainOffset *int64 `protobuf:"varint,10,opt,name=min_retain_offset,json=minRetainOffset" json:"min_retain_offset,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *PbFetchLogRespForBucket) Reset() {
 	*x = PbFetchLogRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[135]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[152]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7288,7 +8428,7 @@ func (x *PbFetchLogRespForBucket) String() string {
 func (*PbFetchLogRespForBucket) ProtoMessage() {}
 
 func (x *PbFetchLogRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[135]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[152]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7301,7 +8441,7 @@ func (x *PbFetchLogRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbFetchLogRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbFetchLogRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{135}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{152}
 }
 
 func (x *PbFetchLogRespForBucket) GetPartitionId() int64 {
@@ -7360,18 +8500,37 @@ func (x *PbFetchLogRespForBucket) GetRecords() []byte {
 	return nil
 }
 
+func (x *PbFetchLogRespForBucket) GetFilteredEndOffset() int64 {
+	if x != nil && x.FilteredEndOffset != nil {
+		return *x.FilteredEndOffset
+	}
+	return 0
+}
+
+func (x *PbFetchLogRespForBucket) GetMinRetainOffset() int64 {
+	if x != nil && x.MinRetainOffset != nil {
+		return *x.MinRetainOffset
+	}
+	return 0
+}
+
 type PbPutKvReqForBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	Records       []byte                 `protobuf:"bytes,3,req,name=records" json:"records,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId    *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	Records     []byte                 `protobuf:"bytes,3,req,name=records" json:"records,omitempty"`
+	// The original partition name for historical PK writes. It is unset for normal writes.
+	OriginalPartitionName *string `protobuf:"bytes,4,opt,name=original_partition_name,json=originalPartitionName" json:"original_partition_name,omitempty"`
+	// the bucket count the sender used to form bucket_id; the server compares it against the
+	// actual count to detect stale routing. Not authoritative metadata.
+	RoutingBucketCount *int32 `protobuf:"varint,5,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PbPutKvReqForBucket) Reset() {
 	*x = PbPutKvReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[136]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[153]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7383,7 +8542,7 @@ func (x *PbPutKvReqForBucket) String() string {
 func (*PbPutKvReqForBucket) ProtoMessage() {}
 
 func (x *PbPutKvReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[136]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[153]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7396,7 +8555,7 @@ func (x *PbPutKvReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPutKvReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbPutKvReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{136}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{153}
 }
 
 func (x *PbPutKvReqForBucket) GetPartitionId() int64 {
@@ -7420,6 +8579,20 @@ func (x *PbPutKvReqForBucket) GetRecords() []byte {
 	return nil
 }
 
+func (x *PbPutKvReqForBucket) GetOriginalPartitionName() string {
+	if x != nil && x.OriginalPartitionName != nil {
+		return *x.OriginalPartitionName
+	}
+	return ""
+}
+
+func (x *PbPutKvReqForBucket) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
 type PbPutKvRespForBucket struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	PartitionId  *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
@@ -7428,14 +8601,20 @@ type PbPutKvRespForBucket struct {
 	ErrorMessage *string                `protobuf:"bytes,4,opt,name=error_message,json=errorMessage" json:"error_message,omitempty"`
 	// the log end offset (LEO) of the changelog after this write
 	// this is the offset of the next record to be written, used for exactly-once semantics
-	LogEndOffset  *int64 `protobuf:"varint,5,opt,name=log_end_offset,json=logEndOffset" json:"log_end_offset,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LogEndOffset *int64 `protobuf:"varint,5,opt,name=log_end_offset,json=logEndOffset" json:"log_end_offset,omitempty"`
+	// backpressure signal from RocksDB write stall detection:
+	// 0 = normal (no pressure), (0,1) = DELAYED zone (normalized L0 ratio)
+	// introduced in v1.0
+	Pressure *float32 `protobuf:"fixed32,6,opt,name=pressure" json:"pressure,omitempty"`
+	// The original partition name for historical PK writes. It is unset for normal writes.
+	OriginalPartitionName *string `protobuf:"bytes,7,opt,name=original_partition_name,json=originalPartitionName" json:"original_partition_name,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PbPutKvRespForBucket) Reset() {
 	*x = PbPutKvRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[137]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[154]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7447,7 +8626,7 @@ func (x *PbPutKvRespForBucket) String() string {
 func (*PbPutKvRespForBucket) ProtoMessage() {}
 
 func (x *PbPutKvRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[137]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[154]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7460,7 +8639,7 @@ func (x *PbPutKvRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPutKvRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbPutKvRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{137}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{154}
 }
 
 func (x *PbPutKvRespForBucket) GetPartitionId() int64 {
@@ -7498,18 +8677,35 @@ func (x *PbPutKvRespForBucket) GetLogEndOffset() int64 {
 	return 0
 }
 
+func (x *PbPutKvRespForBucket) GetPressure() float32 {
+	if x != nil && x.Pressure != nil {
+		return *x.Pressure
+	}
+	return 0
+}
+
+func (x *PbPutKvRespForBucket) GetOriginalPartitionName() string {
+	if x != nil && x.OriginalPartitionName != nil {
+		return *x.OriginalPartitionName
+	}
+	return ""
+}
+
 type PbLookupReqForBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	Keys          [][]byte               `protobuf:"bytes,3,rep,name=keys" json:"keys,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId    *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	Keys        [][]byte               `protobuf:"bytes,3,rep,name=keys" json:"keys,omitempty"`
+	// The original partition name for historical lookup. It is unset for normal lookup.
+	OriginalPartitionName *string `protobuf:"bytes,4,opt,name=original_partition_name,json=originalPartitionName" json:"original_partition_name,omitempty"`
+	RoutingBucketCount    *int32  `protobuf:"varint,5,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PbLookupReqForBucket) Reset() {
 	*x = PbLookupReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[138]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[155]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7521,7 +8717,7 @@ func (x *PbLookupReqForBucket) String() string {
 func (*PbLookupReqForBucket) ProtoMessage() {}
 
 func (x *PbLookupReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[138]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[155]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7534,7 +8730,7 @@ func (x *PbLookupReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbLookupReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbLookupReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{138}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{155}
 }
 
 func (x *PbLookupReqForBucket) GetPartitionId() int64 {
@@ -7558,20 +8754,36 @@ func (x *PbLookupReqForBucket) GetKeys() [][]byte {
 	return nil
 }
 
+func (x *PbLookupReqForBucket) GetOriginalPartitionName() string {
+	if x != nil && x.OriginalPartitionName != nil {
+		return *x.OriginalPartitionName
+	}
+	return ""
+}
+
+func (x *PbLookupReqForBucket) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
 type PbLookupRespForBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	ErrorCode     *int32                 `protobuf:"varint,3,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
-	ErrorMessage  *string                `protobuf:"bytes,4,opt,name=error_message,json=errorMessage" json:"error_message,omitempty"`
-	Values        []*PbValue             `protobuf:"bytes,5,rep,name=values" json:"values,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId  *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId     *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	ErrorCode    *int32                 `protobuf:"varint,3,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
+	ErrorMessage *string                `protobuf:"bytes,4,opt,name=error_message,json=errorMessage" json:"error_message,omitempty"`
+	Values       []*PbValue             `protobuf:"bytes,5,rep,name=values" json:"values,omitempty"`
+	// The original partition name for historical lookup. It is unset for normal lookup.
+	OriginalPartitionName *string `protobuf:"bytes,6,opt,name=original_partition_name,json=originalPartitionName" json:"original_partition_name,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PbLookupRespForBucket) Reset() {
 	*x = PbLookupRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[139]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[156]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7583,7 +8795,7 @@ func (x *PbLookupRespForBucket) String() string {
 func (*PbLookupRespForBucket) ProtoMessage() {}
 
 func (x *PbLookupRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[139]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[156]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7596,7 +8808,7 @@ func (x *PbLookupRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbLookupRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbLookupRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{139}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{156}
 }
 
 func (x *PbLookupRespForBucket) GetPartitionId() int64 {
@@ -7634,6 +8846,13 @@ func (x *PbLookupRespForBucket) GetValues() []*PbValue {
 	return nil
 }
 
+func (x *PbLookupRespForBucket) GetOriginalPartitionName() string {
+	if x != nil && x.OriginalPartitionName != nil {
+		return *x.OriginalPartitionName
+	}
+	return ""
+}
+
 type PbValue struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// optional, if empty, means no value
@@ -7644,7 +8863,7 @@ type PbValue struct {
 
 func (x *PbValue) Reset() {
 	*x = PbValue{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[140]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[157]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7656,7 +8875,7 @@ func (x *PbValue) String() string {
 func (*PbValue) ProtoMessage() {}
 
 func (x *PbValue) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[140]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[157]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7669,7 +8888,7 @@ func (x *PbValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbValue.ProtoReflect.Descriptor instead.
 func (*PbValue) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{140}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{157}
 }
 
 func (x *PbValue) GetValues() []byte {
@@ -7688,7 +8907,7 @@ type PbValueList struct {
 
 func (x *PbValueList) Reset() {
 	*x = PbValueList{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[141]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[158]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7700,7 +8919,7 @@ func (x *PbValueList) String() string {
 func (*PbValueList) ProtoMessage() {}
 
 func (x *PbValueList) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[141]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[158]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7713,7 +8932,7 @@ func (x *PbValueList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbValueList.ProtoReflect.Descriptor instead.
 func (*PbValueList) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{141}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{158}
 }
 
 func (x *PbValueList) GetValues() [][]byte {
@@ -7724,17 +8943,18 @@ func (x *PbValueList) GetValues() [][]byte {
 }
 
 type PbPrefixLookupReqForBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	Keys          [][]byte               `protobuf:"bytes,3,rep,name=keys" json:"keys,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId        *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId           *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	Keys               [][]byte               `protobuf:"bytes,3,rep,name=keys" json:"keys,omitempty"`
+	RoutingBucketCount *int32                 `protobuf:"varint,4,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PbPrefixLookupReqForBucket) Reset() {
 	*x = PbPrefixLookupReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[142]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[159]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7746,7 +8966,7 @@ func (x *PbPrefixLookupReqForBucket) String() string {
 func (*PbPrefixLookupReqForBucket) ProtoMessage() {}
 
 func (x *PbPrefixLookupReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[142]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[159]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7759,7 +8979,7 @@ func (x *PbPrefixLookupReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPrefixLookupReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbPrefixLookupReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{142}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{159}
 }
 
 func (x *PbPrefixLookupReqForBucket) GetPartitionId() int64 {
@@ -7783,6 +9003,13 @@ func (x *PbPrefixLookupReqForBucket) GetKeys() [][]byte {
 	return nil
 }
 
+func (x *PbPrefixLookupReqForBucket) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
+	}
+	return 0
+}
+
 type PbPrefixLookupRespForBucket struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
@@ -7796,7 +9023,7 @@ type PbPrefixLookupRespForBucket struct {
 
 func (x *PbPrefixLookupRespForBucket) Reset() {
 	*x = PbPrefixLookupRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[143]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[160]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7808,7 +9035,7 @@ func (x *PbPrefixLookupRespForBucket) String() string {
 func (*PbPrefixLookupRespForBucket) ProtoMessage() {}
 
 func (x *PbPrefixLookupRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[143]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[160]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7821,7 +9048,7 @@ func (x *PbPrefixLookupRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPrefixLookupRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbPrefixLookupRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{143}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{160}
 }
 
 func (x *PbPrefixLookupRespForBucket) GetPartitionId() int64 {
@@ -7870,7 +9097,7 @@ type PbTableBucket struct {
 
 func (x *PbTableBucket) Reset() {
 	*x = PbTableBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[144]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[161]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7882,7 +9109,7 @@ func (x *PbTableBucket) String() string {
 func (*PbTableBucket) ProtoMessage() {}
 
 func (x *PbTableBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[144]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[161]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7895,7 +9122,7 @@ func (x *PbTableBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbTableBucket.ProtoReflect.Descriptor instead.
 func (*PbTableBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{144}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{161}
 }
 
 func (x *PbTableBucket) GetTableId() int64 {
@@ -7929,7 +9156,7 @@ type PbAdjustIsrReqForTable struct {
 
 func (x *PbAdjustIsrReqForTable) Reset() {
 	*x = PbAdjustIsrReqForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[145]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[162]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7941,7 +9168,7 @@ func (x *PbAdjustIsrReqForTable) String() string {
 func (*PbAdjustIsrReqForTable) ProtoMessage() {}
 
 func (x *PbAdjustIsrReqForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[145]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[162]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7954,7 +9181,7 @@ func (x *PbAdjustIsrReqForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAdjustIsrReqForTable.ProtoReflect.Descriptor instead.
 func (*PbAdjustIsrReqForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{145}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{162}
 }
 
 func (x *PbAdjustIsrReqForTable) GetTableId() int64 {
@@ -7979,13 +9206,14 @@ type PbAdjustIsrReqForBucket struct {
 	NewIsr           []int32                `protobuf:"varint,4,rep,packed,name=new_isr,json=newIsr" json:"new_isr,omitempty"`
 	CoordinatorEpoch *int32                 `protobuf:"varint,5,req,name=coordinator_epoch,json=coordinatorEpoch" json:"coordinator_epoch,omitempty"`
 	BucketEpoch      *int32                 `protobuf:"varint,6,req,name=bucket_epoch,json=bucketEpoch" json:"bucket_epoch,omitempty"`
+	StandbyReplicas  []int32                `protobuf:"varint,7,rep,packed,name=standby_replicas,json=standbyReplicas" json:"standby_replicas,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PbAdjustIsrReqForBucket) Reset() {
 	*x = PbAdjustIsrReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[146]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[163]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7997,7 +9225,7 @@ func (x *PbAdjustIsrReqForBucket) String() string {
 func (*PbAdjustIsrReqForBucket) ProtoMessage() {}
 
 func (x *PbAdjustIsrReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[146]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[163]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8010,7 +9238,7 @@ func (x *PbAdjustIsrReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAdjustIsrReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbAdjustIsrReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{146}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{163}
 }
 
 func (x *PbAdjustIsrReqForBucket) GetPartitionId() int64 {
@@ -8055,6 +9283,13 @@ func (x *PbAdjustIsrReqForBucket) GetBucketEpoch() int32 {
 	return 0
 }
 
+func (x *PbAdjustIsrReqForBucket) GetStandbyReplicas() []int32 {
+	if x != nil {
+		return x.StandbyReplicas
+	}
+	return nil
+}
+
 type PbAdjustIsrRespForTable struct {
 	state         protoimpl.MessageState      `protogen:"open.v1"`
 	TableId       *int64                      `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
@@ -8065,7 +9300,7 @@ type PbAdjustIsrRespForTable struct {
 
 func (x *PbAdjustIsrRespForTable) Reset() {
 	*x = PbAdjustIsrRespForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[147]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[164]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8077,7 +9312,7 @@ func (x *PbAdjustIsrRespForTable) String() string {
 func (*PbAdjustIsrRespForTable) ProtoMessage() {}
 
 func (x *PbAdjustIsrRespForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[147]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[164]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8090,7 +9325,7 @@ func (x *PbAdjustIsrRespForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAdjustIsrRespForTable.ProtoReflect.Descriptor instead.
 func (*PbAdjustIsrRespForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{147}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{164}
 }
 
 func (x *PbAdjustIsrRespForTable) GetTableId() int64 {
@@ -8118,13 +9353,14 @@ type PbAdjustIsrRespForBucket struct {
 	Isr              []int32                `protobuf:"varint,7,rep,packed,name=isr" json:"isr,omitempty"`
 	BucketEpoch      *int32                 `protobuf:"varint,8,opt,name=bucket_epoch,json=bucketEpoch" json:"bucket_epoch,omitempty"`
 	CoordinatorEpoch *int32                 `protobuf:"varint,9,opt,name=coordinator_epoch,json=coordinatorEpoch" json:"coordinator_epoch,omitempty"`
+	StandbyReplicas  []int32                `protobuf:"varint,10,rep,packed,name=standby_replicas,json=standbyReplicas" json:"standby_replicas,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PbAdjustIsrRespForBucket) Reset() {
 	*x = PbAdjustIsrRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[148]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[165]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8136,7 +9372,7 @@ func (x *PbAdjustIsrRespForBucket) String() string {
 func (*PbAdjustIsrRespForBucket) ProtoMessage() {}
 
 func (x *PbAdjustIsrRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[148]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[165]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8149,7 +9385,7 @@ func (x *PbAdjustIsrRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAdjustIsrRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbAdjustIsrRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{148}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{165}
 }
 
 func (x *PbAdjustIsrRespForBucket) GetPartitionId() int64 {
@@ -8215,6 +9451,13 @@ func (x *PbAdjustIsrRespForBucket) GetCoordinatorEpoch() int32 {
 	return 0
 }
 
+func (x *PbAdjustIsrRespForBucket) GetStandbyReplicas() []int32 {
+	if x != nil {
+		return x.StandbyReplicas
+	}
+	return nil
+}
+
 type PbListOffsetsRespForBucket struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BucketId      *int32                 `protobuf:"varint,1,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
@@ -8227,7 +9470,7 @@ type PbListOffsetsRespForBucket struct {
 
 func (x *PbListOffsetsRespForBucket) Reset() {
 	*x = PbListOffsetsRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[149]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[166]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8239,7 +9482,7 @@ func (x *PbListOffsetsRespForBucket) String() string {
 func (*PbListOffsetsRespForBucket) ProtoMessage() {}
 
 func (x *PbListOffsetsRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[149]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[166]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8252,7 +9495,7 @@ func (x *PbListOffsetsRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbListOffsetsRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbListOffsetsRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{149}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{166}
 }
 
 func (x *PbListOffsetsRespForBucket) GetBucketId() int32 {
@@ -8295,13 +9538,16 @@ type PbNotifyLeaderAndIsrReqForBucket struct {
 	Replicas          []int32              `protobuf:"varint,5,rep,packed,name=replicas" json:"replicas,omitempty"`
 	Isr               []int32              `protobuf:"varint,6,rep,packed,name=isr" json:"isr,omitempty"`
 	BucketEpoch       *int32               `protobuf:"varint,7,req,name=bucket_epoch,json=bucketEpoch" json:"bucket_epoch,omitempty"`
+	StandbyReplicas   []int32              `protobuf:"varint,8,rep,packed,name=standby_replicas,json=standbyReplicas" json:"standby_replicas,omitempty"`
+	BucketCount       *int32               `protobuf:"varint,9,opt,name=bucket_count,json=bucketCount" json:"bucket_count,omitempty"`
+	BucketCountEpoch  *int64               `protobuf:"varint,10,opt,name=bucket_count_epoch,json=bucketCountEpoch" json:"bucket_count_epoch,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PbNotifyLeaderAndIsrReqForBucket) Reset() {
 	*x = PbNotifyLeaderAndIsrReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[150]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[167]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8313,7 +9559,7 @@ func (x *PbNotifyLeaderAndIsrReqForBucket) String() string {
 func (*PbNotifyLeaderAndIsrReqForBucket) ProtoMessage() {}
 
 func (x *PbNotifyLeaderAndIsrReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[150]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[167]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8326,7 +9572,7 @@ func (x *PbNotifyLeaderAndIsrReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbNotifyLeaderAndIsrReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbNotifyLeaderAndIsrReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{150}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{167}
 }
 
 func (x *PbNotifyLeaderAndIsrReqForBucket) GetPhysicalTablePath() *PbPhysicalTablePath {
@@ -8378,6 +9624,27 @@ func (x *PbNotifyLeaderAndIsrReqForBucket) GetBucketEpoch() int32 {
 	return 0
 }
 
+func (x *PbNotifyLeaderAndIsrReqForBucket) GetStandbyReplicas() []int32 {
+	if x != nil {
+		return x.StandbyReplicas
+	}
+	return nil
+}
+
+func (x *PbNotifyLeaderAndIsrReqForBucket) GetBucketCount() int32 {
+	if x != nil && x.BucketCount != nil {
+		return *x.BucketCount
+	}
+	return 0
+}
+
+func (x *PbNotifyLeaderAndIsrReqForBucket) GetBucketCountEpoch() int64 {
+	if x != nil && x.BucketCountEpoch != nil {
+		return *x.BucketCountEpoch
+	}
+	return 0
+}
+
 type PbNotifyLeaderAndIsrRespForBucket struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TableBucket   *PbTableBucket         `protobuf:"bytes,1,req,name=table_bucket,json=tableBucket" json:"table_bucket,omitempty"`
@@ -8389,7 +9656,7 @@ type PbNotifyLeaderAndIsrRespForBucket struct {
 
 func (x *PbNotifyLeaderAndIsrRespForBucket) Reset() {
 	*x = PbNotifyLeaderAndIsrRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[151]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8401,7 +9668,7 @@ func (x *PbNotifyLeaderAndIsrRespForBucket) String() string {
 func (*PbNotifyLeaderAndIsrRespForBucket) ProtoMessage() {}
 
 func (x *PbNotifyLeaderAndIsrRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[151]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8414,7 +9681,7 @@ func (x *PbNotifyLeaderAndIsrRespForBucket) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use PbNotifyLeaderAndIsrRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbNotifyLeaderAndIsrRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{151}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{168}
 }
 
 func (x *PbNotifyLeaderAndIsrRespForBucket) GetTableBucket() *PbTableBucket {
@@ -8455,7 +9722,7 @@ type PbStopReplicaReqForBucket struct {
 
 func (x *PbStopReplicaReqForBucket) Reset() {
 	*x = PbStopReplicaReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[152]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[169]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8467,7 +9734,7 @@ func (x *PbStopReplicaReqForBucket) String() string {
 func (*PbStopReplicaReqForBucket) ProtoMessage() {}
 
 func (x *PbStopReplicaReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[152]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[169]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8480,7 +9747,7 @@ func (x *PbStopReplicaReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbStopReplicaReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbStopReplicaReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{152}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{169}
 }
 
 func (x *PbStopReplicaReqForBucket) GetTableBucket() *PbTableBucket {
@@ -8522,7 +9789,7 @@ type PbStopReplicaRespForBucket struct {
 
 func (x *PbStopReplicaRespForBucket) Reset() {
 	*x = PbStopReplicaRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[153]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[170]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8534,7 +9801,7 @@ func (x *PbStopReplicaRespForBucket) String() string {
 func (*PbStopReplicaRespForBucket) ProtoMessage() {}
 
 func (x *PbStopReplicaRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[153]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[170]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8547,7 +9814,7 @@ func (x *PbStopReplicaRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbStopReplicaRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbStopReplicaRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{153}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{170}
 }
 
 func (x *PbStopReplicaRespForBucket) GetTableBucket() *PbTableBucket {
@@ -8584,7 +9851,7 @@ type PbKvSnapshot struct {
 
 func (x *PbKvSnapshot) Reset() {
 	*x = PbKvSnapshot{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[154]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[171]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8596,7 +9863,7 @@ func (x *PbKvSnapshot) String() string {
 func (*PbKvSnapshot) ProtoMessage() {}
 
 func (x *PbKvSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[154]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[171]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8609,7 +9876,7 @@ func (x *PbKvSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbKvSnapshot.ProtoReflect.Descriptor instead.
 func (*PbKvSnapshot) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{154}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{171}
 }
 
 func (x *PbKvSnapshot) GetBucketId() int32 {
@@ -8645,7 +9912,7 @@ type PbLakeSnapshotForBucket struct {
 
 func (x *PbLakeSnapshotForBucket) Reset() {
 	*x = PbLakeSnapshotForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[155]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[172]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8657,7 +9924,7 @@ func (x *PbLakeSnapshotForBucket) String() string {
 func (*PbLakeSnapshotForBucket) ProtoMessage() {}
 
 func (x *PbLakeSnapshotForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[155]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[172]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8670,7 +9937,7 @@ func (x *PbLakeSnapshotForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbLakeSnapshotForBucket.ProtoReflect.Descriptor instead.
 func (*PbLakeSnapshotForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{155}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{172}
 }
 
 func (x *PbLakeSnapshotForBucket) GetPartitionId() int64 {
@@ -8711,7 +9978,7 @@ type PbRemotePathAndLocalFile struct {
 
 func (x *PbRemotePathAndLocalFile) Reset() {
 	*x = PbRemotePathAndLocalFile{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[156]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[173]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8723,7 +9990,7 @@ func (x *PbRemotePathAndLocalFile) String() string {
 func (*PbRemotePathAndLocalFile) ProtoMessage() {}
 
 func (x *PbRemotePathAndLocalFile) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[156]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[173]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8736,7 +10003,7 @@ func (x *PbRemotePathAndLocalFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRemotePathAndLocalFile.ProtoReflect.Descriptor instead.
 func (*PbRemotePathAndLocalFile) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{156}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{173}
 }
 
 func (x *PbRemotePathAndLocalFile) GetRemotePath() string {
@@ -8763,7 +10030,7 @@ type PbKeyValue struct {
 
 func (x *PbKeyValue) Reset() {
 	*x = PbKeyValue{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[157]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[174]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8775,7 +10042,7 @@ func (x *PbKeyValue) String() string {
 func (*PbKeyValue) ProtoMessage() {}
 
 func (x *PbKeyValue) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[157]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[174]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8788,7 +10055,7 @@ func (x *PbKeyValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbKeyValue.ProtoReflect.Descriptor instead.
 func (*PbKeyValue) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{157}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{174}
 }
 
 func (x *PbKeyValue) GetKey() string {
@@ -8817,7 +10084,7 @@ type PbRemoteLogFetchInfo struct {
 
 func (x *PbRemoteLogFetchInfo) Reset() {
 	*x = PbRemoteLogFetchInfo{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[158]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[175]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8829,7 +10096,7 @@ func (x *PbRemoteLogFetchInfo) String() string {
 func (*PbRemoteLogFetchInfo) ProtoMessage() {}
 
 func (x *PbRemoteLogFetchInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[158]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[175]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8842,7 +10109,7 @@ func (x *PbRemoteLogFetchInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRemoteLogFetchInfo.ProtoReflect.Descriptor instead.
 func (*PbRemoteLogFetchInfo) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{158}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{175}
 }
 
 func (x *PbRemoteLogFetchInfo) GetRemoteLogTabletDir() string {
@@ -8886,7 +10153,7 @@ type PbRemoteLogSegment struct {
 
 func (x *PbRemoteLogSegment) Reset() {
 	*x = PbRemoteLogSegment{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[159]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[176]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8898,7 +10165,7 @@ func (x *PbRemoteLogSegment) String() string {
 func (*PbRemoteLogSegment) ProtoMessage() {}
 
 func (x *PbRemoteLogSegment) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[159]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[176]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8911,7 +10178,7 @@ func (x *PbRemoteLogSegment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRemoteLogSegment.ProtoReflect.Descriptor instead.
 func (*PbRemoteLogSegment) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{159}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{176}
 }
 
 func (x *PbRemoteLogSegment) GetRemoteLogSegmentId() string {
@@ -8953,13 +10220,16 @@ type PbPartitionInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PartitionId   *int64                 `protobuf:"varint,1,req,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
 	PartitionSpec *PbPartitionSpec       `protobuf:"bytes,2,req,name=partition_spec,json=partitionSpec" json:"partition_spec,omitempty"`
+	RemoteDataDir *string                `protobuf:"bytes,3,opt,name=remote_data_dir,json=remoteDataDir" json:"remote_data_dir,omitempty"`
+	// the actual bucket count for this partition, used for per-partition bucket rescale
+	BucketCount   *int32 `protobuf:"varint,4,opt,name=bucket_count,json=bucketCount" json:"bucket_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PbPartitionInfo) Reset() {
 	*x = PbPartitionInfo{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[160]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[177]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8971,7 +10241,7 @@ func (x *PbPartitionInfo) String() string {
 func (*PbPartitionInfo) ProtoMessage() {}
 
 func (x *PbPartitionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[160]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[177]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8984,7 +10254,7 @@ func (x *PbPartitionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPartitionInfo.ProtoReflect.Descriptor instead.
 func (*PbPartitionInfo) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{160}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{177}
 }
 
 func (x *PbPartitionInfo) GetPartitionId() int64 {
@@ -9001,6 +10271,20 @@ func (x *PbPartitionInfo) GetPartitionSpec() *PbPartitionSpec {
 	return nil
 }
 
+func (x *PbPartitionInfo) GetRemoteDataDir() string {
+	if x != nil && x.RemoteDataDir != nil {
+		return *x.RemoteDataDir
+	}
+	return ""
+}
+
+func (x *PbPartitionInfo) GetBucketCount() int32 {
+	if x != nil && x.BucketCount != nil {
+		return *x.BucketCount
+	}
+	return 0
+}
+
 type PbPartitionSpec struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	PartitionKeyValues []*PbKeyValue          `protobuf:"bytes,1,rep,name=partition_key_values,json=partitionKeyValues" json:"partition_key_values,omitempty"`
@@ -9010,7 +10294,7 @@ type PbPartitionSpec struct {
 
 func (x *PbPartitionSpec) Reset() {
 	*x = PbPartitionSpec{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[161]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[178]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9022,7 +10306,7 @@ func (x *PbPartitionSpec) String() string {
 func (*PbPartitionSpec) ProtoMessage() {}
 
 func (x *PbPartitionSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[161]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[178]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9035,7 +10319,7 @@ func (x *PbPartitionSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPartitionSpec.ProtoReflect.Descriptor instead.
 func (*PbPartitionSpec) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{161}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{178}
 }
 
 func (x *PbPartitionSpec) GetPartitionKeyValues() []*PbKeyValue {
@@ -9056,7 +10340,7 @@ type PbCreateAclRespInfo struct {
 
 func (x *PbCreateAclRespInfo) Reset() {
 	*x = PbCreateAclRespInfo{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[162]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[179]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9068,7 +10352,7 @@ func (x *PbCreateAclRespInfo) String() string {
 func (*PbCreateAclRespInfo) ProtoMessage() {}
 
 func (x *PbCreateAclRespInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[162]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[179]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9081,7 +10365,7 @@ func (x *PbCreateAclRespInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbCreateAclRespInfo.ProtoReflect.Descriptor instead.
 func (*PbCreateAclRespInfo) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{162}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{179}
 }
 
 func (x *PbCreateAclRespInfo) GetAcl() *PbAclInfo {
@@ -9120,7 +10404,7 @@ type PbAclInfo struct {
 
 func (x *PbAclInfo) Reset() {
 	*x = PbAclInfo{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[163]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[180]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9132,7 +10416,7 @@ func (x *PbAclInfo) String() string {
 func (*PbAclInfo) ProtoMessage() {}
 
 func (x *PbAclInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[163]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[180]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9145,7 +10429,7 @@ func (x *PbAclInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAclInfo.ProtoReflect.Descriptor instead.
 func (*PbAclInfo) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{163}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{180}
 }
 
 func (x *PbAclInfo) GetResourceName() string {
@@ -9212,7 +10496,7 @@ type PbAclFilter struct {
 
 func (x *PbAclFilter) Reset() {
 	*x = PbAclFilter{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[164]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[181]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9224,7 +10508,7 @@ func (x *PbAclFilter) String() string {
 func (*PbAclFilter) ProtoMessage() {}
 
 func (x *PbAclFilter) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[164]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[181]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9237,7 +10521,7 @@ func (x *PbAclFilter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAclFilter.ProtoReflect.Descriptor instead.
 func (*PbAclFilter) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{164}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{181}
 }
 
 func (x *PbAclFilter) GetResourceName() string {
@@ -9300,7 +10584,7 @@ type PbDropAclsFilterResult struct {
 
 func (x *PbDropAclsFilterResult) Reset() {
 	*x = PbDropAclsFilterResult{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[165]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[182]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9312,7 +10596,7 @@ func (x *PbDropAclsFilterResult) String() string {
 func (*PbDropAclsFilterResult) ProtoMessage() {}
 
 func (x *PbDropAclsFilterResult) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[165]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[182]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9325,7 +10609,7 @@ func (x *PbDropAclsFilterResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbDropAclsFilterResult.ProtoReflect.Descriptor instead.
 func (*PbDropAclsFilterResult) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{165}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{182}
 }
 
 func (x *PbDropAclsFilterResult) GetMatchingAcls() []*PbDropAclsMatchingAcl {
@@ -9360,7 +10644,7 @@ type PbDropAclsMatchingAcl struct {
 
 func (x *PbDropAclsMatchingAcl) Reset() {
 	*x = PbDropAclsMatchingAcl{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[166]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[183]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9372,7 +10656,7 @@ func (x *PbDropAclsMatchingAcl) String() string {
 func (*PbDropAclsMatchingAcl) ProtoMessage() {}
 
 func (x *PbDropAclsMatchingAcl) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[166]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[183]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9385,7 +10669,7 @@ func (x *PbDropAclsMatchingAcl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbDropAclsMatchingAcl.ProtoReflect.Descriptor instead.
 func (*PbDropAclsMatchingAcl) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{166}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{183}
 }
 
 func (x *PbDropAclsMatchingAcl) GetAcl() *PbAclInfo {
@@ -9420,7 +10704,7 @@ type PbLakeTieringTableInfo struct {
 
 func (x *PbLakeTieringTableInfo) Reset() {
 	*x = PbLakeTieringTableInfo{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[167]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[184]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9432,7 +10716,7 @@ func (x *PbLakeTieringTableInfo) String() string {
 func (*PbLakeTieringTableInfo) ProtoMessage() {}
 
 func (x *PbLakeTieringTableInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[167]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[184]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9445,7 +10729,7 @@ func (x *PbLakeTieringTableInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbLakeTieringTableInfo.ProtoReflect.Descriptor instead.
 func (*PbLakeTieringTableInfo) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{167}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{184}
 }
 
 func (x *PbLakeTieringTableInfo) GetTableId() int64 {
@@ -9475,14 +10759,16 @@ type PbHeartbeatReqForTable struct {
 	// the coordinator epoch when the table is assigned to be tiering service
 	CoordinatorEpoch *int32 `protobuf:"varint,2,req,name=coordinator_epoch,json=coordinatorEpoch" json:"coordinator_epoch,omitempty"`
 	// the tiering epoch when the table is assigned to be tiering service
-	TieringEpoch  *int64 `protobuf:"varint,3,req,name=tiering_epoch,json=tieringEpoch" json:"tiering_epoch,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	TieringEpoch *int64 `protobuf:"varint,3,req,name=tiering_epoch,json=tieringEpoch" json:"tiering_epoch,omitempty"`
+	// stats for the last tiering round; only set for finished_tables in LakeTieringHeartbeatRequest
+	LakeTieringStats *PbLakeTieringStats `protobuf:"bytes,4,opt,name=lake_tiering_stats,json=lakeTieringStats" json:"lake_tiering_stats,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PbHeartbeatReqForTable) Reset() {
 	*x = PbHeartbeatReqForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[168]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[185]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9494,7 +10780,7 @@ func (x *PbHeartbeatReqForTable) String() string {
 func (*PbHeartbeatReqForTable) ProtoMessage() {}
 
 func (x *PbHeartbeatReqForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[168]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[185]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9507,7 +10793,7 @@ func (x *PbHeartbeatReqForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbHeartbeatReqForTable.ProtoReflect.Descriptor instead.
 func (*PbHeartbeatReqForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{168}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{185}
 }
 
 func (x *PbHeartbeatReqForTable) GetTableId() int64 {
@@ -9531,6 +10817,68 @@ func (x *PbHeartbeatReqForTable) GetTieringEpoch() int64 {
 	return 0
 }
 
+func (x *PbHeartbeatReqForTable) GetLakeTieringStats() *PbLakeTieringStats {
+	if x != nil {
+		return x.LakeTieringStats
+	}
+	return nil
+}
+
+// Stats reported by the tiering service when a table finishes a tiering round.
+type PbLakeTieringStats struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// cumulative total file size (bytes) of the lake table after tiering
+	FileSize *int64 `protobuf:"varint,1,opt,name=file_size,json=fileSize" json:"file_size,omitempty"`
+	// cumulative total record count of the lake table after tiering
+	RecordCount   *int64 `protobuf:"varint,2,opt,name=record_count,json=recordCount" json:"record_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PbLakeTieringStats) Reset() {
+	*x = PbLakeTieringStats{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[186]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbLakeTieringStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbLakeTieringStats) ProtoMessage() {}
+
+func (x *PbLakeTieringStats) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[186]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbLakeTieringStats.ProtoReflect.Descriptor instead.
+func (*PbLakeTieringStats) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{186}
+}
+
+func (x *PbLakeTieringStats) GetFileSize() int64 {
+	if x != nil && x.FileSize != nil {
+		return *x.FileSize
+	}
+	return 0
+}
+
+func (x *PbLakeTieringStats) GetRecordCount() int64 {
+	if x != nil && x.RecordCount != nil {
+		return *x.RecordCount
+	}
+	return 0
+}
+
 type PbHeartbeatRespForTable struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TableId       *int64                 `protobuf:"varint,1,req,name=table_id,json=tableId" json:"table_id,omitempty"`
@@ -9541,7 +10889,7 @@ type PbHeartbeatRespForTable struct {
 
 func (x *PbHeartbeatRespForTable) Reset() {
 	*x = PbHeartbeatRespForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[169]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[187]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9553,7 +10901,7 @@ func (x *PbHeartbeatRespForTable) String() string {
 func (*PbHeartbeatRespForTable) ProtoMessage() {}
 
 func (x *PbHeartbeatRespForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[169]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[187]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9566,7 +10914,7 @@ func (x *PbHeartbeatRespForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbHeartbeatRespForTable.ProtoReflect.Descriptor instead.
 func (*PbHeartbeatRespForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{169}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{187}
 }
 
 func (x *PbHeartbeatRespForTable) GetTableId() int64 {
@@ -9594,7 +10942,7 @@ type PbAlterConfig struct {
 
 func (x *PbAlterConfig) Reset() {
 	*x = PbAlterConfig{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[170]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[188]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9606,7 +10954,7 @@ func (x *PbAlterConfig) String() string {
 func (*PbAlterConfig) ProtoMessage() {}
 
 func (x *PbAlterConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[170]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[188]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9619,7 +10967,7 @@ func (x *PbAlterConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAlterConfig.ProtoReflect.Descriptor instead.
 func (*PbAlterConfig) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{170}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{188}
 }
 
 func (x *PbAlterConfig) GetConfigKey() string {
@@ -9649,13 +10997,15 @@ type PbAddColumn struct {
 	DataTypeJson       []byte                 `protobuf:"bytes,2,req,name=data_type_json,json=dataTypeJson" json:"data_type_json,omitempty"`
 	Comment            *string                `protobuf:"bytes,3,opt,name=comment" json:"comment,omitempty"`
 	ColumnPositionType *int32                 `protobuf:"varint,4,req,name=column_position_type,json=columnPositionType" json:"column_position_type,omitempty"` // LAST=0,FIRST=1,AFTER=3
+	AggFunctionType    *string                `protobuf:"bytes,5,opt,name=agg_function_type,json=aggFunctionType" json:"agg_function_type,omitempty"`
+	AggFunctionParams  []*PbKeyValue          `protobuf:"bytes,6,rep,name=agg_function_params,json=aggFunctionParams" json:"agg_function_params,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PbAddColumn) Reset() {
 	*x = PbAddColumn{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[171]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[189]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9667,7 +11017,7 @@ func (x *PbAddColumn) String() string {
 func (*PbAddColumn) ProtoMessage() {}
 
 func (x *PbAddColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[171]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[189]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9680,7 +11030,7 @@ func (x *PbAddColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbAddColumn.ProtoReflect.Descriptor instead.
 func (*PbAddColumn) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{171}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{189}
 }
 
 func (x *PbAddColumn) GetColumnName() string {
@@ -9711,6 +11061,20 @@ func (x *PbAddColumn) GetColumnPositionType() int32 {
 	return 0
 }
 
+func (x *PbAddColumn) GetAggFunctionType() string {
+	if x != nil && x.AggFunctionType != nil {
+		return *x.AggFunctionType
+	}
+	return ""
+}
+
+func (x *PbAddColumn) GetAggFunctionParams() []*PbKeyValue {
+	if x != nil {
+		return x.AggFunctionParams
+	}
+	return nil
+}
+
 type PbDropColumn struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ColumnName    *string                `protobuf:"bytes,1,req,name=column_name,json=columnName" json:"column_name,omitempty"`
@@ -9720,7 +11084,7 @@ type PbDropColumn struct {
 
 func (x *PbDropColumn) Reset() {
 	*x = PbDropColumn{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[172]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[190]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9732,7 +11096,7 @@ func (x *PbDropColumn) String() string {
 func (*PbDropColumn) ProtoMessage() {}
 
 func (x *PbDropColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[172]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[190]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9745,7 +11109,7 @@ func (x *PbDropColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbDropColumn.ProtoReflect.Descriptor instead.
 func (*PbDropColumn) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{172}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{190}
 }
 
 func (x *PbDropColumn) GetColumnName() string {
@@ -9765,7 +11129,7 @@ type PbRenameColumn struct {
 
 func (x *PbRenameColumn) Reset() {
 	*x = PbRenameColumn{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[173]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[191]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9777,7 +11141,7 @@ func (x *PbRenameColumn) String() string {
 func (*PbRenameColumn) ProtoMessage() {}
 
 func (x *PbRenameColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[173]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[191]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9790,7 +11154,7 @@ func (x *PbRenameColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRenameColumn.ProtoReflect.Descriptor instead.
 func (*PbRenameColumn) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{173}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{191}
 }
 
 func (x *PbRenameColumn) GetOldColumnName() string {
@@ -9819,7 +11183,7 @@ type PbModifyColumn struct {
 
 func (x *PbModifyColumn) Reset() {
 	*x = PbModifyColumn{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[174]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[192]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9831,7 +11195,7 @@ func (x *PbModifyColumn) String() string {
 func (*PbModifyColumn) ProtoMessage() {}
 
 func (x *PbModifyColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[174]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[192]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9844,7 +11208,7 @@ func (x *PbModifyColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbModifyColumn.ProtoReflect.Descriptor instead.
 func (*PbModifyColumn) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{174}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{192}
 }
 
 func (x *PbModifyColumn) GetColumnName() string {
@@ -9886,7 +11250,7 @@ type PbDescribeConfig struct {
 
 func (x *PbDescribeConfig) Reset() {
 	*x = PbDescribeConfig{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[175]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[193]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9898,7 +11262,7 @@ func (x *PbDescribeConfig) String() string {
 func (*PbDescribeConfig) ProtoMessage() {}
 
 func (x *PbDescribeConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[175]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[193]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9911,7 +11275,7 @@ func (x *PbDescribeConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbDescribeConfig.ProtoReflect.Descriptor instead.
 func (*PbDescribeConfig) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{175}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{193}
 }
 
 func (x *PbDescribeConfig) GetConfigKey() string {
@@ -9945,7 +11309,7 @@ type PbRebalancePlanForTable struct {
 
 func (x *PbRebalancePlanForTable) Reset() {
 	*x = PbRebalancePlanForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[176]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[194]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9957,7 +11321,7 @@ func (x *PbRebalancePlanForTable) String() string {
 func (*PbRebalancePlanForTable) ProtoMessage() {}
 
 func (x *PbRebalancePlanForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[176]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[194]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9970,7 +11334,7 @@ func (x *PbRebalancePlanForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRebalancePlanForTable.ProtoReflect.Descriptor instead.
 func (*PbRebalancePlanForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{176}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{194}
 }
 
 func (x *PbRebalancePlanForTable) GetTableId() int64 {
@@ -9997,7 +11361,7 @@ type PbRebalanceProgressForTable struct {
 
 func (x *PbRebalanceProgressForTable) Reset() {
 	*x = PbRebalanceProgressForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[177]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[195]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10009,7 +11373,7 @@ func (x *PbRebalanceProgressForTable) String() string {
 func (*PbRebalanceProgressForTable) ProtoMessage() {}
 
 func (x *PbRebalanceProgressForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[177]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[195]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10022,7 +11386,7 @@ func (x *PbRebalanceProgressForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRebalanceProgressForTable.ProtoReflect.Descriptor instead.
 func (*PbRebalanceProgressForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{177}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{195}
 }
 
 func (x *PbRebalanceProgressForTable) GetTableId() int64 {
@@ -10049,7 +11413,7 @@ type PbRebalanceProgressForBucket struct {
 
 func (x *PbRebalanceProgressForBucket) Reset() {
 	*x = PbRebalanceProgressForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[178]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[196]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10061,7 +11425,7 @@ func (x *PbRebalanceProgressForBucket) String() string {
 func (*PbRebalanceProgressForBucket) ProtoMessage() {}
 
 func (x *PbRebalanceProgressForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[178]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[196]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10074,7 +11438,7 @@ func (x *PbRebalanceProgressForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRebalanceProgressForBucket.ProtoReflect.Descriptor instead.
 func (*PbRebalanceProgressForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{178}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{196}
 }
 
 func (x *PbRebalanceProgressForBucket) GetRebalancePlan() *PbRebalancePlanForBucket {
@@ -10105,7 +11469,7 @@ type PbRebalancePlanForBucket struct {
 
 func (x *PbRebalancePlanForBucket) Reset() {
 	*x = PbRebalancePlanForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[179]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[197]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10117,7 +11481,7 @@ func (x *PbRebalancePlanForBucket) String() string {
 func (*PbRebalancePlanForBucket) ProtoMessage() {}
 
 func (x *PbRebalancePlanForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[179]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[197]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10130,7 +11494,7 @@ func (x *PbRebalancePlanForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbRebalancePlanForBucket.ProtoReflect.Descriptor instead.
 func (*PbRebalancePlanForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{179}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{197}
 }
 
 func (x *PbRebalancePlanForBucket) GetPartitionId() int64 {
@@ -10191,7 +11555,7 @@ type PbLakeTableSnapshotMetadata struct {
 
 func (x *PbLakeTableSnapshotMetadata) Reset() {
 	*x = PbLakeTableSnapshotMetadata{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[180]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[198]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10203,7 +11567,7 @@ func (x *PbLakeTableSnapshotMetadata) String() string {
 func (*PbLakeTableSnapshotMetadata) ProtoMessage() {}
 
 func (x *PbLakeTableSnapshotMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[180]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[198]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10216,7 +11580,7 @@ func (x *PbLakeTableSnapshotMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbLakeTableSnapshotMetadata.ProtoReflect.Descriptor instead.
 func (*PbLakeTableSnapshotMetadata) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{180}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{198}
 }
 
 func (x *PbLakeTableSnapshotMetadata) GetTableId() int64 {
@@ -10267,7 +11631,7 @@ type PbLakeTableSnapshotInfo struct {
 
 func (x *PbLakeTableSnapshotInfo) Reset() {
 	*x = PbLakeTableSnapshotInfo{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[181]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[199]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10279,7 +11643,7 @@ func (x *PbLakeTableSnapshotInfo) String() string {
 func (*PbLakeTableSnapshotInfo) ProtoMessage() {}
 
 func (x *PbLakeTableSnapshotInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[181]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[199]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10292,7 +11656,7 @@ func (x *PbLakeTableSnapshotInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbLakeTableSnapshotInfo.ProtoReflect.Descriptor instead.
 func (*PbLakeTableSnapshotInfo) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{181}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{199}
 }
 
 func (x *PbLakeTableSnapshotInfo) GetTableId() int64 {
@@ -10339,7 +11703,7 @@ type PbLakeTableOffsetForBucket struct {
 
 func (x *PbLakeTableOffsetForBucket) Reset() {
 	*x = PbLakeTableOffsetForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[182]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[200]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10351,7 +11715,7 @@ func (x *PbLakeTableOffsetForBucket) String() string {
 func (*PbLakeTableOffsetForBucket) ProtoMessage() {}
 
 func (x *PbLakeTableOffsetForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[182]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[200]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10364,7 +11728,7 @@ func (x *PbLakeTableOffsetForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbLakeTableOffsetForBucket.ProtoReflect.Descriptor instead.
 func (*PbLakeTableOffsetForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{182}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{200}
 }
 
 func (x *PbLakeTableOffsetForBucket) GetPartitionId() int64 {
@@ -10407,7 +11771,7 @@ type PbPrepareLakeTableRespForTable struct {
 
 func (x *PbPrepareLakeTableRespForTable) Reset() {
 	*x = PbPrepareLakeTableRespForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[183]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[201]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10419,7 +11783,7 @@ func (x *PbPrepareLakeTableRespForTable) String() string {
 func (*PbPrepareLakeTableRespForTable) ProtoMessage() {}
 
 func (x *PbPrepareLakeTableRespForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[183]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[201]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10432,7 +11796,7 @@ func (x *PbPrepareLakeTableRespForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbPrepareLakeTableRespForTable.ProtoReflect.Descriptor instead.
 func (*PbPrepareLakeTableRespForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{183}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{201}
 }
 
 func (x *PbPrepareLakeTableRespForTable) GetErrorCode() int32 {
@@ -10474,7 +11838,7 @@ type PbTableOffsets struct {
 
 func (x *PbTableOffsets) Reset() {
 	*x = PbTableOffsets{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[184]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[202]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10486,7 +11850,7 @@ func (x *PbTableOffsets) String() string {
 func (*PbTableOffsets) ProtoMessage() {}
 
 func (x *PbTableOffsets) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[184]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[202]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10499,7 +11863,7 @@ func (x *PbTableOffsets) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbTableOffsets.ProtoReflect.Descriptor instead.
 func (*PbTableOffsets) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{184}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{202}
 }
 
 func (x *PbTableOffsets) GetTableId() int64 {
@@ -10534,7 +11898,7 @@ type PbBucketOffset struct {
 
 func (x *PbBucketOffset) Reset() {
 	*x = PbBucketOffset{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[185]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[203]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10546,7 +11910,7 @@ func (x *PbBucketOffset) String() string {
 func (*PbBucketOffset) ProtoMessage() {}
 
 func (x *PbBucketOffset) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[185]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[203]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10559,7 +11923,7 @@ func (x *PbBucketOffset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbBucketOffset.ProtoReflect.Descriptor instead.
 func (*PbBucketOffset) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{185}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{203}
 }
 
 func (x *PbBucketOffset) GetPartitionId() int64 {
@@ -10594,7 +11958,7 @@ type PbProducerTableOffsets struct {
 
 func (x *PbProducerTableOffsets) Reset() {
 	*x = PbProducerTableOffsets{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[186]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[204]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10606,7 +11970,7 @@ func (x *PbProducerTableOffsets) String() string {
 func (*PbProducerTableOffsets) ProtoMessage() {}
 
 func (x *PbProducerTableOffsets) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[186]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[204]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10619,7 +11983,7 @@ func (x *PbProducerTableOffsets) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbProducerTableOffsets.ProtoReflect.Descriptor instead.
 func (*PbProducerTableOffsets) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{186}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{204}
 }
 
 func (x *PbProducerTableOffsets) GetTableId() int64 {
@@ -10647,7 +12011,7 @@ type PbDatabaseSummary struct {
 
 func (x *PbDatabaseSummary) Reset() {
 	*x = PbDatabaseSummary{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[187]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[205]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10659,7 +12023,7 @@ func (x *PbDatabaseSummary) String() string {
 func (*PbDatabaseSummary) ProtoMessage() {}
 
 func (x *PbDatabaseSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[187]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[205]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10672,7 +12036,7 @@ func (x *PbDatabaseSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbDatabaseSummary.ProtoReflect.Descriptor instead.
 func (*PbDatabaseSummary) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{187}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{205}
 }
 
 func (x *PbDatabaseSummary) GetDatabaseName() string {
@@ -10706,7 +12070,7 @@ type PbKvSnapshotLeaseForTable struct {
 
 func (x *PbKvSnapshotLeaseForTable) Reset() {
 	*x = PbKvSnapshotLeaseForTable{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[188]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[206]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10718,7 +12082,7 @@ func (x *PbKvSnapshotLeaseForTable) String() string {
 func (*PbKvSnapshotLeaseForTable) ProtoMessage() {}
 
 func (x *PbKvSnapshotLeaseForTable) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[188]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[206]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10731,7 +12095,7 @@ func (x *PbKvSnapshotLeaseForTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbKvSnapshotLeaseForTable.ProtoReflect.Descriptor instead.
 func (*PbKvSnapshotLeaseForTable) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{188}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{206}
 }
 
 func (x *PbKvSnapshotLeaseForTable) GetTableId() int64 {
@@ -10759,7 +12123,7 @@ type PbKvSnapshotLeaseForBucket struct {
 
 func (x *PbKvSnapshotLeaseForBucket) Reset() {
 	*x = PbKvSnapshotLeaseForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[189]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[207]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10771,7 +12135,7 @@ func (x *PbKvSnapshotLeaseForBucket) String() string {
 func (*PbKvSnapshotLeaseForBucket) ProtoMessage() {}
 
 func (x *PbKvSnapshotLeaseForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[189]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[207]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10784,7 +12148,7 @@ func (x *PbKvSnapshotLeaseForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbKvSnapshotLeaseForBucket.ProtoReflect.Descriptor instead.
 func (*PbKvSnapshotLeaseForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{189}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{207}
 }
 
 func (x *PbKvSnapshotLeaseForBucket) GetPartitionId() int64 {
@@ -10809,16 +12173,17 @@ func (x *PbKvSnapshotLeaseForBucket) GetSnapshotId() int64 {
 }
 
 type PbTableStatsReqForBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PartitionId   *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
-	BucketId      *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId        *int64                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId" json:"partition_id,omitempty"`
+	BucketId           *int32                 `protobuf:"varint,2,req,name=bucket_id,json=bucketId" json:"bucket_id,omitempty"`
+	RoutingBucketCount *int32                 `protobuf:"varint,3,opt,name=routing_bucket_count,json=routingBucketCount" json:"routing_bucket_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PbTableStatsReqForBucket) Reset() {
 	*x = PbTableStatsReqForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[190]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[208]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10830,7 +12195,7 @@ func (x *PbTableStatsReqForBucket) String() string {
 func (*PbTableStatsReqForBucket) ProtoMessage() {}
 
 func (x *PbTableStatsReqForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[190]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[208]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10843,7 +12208,7 @@ func (x *PbTableStatsReqForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbTableStatsReqForBucket.ProtoReflect.Descriptor instead.
 func (*PbTableStatsReqForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{190}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{208}
 }
 
 func (x *PbTableStatsReqForBucket) GetPartitionId() int64 {
@@ -10856,6 +12221,13 @@ func (x *PbTableStatsReqForBucket) GetPartitionId() int64 {
 func (x *PbTableStatsReqForBucket) GetBucketId() int32 {
 	if x != nil && x.BucketId != nil {
 		return *x.BucketId
+	}
+	return 0
+}
+
+func (x *PbTableStatsReqForBucket) GetRoutingBucketCount() int32 {
+	if x != nil && x.RoutingBucketCount != nil {
+		return *x.RoutingBucketCount
 	}
 	return 0
 }
@@ -10878,7 +12250,7 @@ type PbTableStatsRespForBucket struct {
 
 func (x *PbTableStatsRespForBucket) Reset() {
 	*x = PbTableStatsRespForBucket{}
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[191]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[209]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10890,7 +12262,7 @@ func (x *PbTableStatsRespForBucket) String() string {
 func (*PbTableStatsRespForBucket) ProtoMessage() {}
 
 func (x *PbTableStatsRespForBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[191]
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[209]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10903,7 +12275,7 @@ func (x *PbTableStatsRespForBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PbTableStatsRespForBucket.ProtoReflect.Descriptor instead.
 func (*PbTableStatsRespForBucket) Descriptor() ([]byte, []int) {
-	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{191}
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{209}
 }
 
 func (x *PbTableStatsRespForBucket) GetErrorCode() int32 {
@@ -10941,6 +12313,330 @@ func (x *PbTableStatsRespForBucket) GetRowCount() int64 {
 	return 0
 }
 
+// Represents a predicate that can be serialized and transmitted across
+// languages
+type PbPredicate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// See PbPredicateType constants: LEAF = 0, COMPOUND = 1
+	Type          *int32               `protobuf:"varint,1,req,name=type" json:"type,omitempty"`
+	Leaf          *PbLeafPredicate     `protobuf:"bytes,2,opt,name=leaf" json:"leaf,omitempty"`
+	Compound      *PbCompoundPredicate `protobuf:"bytes,3,opt,name=compound" json:"compound,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PbPredicate) Reset() {
+	*x = PbPredicate{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[210]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbPredicate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbPredicate) ProtoMessage() {}
+
+func (x *PbPredicate) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[210]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbPredicate.ProtoReflect.Descriptor instead.
+func (*PbPredicate) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{210}
+}
+
+func (x *PbPredicate) GetType() int32 {
+	if x != nil && x.Type != nil {
+		return *x.Type
+	}
+	return 0
+}
+
+func (x *PbPredicate) GetLeaf() *PbLeafPredicate {
+	if x != nil {
+		return x.Leaf
+	}
+	return nil
+}
+
+func (x *PbPredicate) GetCompound() *PbCompoundPredicate {
+	if x != nil {
+		return x.Compound
+	}
+	return nil
+}
+
+// Represents a leaf predicate that compares a field with literals
+type PbLeafPredicate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The function to apply (see PbLeafFunction constants: EQUAL=0 ... NOT_IN=12)
+	Function *int32 `protobuf:"varint,1,req,name=function" json:"function,omitempty"`
+	// The schema field id of the referenced top-level field
+	FieldId *int32 `protobuf:"varint,2,req,name=field_id,json=fieldId" json:"field_id,omitempty"`
+	// The literals to compare with
+	Literals      []*PbLiteralValue `protobuf:"bytes,3,rep,name=literals" json:"literals,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PbLeafPredicate) Reset() {
+	*x = PbLeafPredicate{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[211]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbLeafPredicate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbLeafPredicate) ProtoMessage() {}
+
+func (x *PbLeafPredicate) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[211]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbLeafPredicate.ProtoReflect.Descriptor instead.
+func (*PbLeafPredicate) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{211}
+}
+
+func (x *PbLeafPredicate) GetFunction() int32 {
+	if x != nil && x.Function != nil {
+		return *x.Function
+	}
+	return 0
+}
+
+func (x *PbLeafPredicate) GetFieldId() int32 {
+	if x != nil && x.FieldId != nil {
+		return *x.FieldId
+	}
+	return 0
+}
+
+func (x *PbLeafPredicate) GetLiterals() []*PbLiteralValue {
+	if x != nil {
+		return x.Literals
+	}
+	return nil
+}
+
+// Represents a compound predicate that combines multiple predicates
+type PbCompoundPredicate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The function to apply (see PbCompoundFunction constants: AND=0, OR=1)
+	Function *int32 `protobuf:"varint,1,req,name=function" json:"function,omitempty"`
+	// The child predicates
+	Children      []*PbPredicate `protobuf:"bytes,2,rep,name=children" json:"children,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PbCompoundPredicate) Reset() {
+	*x = PbCompoundPredicate{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[212]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbCompoundPredicate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbCompoundPredicate) ProtoMessage() {}
+
+func (x *PbCompoundPredicate) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[212]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbCompoundPredicate.ProtoReflect.Descriptor instead.
+func (*PbCompoundPredicate) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{212}
+}
+
+func (x *PbCompoundPredicate) GetFunction() int32 {
+	if x != nil && x.Function != nil {
+		return *x.Function
+	}
+	return 0
+}
+
+func (x *PbCompoundPredicate) GetChildren() []*PbPredicate {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
+// Represents a literal value
+type PbLiteralValue struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// See PbDataTypeRoot constants: indicates which value field is populated
+	LiteralType                *int32   `protobuf:"varint,1,req,name=literal_type,json=literalType" json:"literal_type,omitempty"`
+	IsNull                     *bool    `protobuf:"varint,2,req,name=is_null,json=isNull" json:"is_null,omitempty"`
+	BooleanValue               *bool    `protobuf:"varint,3,opt,name=boolean_value,json=booleanValue" json:"boolean_value,omitempty"`
+	IntValue                   *int32   `protobuf:"varint,4,opt,name=int_value,json=intValue" json:"int_value,omitempty"`
+	BigintValue                *int64   `protobuf:"varint,5,opt,name=bigint_value,json=bigintValue" json:"bigint_value,omitempty"`
+	FloatValue                 *float32 `protobuf:"fixed32,6,opt,name=float_value,json=floatValue" json:"float_value,omitempty"`
+	DoubleValue                *float64 `protobuf:"fixed64,7,opt,name=double_value,json=doubleValue" json:"double_value,omitempty"`
+	StringValue                *string  `protobuf:"bytes,8,opt,name=string_value,json=stringValue" json:"string_value,omitempty"`
+	BinaryValue                []byte   `protobuf:"bytes,9,opt,name=binary_value,json=binaryValue" json:"binary_value,omitempty"`
+	DecimalValue               *int64   `protobuf:"varint,10,opt,name=decimal_value,json=decimalValue" json:"decimal_value,omitempty"`                                                 // Serialized decimal (compact mode)
+	TimestampMillisValue       *int64   `protobuf:"varint,11,opt,name=timestamp_millis_value,json=timestampMillisValue" json:"timestamp_millis_value,omitempty"`                       // Epoch millis
+	TimestampNanoOfMillisValue *int32   `protobuf:"varint,12,opt,name=timestamp_nano_of_millis_value,json=timestampNanoOfMillisValue" json:"timestamp_nano_of_millis_value,omitempty"` // Nano of millis
+	DecimalBytes               []byte   `protobuf:"bytes,13,opt,name=decimal_bytes,json=decimalBytes" json:"decimal_bytes,omitempty"`                                                  // Serialized decimal (non-compact mode)
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *PbLiteralValue) Reset() {
+	*x = PbLiteralValue{}
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[213]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PbLiteralValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PbLiteralValue) ProtoMessage() {}
+
+func (x *PbLiteralValue) ProtoReflect() protoreflect.Message {
+	mi := &file_third_party_apache_fluss_FlussApi_proto_msgTypes[213]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PbLiteralValue.ProtoReflect.Descriptor instead.
+func (*PbLiteralValue) Descriptor() ([]byte, []int) {
+	return file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP(), []int{213}
+}
+
+func (x *PbLiteralValue) GetLiteralType() int32 {
+	if x != nil && x.LiteralType != nil {
+		return *x.LiteralType
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetIsNull() bool {
+	if x != nil && x.IsNull != nil {
+		return *x.IsNull
+	}
+	return false
+}
+
+func (x *PbLiteralValue) GetBooleanValue() bool {
+	if x != nil && x.BooleanValue != nil {
+		return *x.BooleanValue
+	}
+	return false
+}
+
+func (x *PbLiteralValue) GetIntValue() int32 {
+	if x != nil && x.IntValue != nil {
+		return *x.IntValue
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetBigintValue() int64 {
+	if x != nil && x.BigintValue != nil {
+		return *x.BigintValue
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetFloatValue() float32 {
+	if x != nil && x.FloatValue != nil {
+		return *x.FloatValue
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetDoubleValue() float64 {
+	if x != nil && x.DoubleValue != nil {
+		return *x.DoubleValue
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetStringValue() string {
+	if x != nil && x.StringValue != nil {
+		return *x.StringValue
+	}
+	return ""
+}
+
+func (x *PbLiteralValue) GetBinaryValue() []byte {
+	if x != nil {
+		return x.BinaryValue
+	}
+	return nil
+}
+
+func (x *PbLiteralValue) GetDecimalValue() int64 {
+	if x != nil && x.DecimalValue != nil {
+		return *x.DecimalValue
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetTimestampMillisValue() int64 {
+	if x != nil && x.TimestampMillisValue != nil {
+		return *x.TimestampMillisValue
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetTimestampNanoOfMillisValue() int32 {
+	if x != nil && x.TimestampNanoOfMillisValue != nil {
+		return *x.TimestampNanoOfMillisValue
+	}
+	return 0
+}
+
+func (x *PbLiteralValue) GetDecimalBytes() []byte {
+	if x != nil {
+		return x.DecimalBytes
+	}
+	return nil
+}
+
 var File_third_party_apache_fluss_FlussApi_proto protoreflect.FileDescriptor
 
 const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
@@ -10969,7 +12665,13 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\rdatabase_name\x18\x01 \x02(\tR\fdatabaseName\x12(\n" +
 	"\x10ignore_if_exists\x18\x02 \x02(\bR\x0eignoreIfExists\x12#\n" +
 	"\rdatabase_json\x18\x03 \x01(\fR\fdatabaseJson\"\x18\n" +
-	"\x16CreateDatabaseResponse\"=\n" +
+	"\x16CreateDatabaseResponse\"\xc3\x01\n" +
+	"\x14AlterDatabaseRequest\x12#\n" +
+	"\rdatabase_name\x18\x01 \x02(\tR\fdatabaseName\x12/\n" +
+	"\x14ignore_if_not_exists\x18\x02 \x02(\bR\x11ignoreIfNotExists\x12;\n" +
+	"\x0econfig_changes\x18\x03 \x03(\v2\x14.fluss.PbAlterConfigR\rconfigChanges\x12\x18\n" +
+	"\acomment\x18\x04 \x01(\tR\acomment\"\x17\n" +
+	"\x15AlterDatabaseResponse\"=\n" +
 	"\x16GetDatabaseInfoRequest\x12#\n" +
 	"\rdatabase_name\x18\x01 \x02(\tR\fdatabaseName\"\x86\x01\n" +
 	"\x17GetDatabaseInfoResponse\x12#\n" +
@@ -10996,7 +12698,7 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\n" +
 	"table_json\x18\x02 \x02(\fR\ttableJson\x12(\n" +
 	"\x10ignore_if_exists\x18\x03 \x02(\bR\x0eignoreIfExists\"\x15\n" +
-	"\x13CreateTableResponse\"\x9d\x03\n" +
+	"\x13CreateTableResponse\"\xe9\x03\n" +
 	"\x11AlterTableRequest\x121\n" +
 	"\n" +
 	"table_path\x18\x01 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\x12/\n" +
@@ -11006,18 +12708,23 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"addColumns\x126\n" +
 	"\fdrop_columns\x18\x05 \x03(\v2\x13.fluss.PbDropColumnR\vdropColumns\x12<\n" +
 	"\x0erename_columns\x18\x06 \x03(\v2\x15.fluss.PbRenameColumnR\rrenameColumns\x12<\n" +
-	"\x0emodify_columns\x18\a \x03(\v2\x15.fluss.PbModifyColumnR\rmodifyColumns\"\x14\n" +
+	"\x0emodify_columns\x18\a \x03(\v2\x15.fluss.PbModifyColumnR\rmodifyColumns\x12J\n" +
+	"\x13modify_bucket_count\x18\b \x01(\v2\x1a.fluss.PbModifyBucketCountR\x11modifyBucketCount\"?\n" +
+	"\x13PbModifyBucketCount\x12(\n" +
+	"\x10new_bucket_count\x18\x01 \x02(\x05R\x0enewBucketCount\"\x14\n" +
 	"\x12AlterTableResponse\"H\n" +
 	"\x13GetTableInfoRequest\x121\n" +
 	"\n" +
-	"table_path\x18\x01 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\"\xb5\x01\n" +
+	"table_path\x18\x01 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\"\x8b\x02\n" +
 	"\x14GetTableInfoResponse\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12\x1b\n" +
 	"\tschema_id\x18\x02 \x02(\x05R\bschemaId\x12\x1d\n" +
 	"\n" +
 	"table_json\x18\x03 \x02(\fR\ttableJson\x12!\n" +
 	"\fcreated_time\x18\x04 \x02(\x03R\vcreatedTime\x12#\n" +
-	"\rmodified_time\x18\x05 \x02(\x03R\fmodifiedTime\"8\n" +
+	"\rmodified_time\x18\x05 \x02(\x03R\fmodifiedTime\x12&\n" +
+	"\x0fremote_data_dir\x18\x06 \x01(\tR\rremoteDataDir\x12,\n" +
+	"\x12bucket_count_epoch\x18\a \x01(\x03R\x10bucketCountEpoch\"8\n" +
 	"\x11ListTablesRequest\x12#\n" +
 	"\rdatabase_name\x18\x01 \x02(\tR\fdatabaseName\"3\n" +
 	"\x12ListTablesResponse\x12\x1d\n" +
@@ -11058,14 +12765,15 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\vbuckets_req\x18\x04 \x03(\v2\x1f.fluss.PbProduceLogReqForBucketR\n" +
 	"bucketsReq\"Y\n" +
 	"\x12ProduceLogResponse\x12C\n" +
-	"\fbuckets_resp\x18\x01 \x03(\v2 .fluss.PbProduceLogRespForBucketR\vbucketsResp\"\xd6\x01\n" +
+	"\fbuckets_resp\x18\x01 \x03(\v2 .fluss.PbProduceLogRespForBucketR\vbucketsResp\"\xff\x01\n" +
 	"\x0fFetchLogRequest\x12,\n" +
 	"\x12follower_server_id\x18\x01 \x02(\x05R\x10followerServerId\x12\x1b\n" +
 	"\tmax_bytes\x18\x02 \x02(\x05R\bmaxBytes\x12;\n" +
 	"\n" +
 	"tables_req\x18\x03 \x03(\v2\x1c.fluss.PbFetchLogReqForTableR\ttablesReq\x12\x1e\n" +
 	"\vmax_wait_ms\x18\x04 \x01(\x05R\tmaxWaitMs\x12\x1b\n" +
-	"\tmin_bytes\x18\x05 \x01(\x05R\bminBytes\"R\n" +
+	"\tmin_bytes\x18\x05 \x01(\x05R\bminBytes\x12'\n" +
+	"\x0fread_preference\x18\x06 \x01(\x05R\x0ereadPreference\"R\n" +
 	"\x10FetchLogResponse\x12>\n" +
 	"\vtables_resp\x18\x01 \x03(\v2\x1d.fluss.PbFetchLogRespForTableR\n" +
 	"tablesResp\"\xdf\x01\n" +
@@ -11095,19 +12803,43 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\vbuckets_req\x18\x02 \x03(\v2!.fluss.PbPrefixLookupReqForBucketR\n" +
 	"bucketsReq\"]\n" +
 	"\x14PrefixLookupResponse\x12E\n" +
-	"\fbuckets_resp\x18\x01 \x03(\v2\".fluss.PbPrefixLookupRespForBucketR\vbucketsResp\"\x83\x01\n" +
+	"\fbuckets_resp\x18\x01 \x03(\v2\".fluss.PbPrefixLookupRespForBucketR\vbucketsResp\"\xb5\x01\n" +
 	"\x10LimitScanRequest\x12\x19\n" +
 	"\btable_id\x18\x02 \x02(\x03R\atableId\x12!\n" +
 	"\fpartition_id\x18\x03 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x04 \x02(\x05R\bbucketId\x12\x14\n" +
-	"\x05limit\x18\x05 \x02(\x05R\x05limit\"\x93\x01\n" +
+	"\x05limit\x18\x05 \x02(\x05R\x05limit\x120\n" +
+	"\x14routing_bucket_count\x18\x06 \x01(\x05R\x12routingBucketCount\"\x93\x01\n" +
 	"\x11LimitScanResponse\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x01 \x01(\x05R\terrorCode\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12 \n" +
 	"\fis_log_table\x18\x03 \x01(\bR\n" +
 	"isLogTable\x12\x18\n" +
-	"\arecords\x18\x04 \x01(\fR\arecords\"\x9e\x01\n" +
+	"\arecords\x18\x04 \x01(\fR\arecords\"\xb7\x01\n" +
+	"\x12PbScanReqForBucket\x12\x19\n" +
+	"\btable_id\x18\x01 \x02(\x03R\atableId\x12!\n" +
+	"\fpartition_id\x18\x02 \x01(\x03R\vpartitionId\x12\x1b\n" +
+	"\tbucket_id\x18\x03 \x02(\x05R\bbucketId\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\x03R\x05limit\x120\n" +
+	"\x14routing_bucket_count\x18\x05 \x01(\x05R\x12routingBucketCount\"\xe0\x01\n" +
+	"\rScanKvRequest\x12\x1d\n" +
+	"\n" +
+	"scanner_id\x18\x01 \x01(\fR\tscannerId\x12A\n" +
+	"\x0fbucket_scan_req\x18\x02 \x01(\v2\x19.fluss.PbScanReqForBucketR\rbucketScanReq\x12\x1e\n" +
+	"\vcall_seq_id\x18\x03 \x01(\x05R\tcallSeqId\x12(\n" +
+	"\x10batch_size_bytes\x18\x04 \x01(\x05R\x0ebatchSizeBytes\x12#\n" +
+	"\rclose_scanner\x18\x05 \x01(\bR\fcloseScanner\"\xd6\x01\n" +
+	"\x0eScanKvResponse\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x01 \x01(\x05R\terrorCode\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1d\n" +
+	"\n" +
+	"scanner_id\x18\x03 \x01(\fR\tscannerId\x12(\n" +
+	"\x10has_more_results\x18\x04 \x01(\bR\x0ehasMoreResults\x12\x18\n" +
+	"\arecords\x18\x05 \x01(\fR\arecords\x12\x1d\n" +
+	"\n" +
+	"log_offset\x18\x06 \x01(\x03R\tlogOffset\"\x9e\x01\n" +
 	"\x14GetTableStatsRequest\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12@\n" +
 	"\vbuckets_req\x18\x02 \x03(\v2\x1f.fluss.PbTableStatsReqForBucketR\n" +
@@ -11131,7 +12863,7 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"tables_req\x18\x02 \x03(\v2\x1d.fluss.PbAdjustIsrReqForTableR\ttablesReq\"T\n" +
 	"\x11AdjustIsrResponse\x12?\n" +
 	"\vtables_resp\x18\x01 \x03(\v2\x1e.fluss.PbAdjustIsrRespForTableR\n" +
-	"tablesResp\"\xea\x01\n" +
+	"tablesResp\"\x9c\x02\n" +
 	"\x12ListOffsetsRequest\x12,\n" +
 	"\x12follower_server_id\x18\x01 \x02(\x05R\x10followerServerId\x12\x1f\n" +
 	"\voffset_type\x18\x02 \x02(\x05R\n" +
@@ -11139,7 +12871,8 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\btable_id\x18\x03 \x02(\x03R\atableId\x12!\n" +
 	"\fpartition_id\x18\x04 \x01(\x03R\vpartitionId\x12\x1f\n" +
 	"\tbucket_id\x18\x05 \x03(\x05B\x02\x10\x01R\bbucketId\x12&\n" +
-	"\x0estartTimestamp\x18\x06 \x01(\x03R\x0estartTimestamp\"[\n" +
+	"\x0estartTimestamp\x18\x06 \x01(\x03R\x0estartTimestamp\x120\n" +
+	"\x14routing_bucket_count\x18\a \x01(\x05R\x12routingBucketCount\"[\n" +
 	"\x13ListOffsetsResponse\x12D\n" +
 	"\fbuckets_resp\x18\x01 \x03(\v2!.fluss.PbListOffsetsRespForBucketR\vbucketsResp\"\xa5\x01\n" +
 	"\x17CommitKvSnapshotRequest\x12-\n" +
@@ -11207,13 +12940,31 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\n" +
 	"table_path\x18\x01 \x03(\v2\x12.fluss.PbTablePathR\ttablePath\"1\n" +
 	"\x12InitWriterResponse\x12\x1b\n" +
-	"\twriter_id\x18\x01 \x02(\x03R\bwriterId\"\x9c\x01\n" +
+	"\twriter_id\x18\x01 \x02(\x03R\bwriterId\"\xd8\x01\n" +
 	"\x19ListPartitionInfosRequest\x121\n" +
 	"\n" +
 	"table_path\x18\x01 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\x12L\n" +
-	"\x16partial_partition_spec\x18\x02 \x01(\v2\x16.fluss.PbPartitionSpecR\x14partialPartitionSpec\"]\n" +
+	"\x16partial_partition_spec\x18\x02 \x01(\v2\x16.fluss.PbPartitionSpecR\x14partialPartitionSpec\x12:\n" +
+	"\x19include_system_partitions\x18\x03 \x01(\bR\x17includeSystemPartitions\"\x9b\x01\n" +
 	"\x1aListPartitionInfosResponse\x12?\n" +
-	"\x0fpartitions_info\x18\x01 \x03(\v2\x16.fluss.PbPartitionInfoR\x0epartitionsInfo\"\xbb\x01\n" +
+	"\x0fpartitions_info\x18\x01 \x03(\v2\x16.fluss.PbPartitionInfoR\x0epartitionsInfo\x12<\n" +
+	"\x1asystem_partitions_included\x18\x02 \x01(\bR\x18systemPartitionsIncluded\"]\n" +
+	"\x1dListRemoteLogManifestsRequest\x12\x19\n" +
+	"\btable_id\x18\x01 \x02(\x03R\atableId\x12!\n" +
+	"\fpartition_id\x18\x02 \x01(\x03R\vpartitionId\"_\n" +
+	"\x1eListRemoteLogManifestsResponse\x12=\n" +
+	"\tmanifests\x18\x01 \x03(\v2\x1f.fluss.PbRemoteLogManifestEntryR\tmanifests\"\xbf\x01\n" +
+	"\x18PbRemoteLogManifestEntry\x127\n" +
+	"\ftable_bucket\x18\x01 \x02(\v2\x14.fluss.PbTableBucketR\vtableBucket\x127\n" +
+	"\x18remote_log_manifest_path\x18\x02 \x02(\tR\x15remoteLogManifestPath\x121\n" +
+	"\x15remote_log_end_offset\x18\x03 \x02(\x03R\x12remoteLogEndOffset\"V\n" +
+	"\x16ListKvSnapshotsRequest\x12\x19\n" +
+	"\btable_id\x18\x01 \x02(\x03R\atableId\x12!\n" +
+	"\fpartition_id\x18\x02 \x01(\x03R\vpartitionId\"\x97\x01\n" +
+	"\x17ListKvSnapshotsResponse\x12\x19\n" +
+	"\btable_id\x18\x01 \x02(\x03R\atableId\x12!\n" +
+	"\fpartition_id\x18\x02 \x01(\x03R\vpartitionId\x12>\n" +
+	"\x10active_snapshots\x18\x03 \x03(\v2\x13.fluss.PbKvSnapshotR\x0factiveSnapshots\"\xbb\x01\n" +
 	"\x16CreatePartitionRequest\x121\n" +
 	"\n" +
 	"table_path\x18\x01 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\x12=\n" +
@@ -11225,7 +12976,7 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"table_path\x18\x01 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\x12=\n" +
 	"\x0epartition_spec\x18\x02 \x02(\v2\x16.fluss.PbPartitionSpecR\rpartitionSpec\x12/\n" +
 	"\x14ignore_if_not_exists\x18\x03 \x02(\bR\x11ignoreIfNotExists\"\x17\n" +
-	"\x15DropPartitionResponse\"\xfb\x02\n" +
+	"\x15DropPartitionResponse\"\xb6\x03\n" +
 	"\x1eCommitRemoteLogManifestRequest\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12!\n" +
 	"\fpartition_id\x18\x02 \x01(\x03R\vpartitionId\x12\x1b\n" +
@@ -11234,16 +12985,18 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\x17remote_log_start_offset\x18\x05 \x02(\x03R\x14remoteLogStartOffset\x121\n" +
 	"\x15remote_log_end_offset\x18\x06 \x02(\x03R\x12remoteLogEndOffset\x12+\n" +
 	"\x11coordinator_epoch\x18\a \x02(\x05R\x10coordinatorEpoch\x12.\n" +
-	"\x13bucket_leader_epoch\x18\b \x02(\x05R\x11bucketLeaderEpoch\"G\n" +
+	"\x13bucket_leader_epoch\x18\b \x02(\x05R\x11bucketLeaderEpoch\x129\n" +
+	"\x19highest_copied_end_offset\x18\t \x01(\x03R\x16highestCopiedEndOffset\"G\n" +
 	"\x1fCommitRemoteLogManifestResponse\x12$\n" +
-	"\rcommitSuccess\x18\x01 \x02(\bR\rcommitSuccess\"\x83\x02\n" +
+	"\rcommitSuccess\x18\x01 \x02(\bR\rcommitSuccess\"\xbe\x02\n" +
 	"\x1dNotifyRemoteLogOffsetsRequest\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12!\n" +
 	"\fpartition_id\x18\x02 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x03 \x02(\x05R\bbucketId\x12+\n" +
 	"\x11coordinator_epoch\x18\x04 \x02(\x05R\x10coordinatorEpoch\x12.\n" +
 	"\x13remote_start_offset\x18\x05 \x02(\x03R\x11remoteStartOffset\x12*\n" +
-	"\x11remote_end_offset\x18\x06 \x02(\x03R\x0fremoteEndOffset\" \n" +
+	"\x11remote_end_offset\x18\x06 \x02(\x03R\x0fremoteEndOffset\x129\n" +
+	"\x19highest_copied_end_offset\x18\a \x01(\x03R\x16highestCopiedEndOffset\" \n" +
 	"\x1eNotifyRemoteLogOffsetsResponse\"\xa2\x01\n" +
 	"\x1fPrepareLakeTableSnapshotRequest\x12<\n" +
 	"\x0ebucket_offsets\x18\x01 \x03(\v2\x15.fluss.PbTableOffsetsR\rbucketOffsets\x12A\n" +
@@ -11322,13 +13075,23 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"server_ids\x18\x01 \x03(\x05B\x02\x10\x01R\tserverIds\x12\x1d\n" +
 	"\n" +
 	"server_tag\x18\x02 \x02(\x05R\tserverTag\"\x16\n" +
-	"\x14AddServerTagResponse\"Z\n" +
+	"\x14AddServerTagResponse\"P\n" +
+	"\x19AddServerTagByRackRequest\x12\x14\n" +
+	"\x05racks\x18\x01 \x03(\tR\x05racks\x12\x1d\n" +
+	"\n" +
+	"server_tag\x18\x02 \x02(\x05R\tserverTag\"\x1c\n" +
+	"\x1aAddServerTagByRackResponse\"Z\n" +
 	"\x16RemoveServerTagRequest\x12!\n" +
 	"\n" +
 	"server_ids\x18\x01 \x03(\x05B\x02\x10\x01R\tserverIds\x12\x1d\n" +
 	"\n" +
 	"server_tag\x18\x02 \x02(\x05R\tserverTag\"\x19\n" +
-	"\x17RemoveServerTagResponse\",\n" +
+	"\x17RemoveServerTagResponse\"S\n" +
+	"\x1cRemoveServerTagByRackRequest\x12\x14\n" +
+	"\x05racks\x18\x01 \x03(\tR\x05racks\x12\x1d\n" +
+	"\n" +
+	"server_tag\x18\x02 \x02(\x05R\tserverTag\"\x1f\n" +
+	"\x1dRemoveServerTagByRackResponse\",\n" +
 	"\x10RebalanceRequest\x12\x18\n" +
 	"\x05goals\x18\x01 \x03(\x05B\x02\x10\x01R\x05goals\"6\n" +
 	"\x11RebalanceResponse\x12!\n" +
@@ -11360,7 +13123,14 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\x1cDeleteProducerOffsetsRequest\x12\x1f\n" +
 	"\vproducer_id\x18\x01 \x02(\tR\n" +
 	"producerId\"\x1f\n" +
-	"\x1dDeleteProducerOffsetsResponse\"i\n" +
+	"\x1dDeleteProducerOffsetsResponse\"\x19\n" +
+	"\x17GetClusterHealthRequest\"\xe5\x01\n" +
+	"\x18GetClusterHealthResponse\x12!\n" +
+	"\fnum_replicas\x18\x01 \x02(\x05R\vnumReplicas\x12(\n" +
+	"\x10in_sync_replicas\x18\x02 \x02(\x05R\x0einSyncReplicas\x12.\n" +
+	"\x13num_leader_replicas\x18\x03 \x02(\x05R\x11numLeaderReplicas\x124\n" +
+	"\x16active_leader_replicas\x18\x04 \x02(\x05R\x14activeLeaderReplicas\x12\x16\n" +
+	"\x06status\x18\x05 \x02(\x05R\x06status\"i\n" +
 	"\fPbApiVersion\x12\x17\n" +
 	"\aapi_key\x18\x01 \x02(\x05R\x06apiKey\x12\x1f\n" +
 	"\vmin_version\x18\x02 \x02(\x05R\n" +
@@ -11381,7 +13151,7 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\x04host\x18\x02 \x02(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x03 \x02(\x05R\x04port\x12\x1c\n" +
 	"\tlisteners\x18\x04 \x01(\tR\tlisteners\x12\x12\n" +
-	"\x04rack\x18\x05 \x01(\tR\x04rack\"\xa5\x02\n" +
+	"\x04rack\x18\x05 \x01(\tR\x04rack\"\xfb\x02\n" +
 	"\x0fPbTableMetadata\x121\n" +
 	"\n" +
 	"table_path\x18\x01 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\x12\x19\n" +
@@ -11391,22 +13161,29 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"table_json\x18\x04 \x02(\fR\ttableJson\x12@\n" +
 	"\x0fbucket_metadata\x18\x05 \x03(\v2\x17.fluss.PbBucketMetadataR\x0ebucketMetadata\x12!\n" +
 	"\fcreated_time\x18\x06 \x02(\x03R\vcreatedTime\x12#\n" +
-	"\rmodified_time\x18\a \x02(\x03R\fmodifiedTime\"\xbc\x01\n" +
+	"\rmodified_time\x18\a \x02(\x03R\fmodifiedTime\x12&\n" +
+	"\x0fremote_data_dir\x18\b \x01(\tR\rremoteDataDir\x12,\n" +
+	"\x12bucket_count_epoch\x18\t \x01(\x03R\x10bucketCountEpoch\"\xdf\x01\n" +
 	"\x13PbPartitionMetadata\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12%\n" +
 	"\x0epartition_name\x18\x02 \x02(\tR\rpartitionName\x12!\n" +
 	"\fpartition_id\x18\x03 \x02(\x03R\vpartitionId\x12@\n" +
-	"\x0fbucket_metadata\x18\x04 \x03(\v2\x17.fluss.PbBucketMetadataR\x0ebucketMetadata\"\x92\x01\n" +
+	"\x0fbucket_metadata\x18\x04 \x03(\v2\x17.fluss.PbBucketMetadataR\x0ebucketMetadata\x12!\n" +
+	"\fbucket_count\x18\x05 \x01(\x05R\vbucketCount\"\xcb\x01\n" +
 	"\x10PbBucketMetadata\x12\x1b\n" +
 	"\tbucket_id\x18\x01 \x02(\x05R\bbucketId\x12\x1b\n" +
 	"\tleader_id\x18\x02 \x01(\x05R\bleaderId\x12!\n" +
 	"\n" +
 	"replica_id\x18\x03 \x03(\x05B\x02\x10\x01R\treplicaId\x12!\n" +
-	"\fleader_epoch\x18\x04 \x01(\x05R\vleaderEpoch\"t\n" +
+	"\fleader_epoch\x18\x04 \x01(\x05R\vleaderEpoch\x12!\n" +
+	"\fbucket_epoch\x18\x05 \x01(\x05R\vbucketEpoch\x12\x14\n" +
+	"\x03isr\x18\x06 \x03(\x05B\x02\x10\x01R\x03isr\"\xde\x01\n" +
 	"\x18PbProduceLogReqForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x18\n" +
-	"\arecords\x18\x03 \x02(\fR\arecords\"\xc0\x01\n" +
+	"\arecords\x18\x03 \x02(\fR\arecords\x126\n" +
+	"\x17original_partition_name\x18\x04 \x01(\tR\x15originalPartitionName\x120\n" +
+	"\x14routing_bucket_count\x18\x05 \x01(\x05R\x12routingBucketCount\"\xf8\x01\n" +
 	"\x19PbProduceLogRespForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x1d\n" +
@@ -11414,21 +13191,25 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"error_code\x18\x03 \x01(\x05R\terrorCode\x12#\n" +
 	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12\x1f\n" +
 	"\vbase_offset\x18\x05 \x01(\x03R\n" +
-	"baseOffset\"\xe1\x01\n" +
+	"baseOffset\x126\n" +
+	"\x17original_partition_name\x18\x06 \x01(\tR\x15originalPartitionName\"\xca\x02\n" +
 	"\x15PbFetchLogReqForTable\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12>\n" +
 	"\x1bprojection_pushdown_enabled\x18\x02 \x02(\bR\x19projectionPushdownEnabled\x12-\n" +
 	"\x10projected_fields\x18\x03 \x03(\x05B\x02\x10\x01R\x0fprojectedFields\x12>\n" +
 	"\vbuckets_req\x18\x04 \x03(\v2\x1d.fluss.PbFetchLogReqForBucketR\n" +
-	"bucketsReq\"\xa3\x01\n" +
+	"bucketsReq\x12=\n" +
+	"\x10filter_predicate\x18\x05 \x01(\v2\x12.fluss.PbPredicateR\x0ffilterPredicate\x12(\n" +
+	"\x10filter_schema_id\x18\x06 \x01(\x05R\x0efilterSchemaId\"\xd5\x01\n" +
 	"\x16PbFetchLogReqForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12!\n" +
 	"\ffetch_offset\x18\x03 \x02(\x03R\vfetchOffset\x12&\n" +
-	"\x0fmax_fetch_bytes\x18\x04 \x02(\x05R\rmaxFetchBytes\"v\n" +
+	"\x0fmax_fetch_bytes\x18\x04 \x02(\x05R\rmaxFetchBytes\x120\n" +
+	"\x14routing_bucket_count\x18\x05 \x01(\x05R\x12routingBucketCount\"v\n" +
 	"\x16PbFetchLogRespForTable\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12A\n" +
-	"\fbuckets_resp\x18\x02 \x03(\v2\x1e.fluss.PbFetchLogRespForBucketR\vbucketsResp\"\xd8\x02\n" +
+	"\fbuckets_resp\x18\x02 \x03(\v2\x1e.fluss.PbFetchLogRespForBucketR\vbucketsResp\"\xb4\x03\n" +
 	"\x17PbFetchLogRespForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x1d\n" +
@@ -11438,37 +13219,48 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\x0ehigh_watermark\x18\x05 \x01(\x03R\rhighWatermark\x12(\n" +
 	"\x10log_start_offset\x18\x06 \x01(\x03R\x0elogStartOffset\x12N\n" +
 	"\x15remote_log_fetch_info\x18\a \x01(\v2\x1b.fluss.PbRemoteLogFetchInfoR\x12remoteLogFetchInfo\x12\x18\n" +
-	"\arecords\x18\b \x01(\fR\arecords\"o\n" +
+	"\arecords\x18\b \x01(\fR\arecords\x12.\n" +
+	"\x13filtered_end_offset\x18\t \x01(\x03R\x11filteredEndOffset\x12*\n" +
+	"\x11min_retain_offset\x18\n" +
+	" \x01(\x03R\x0fminRetainOffset\"\xd9\x01\n" +
 	"\x13PbPutKvReqForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x18\n" +
-	"\arecords\x18\x03 \x02(\fR\arecords\"\xc0\x01\n" +
+	"\arecords\x18\x03 \x02(\fR\arecords\x126\n" +
+	"\x17original_partition_name\x18\x04 \x01(\tR\x15originalPartitionName\x120\n" +
+	"\x14routing_bucket_count\x18\x05 \x01(\x05R\x12routingBucketCount\"\x94\x02\n" +
 	"\x14PbPutKvRespForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x03 \x01(\x05R\terrorCode\x12#\n" +
 	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12$\n" +
-	"\x0elog_end_offset\x18\x05 \x01(\x03R\flogEndOffset\"j\n" +
+	"\x0elog_end_offset\x18\x05 \x01(\x03R\flogEndOffset\x12\x1a\n" +
+	"\bpressure\x18\x06 \x01(\x02R\bpressure\x126\n" +
+	"\x17original_partition_name\x18\a \x01(\tR\x15originalPartitionName\"\xd4\x01\n" +
 	"\x14PbLookupReqForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x12\n" +
-	"\x04keys\x18\x03 \x03(\fR\x04keys\"\xc3\x01\n" +
+	"\x04keys\x18\x03 \x03(\fR\x04keys\x126\n" +
+	"\x17original_partition_name\x18\x04 \x01(\tR\x15originalPartitionName\x120\n" +
+	"\x14routing_bucket_count\x18\x05 \x01(\x05R\x12routingBucketCount\"\xfb\x01\n" +
 	"\x15PbLookupRespForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x03 \x01(\x05R\terrorCode\x12#\n" +
 	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12&\n" +
-	"\x06values\x18\x05 \x03(\v2\x0e.fluss.PbValueR\x06values\"!\n" +
+	"\x06values\x18\x05 \x03(\v2\x0e.fluss.PbValueR\x06values\x126\n" +
+	"\x17original_partition_name\x18\x06 \x01(\tR\x15originalPartitionName\"!\n" +
 	"\aPbValue\x12\x16\n" +
 	"\x06values\x18\x01 \x01(\fR\x06values\"%\n" +
 	"\vPbValueList\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\fR\x06values\"p\n" +
+	"\x06values\x18\x01 \x03(\fR\x06values\"\xa2\x01\n" +
 	"\x1aPbPrefixLookupReqForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x12\n" +
-	"\x04keys\x18\x03 \x03(\fR\x04keys\"\xd6\x01\n" +
+	"\x04keys\x18\x03 \x03(\fR\x04keys\x120\n" +
+	"\x14routing_bucket_count\x18\x04 \x01(\x05R\x12routingBucketCount\"\xd6\x01\n" +
 	"\x1bPbPrefixLookupRespForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x1d\n" +
@@ -11484,17 +13276,18 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\x16PbAdjustIsrReqForTable\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12?\n" +
 	"\vbuckets_req\x18\x02 \x03(\v2\x1e.fluss.PbAdjustIsrReqForBucketR\n" +
-	"bucketsReq\"\xe9\x01\n" +
+	"bucketsReq\"\x98\x02\n" +
 	"\x17PbAdjustIsrReqForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12!\n" +
 	"\fleader_epoch\x18\x03 \x02(\x05R\vleaderEpoch\x12\x1b\n" +
 	"\anew_isr\x18\x04 \x03(\x05B\x02\x10\x01R\x06newIsr\x12+\n" +
 	"\x11coordinator_epoch\x18\x05 \x02(\x05R\x10coordinatorEpoch\x12!\n" +
-	"\fbucket_epoch\x18\x06 \x02(\x05R\vbucketEpoch\"x\n" +
+	"\fbucket_epoch\x18\x06 \x02(\x05R\vbucketEpoch\x12-\n" +
+	"\x10standby_replicas\x18\a \x03(\x05B\x02\x10\x01R\x0fstandbyReplicas\"x\n" +
 	"\x17PbAdjustIsrRespForTable\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12B\n" +
-	"\fbuckets_resp\x18\x02 \x03(\v2\x1f.fluss.PbAdjustIsrRespForBucketR\vbucketsResp\"\xc4\x02\n" +
+	"\fbuckets_resp\x18\x02 \x03(\v2\x1f.fluss.PbAdjustIsrRespForBucketR\vbucketsResp\"\xf3\x02\n" +
 	"\x18PbAdjustIsrRespForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x1d\n" +
@@ -11505,13 +13298,15 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\fleader_epoch\x18\x06 \x01(\x05R\vleaderEpoch\x12\x14\n" +
 	"\x03isr\x18\a \x03(\x05B\x02\x10\x01R\x03isr\x12!\n" +
 	"\fbucket_epoch\x18\b \x01(\x05R\vbucketEpoch\x12+\n" +
-	"\x11coordinator_epoch\x18\t \x01(\x05R\x10coordinatorEpoch\"\x95\x01\n" +
+	"\x11coordinator_epoch\x18\t \x01(\x05R\x10coordinatorEpoch\x12-\n" +
+	"\x10standby_replicas\x18\n" +
+	" \x03(\x05B\x02\x10\x01R\x0fstandbyReplicas\"\x95\x01\n" +
 	"\x1aPbListOffsetsRespForBucket\x12\x1b\n" +
 	"\tbucket_id\x18\x01 \x02(\x05R\bbucketId\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x02 \x01(\x05R\terrorCode\x12#\n" +
 	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12\x16\n" +
-	"\x06offset\x18\x04 \x01(\x03R\x06offset\"\xbb\x02\n" +
+	"\x06offset\x18\x04 \x01(\x03R\x06offset\"\xbb\x03\n" +
 	" PbNotifyLeaderAndIsrReqForBucket\x12J\n" +
 	"\x13physical_table_path\x18\x01 \x02(\v2\x1a.fluss.PbPhysicalTablePathR\x11physicalTablePath\x127\n" +
 	"\ftable_bucket\x18\x02 \x02(\v2\x14.fluss.PbTableBucketR\vtableBucket\x12\x16\n" +
@@ -11519,7 +13314,11 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\fleader_epoch\x18\x04 \x02(\x05R\vleaderEpoch\x12\x1e\n" +
 	"\breplicas\x18\x05 \x03(\x05B\x02\x10\x01R\breplicas\x12\x14\n" +
 	"\x03isr\x18\x06 \x03(\x05B\x02\x10\x01R\x03isr\x12!\n" +
-	"\fbucket_epoch\x18\a \x02(\x05R\vbucketEpoch\"\xa0\x01\n" +
+	"\fbucket_epoch\x18\a \x02(\x05R\vbucketEpoch\x12-\n" +
+	"\x10standby_replicas\x18\b \x03(\x05B\x02\x10\x01R\x0fstandbyReplicas\x12!\n" +
+	"\fbucket_count\x18\t \x01(\x05R\vbucketCount\x12,\n" +
+	"\x12bucket_count_epoch\x18\n" +
+	" \x01(\x03R\x10bucketCountEpoch\"\xa0\x01\n" +
 	"!PbNotifyLeaderAndIsrRespForBucket\x127\n" +
 	"\ftable_bucket\x18\x01 \x02(\v2\x14.fluss.PbTableBucketR\vtableBucket\x12\x1d\n" +
 	"\n" +
@@ -11565,10 +13364,12 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\x17remote_log_start_offset\x18\x02 \x02(\x03R\x14remoteLogStartOffset\x121\n" +
 	"\x15remote_log_end_offset\x18\x03 \x02(\x03R\x12remoteLogEndOffset\x121\n" +
 	"\x15segment_size_in_bytes\x18\x04 \x02(\x05R\x12segmentSizeInBytes\x12#\n" +
-	"\rmax_timestamp\x18\x05 \x01(\x03R\fmaxTimestamp\"s\n" +
+	"\rmax_timestamp\x18\x05 \x01(\x03R\fmaxTimestamp\"\xbe\x01\n" +
 	"\x0fPbPartitionInfo\x12!\n" +
 	"\fpartition_id\x18\x01 \x02(\x03R\vpartitionId\x12=\n" +
-	"\x0epartition_spec\x18\x02 \x02(\v2\x16.fluss.PbPartitionSpecR\rpartitionSpec\"V\n" +
+	"\x0epartition_spec\x18\x02 \x02(\v2\x16.fluss.PbPartitionSpecR\rpartitionSpec\x12&\n" +
+	"\x0fremote_data_dir\x18\x03 \x01(\tR\rremoteDataDir\x12!\n" +
+	"\fbucket_count\x18\x04 \x01(\x05R\vbucketCount\"V\n" +
 	"\x0fPbPartitionSpec\x12C\n" +
 	"\x14partition_key_values\x18\x01 \x03(\v2\x11.fluss.PbKeyValueR\x12partitionKeyValues\"}\n" +
 	"\x13PbCreateAclRespInfo\x12\"\n" +
@@ -11606,11 +13407,15 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x121\n" +
 	"\n" +
 	"table_path\x18\x02 \x02(\v2\x12.fluss.PbTablePathR\ttablePath\x12#\n" +
-	"\rtiering_epoch\x18\x03 \x02(\x03R\ftieringEpoch\"\x85\x01\n" +
+	"\rtiering_epoch\x18\x03 \x02(\x03R\ftieringEpoch\"\xce\x01\n" +
 	"\x16PbHeartbeatReqForTable\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12+\n" +
 	"\x11coordinator_epoch\x18\x02 \x02(\x05R\x10coordinatorEpoch\x12#\n" +
-	"\rtiering_epoch\x18\x03 \x02(\x03R\ftieringEpoch\"`\n" +
+	"\rtiering_epoch\x18\x03 \x02(\x03R\ftieringEpoch\x12G\n" +
+	"\x12lake_tiering_stats\x18\x04 \x01(\v2\x19.fluss.PbLakeTieringStatsR\x10lakeTieringStats\"T\n" +
+	"\x12PbLakeTieringStats\x12\x1b\n" +
+	"\tfile_size\x18\x01 \x01(\x03R\bfileSize\x12!\n" +
+	"\frecord_count\x18\x02 \x01(\x03R\vrecordCount\"`\n" +
 	"\x17PbHeartbeatRespForTable\x12\x19\n" +
 	"\btable_id\x18\x01 \x02(\x03R\atableId\x12*\n" +
 	"\x05error\x18\x02 \x01(\v2\x14.fluss.ErrorResponseR\x05error\"j\n" +
@@ -11618,13 +13423,15 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\n" +
 	"config_key\x18\x01 \x02(\tR\tconfigKey\x12!\n" +
 	"\fconfig_value\x18\x02 \x01(\tR\vconfigValue\x12\x17\n" +
-	"\aop_type\x18\x03 \x02(\x05R\x06opType\"\xa0\x01\n" +
+	"\aop_type\x18\x03 \x02(\x05R\x06opType\"\x8f\x02\n" +
 	"\vPbAddColumn\x12\x1f\n" +
 	"\vcolumn_name\x18\x01 \x02(\tR\n" +
 	"columnName\x12$\n" +
 	"\x0edata_type_json\x18\x02 \x02(\fR\fdataTypeJson\x12\x18\n" +
 	"\acomment\x18\x03 \x01(\tR\acomment\x120\n" +
-	"\x14column_position_type\x18\x04 \x02(\x05R\x12columnPositionType\"/\n" +
+	"\x14column_position_type\x18\x04 \x02(\x05R\x12columnPositionType\x12*\n" +
+	"\x11agg_function_type\x18\x05 \x01(\tR\x0faggFunctionType\x12A\n" +
+	"\x13agg_function_params\x18\x06 \x03(\v2\x11.fluss.PbKeyValueR\x11aggFunctionParams\"/\n" +
 	"\fPbDropColumn\x12\x1f\n" +
 	"\vcolumn_name\x18\x01 \x02(\tR\n" +
 	"columnName\"`\n" +
@@ -11709,17 +13516,45 @@ const file_third_party_apache_fluss_FlussApi_proto_rawDesc = "" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x12\x1f\n" +
 	"\vsnapshot_id\x18\x03 \x02(\x03R\n" +
-	"snapshotId\"Z\n" +
+	"snapshotId\"\x8c\x01\n" +
 	"\x18PbTableStatsReqForBucket\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\x03R\vpartitionId\x12\x1b\n" +
-	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\"\xbc\x01\n" +
+	"\tbucket_id\x18\x02 \x02(\x05R\bbucketId\x120\n" +
+	"\x14routing_bucket_count\x18\x03 \x01(\x05R\x12routingBucketCount\"\xbc\x01\n" +
 	"\x19PbTableStatsRespForBucket\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x01 \x01(\x05R\terrorCode\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12!\n" +
 	"\fpartition_id\x18\x03 \x01(\x03R\vpartitionId\x12\x1b\n" +
 	"\tbucket_id\x18\x04 \x02(\x05R\bbucketId\x12\x1b\n" +
-	"\trow_count\x18\x05 \x01(\x03R\browCountB!\n" +
+	"\trow_count\x18\x05 \x01(\x03R\browCount\"\x85\x01\n" +
+	"\vPbPredicate\x12\x12\n" +
+	"\x04type\x18\x01 \x02(\x05R\x04type\x12*\n" +
+	"\x04leaf\x18\x02 \x01(\v2\x16.fluss.PbLeafPredicateR\x04leaf\x126\n" +
+	"\bcompound\x18\x03 \x01(\v2\x1a.fluss.PbCompoundPredicateR\bcompound\"{\n" +
+	"\x0fPbLeafPredicate\x12\x1a\n" +
+	"\bfunction\x18\x01 \x02(\x05R\bfunction\x12\x19\n" +
+	"\bfield_id\x18\x02 \x02(\x05R\afieldId\x121\n" +
+	"\bliterals\x18\x03 \x03(\v2\x15.fluss.PbLiteralValueR\bliterals\"a\n" +
+	"\x13PbCompoundPredicate\x12\x1a\n" +
+	"\bfunction\x18\x01 \x02(\x05R\bfunction\x12.\n" +
+	"\bchildren\x18\x02 \x03(\v2\x12.fluss.PbPredicateR\bchildren\"\xff\x03\n" +
+	"\x0ePbLiteralValue\x12!\n" +
+	"\fliteral_type\x18\x01 \x02(\x05R\vliteralType\x12\x17\n" +
+	"\ais_null\x18\x02 \x02(\bR\x06isNull\x12#\n" +
+	"\rboolean_value\x18\x03 \x01(\bR\fbooleanValue\x12\x1b\n" +
+	"\tint_value\x18\x04 \x01(\x05R\bintValue\x12!\n" +
+	"\fbigint_value\x18\x05 \x01(\x03R\vbigintValue\x12\x1f\n" +
+	"\vfloat_value\x18\x06 \x01(\x02R\n" +
+	"floatValue\x12!\n" +
+	"\fdouble_value\x18\a \x01(\x01R\vdoubleValue\x12!\n" +
+	"\fstring_value\x18\b \x01(\tR\vstringValue\x12!\n" +
+	"\fbinary_value\x18\t \x01(\fR\vbinaryValue\x12#\n" +
+	"\rdecimal_value\x18\n" +
+	" \x01(\x03R\fdecimalValue\x124\n" +
+	"\x16timestamp_millis_value\x18\v \x01(\x03R\x14timestampMillisValue\x12B\n" +
+	"\x1etimestamp_nano_of_millis_value\x18\f \x01(\x05R\x1atimestampNanoOfMillisValue\x12#\n" +
+	"\rdecimal_bytes\x18\r \x01(\fR\fdecimalBytesB!\n" +
 	"\x1dorg.apache.fluss.rpc.messagesH\x03"
 
 var (
@@ -11734,7 +13569,7 @@ func file_third_party_apache_fluss_FlussApi_proto_rawDescGZIP() []byte {
 	return file_third_party_apache_fluss_FlussApi_proto_rawDescData
 }
 
-var file_third_party_apache_fluss_FlussApi_proto_msgTypes = make([]protoimpl.MessageInfo, 192)
+var file_third_party_apache_fluss_FlussApi_proto_msgTypes = make([]protoimpl.MessageInfo, 214)
 var file_third_party_apache_fluss_FlussApi_proto_goTypes = []any{
 	(*ErrorResponse)(nil),                         // 0: fluss.ErrorResponse
 	(*ApiVersionsRequest)(nil),                    // 1: fluss.ApiVersionsRequest
@@ -11743,314 +13578,349 @@ var file_third_party_apache_fluss_FlussApi_proto_goTypes = []any{
 	(*GetTableSchemaResponse)(nil),                // 4: fluss.GetTableSchemaResponse
 	(*CreateDatabaseRequest)(nil),                 // 5: fluss.CreateDatabaseRequest
 	(*CreateDatabaseResponse)(nil),                // 6: fluss.CreateDatabaseResponse
-	(*GetDatabaseInfoRequest)(nil),                // 7: fluss.GetDatabaseInfoRequest
-	(*GetDatabaseInfoResponse)(nil),               // 8: fluss.GetDatabaseInfoResponse
-	(*DropDatabaseRequest)(nil),                   // 9: fluss.DropDatabaseRequest
-	(*DropDatabaseResponse)(nil),                  // 10: fluss.DropDatabaseResponse
-	(*DatabaseExistsRequest)(nil),                 // 11: fluss.DatabaseExistsRequest
-	(*DatabaseExistsResponse)(nil),                // 12: fluss.DatabaseExistsResponse
-	(*ListDatabasesRequest)(nil),                  // 13: fluss.ListDatabasesRequest
-	(*ListDatabasesResponse)(nil),                 // 14: fluss.ListDatabasesResponse
-	(*CreateTableRequest)(nil),                    // 15: fluss.CreateTableRequest
-	(*CreateTableResponse)(nil),                   // 16: fluss.CreateTableResponse
-	(*AlterTableRequest)(nil),                     // 17: fluss.AlterTableRequest
-	(*AlterTableResponse)(nil),                    // 18: fluss.AlterTableResponse
-	(*GetTableInfoRequest)(nil),                   // 19: fluss.GetTableInfoRequest
-	(*GetTableInfoResponse)(nil),                  // 20: fluss.GetTableInfoResponse
-	(*ListTablesRequest)(nil),                     // 21: fluss.ListTablesRequest
-	(*ListTablesResponse)(nil),                    // 22: fluss.ListTablesResponse
-	(*DropTableRequest)(nil),                      // 23: fluss.DropTableRequest
-	(*DropTableResponse)(nil),                     // 24: fluss.DropTableResponse
-	(*TableExistsRequest)(nil),                    // 25: fluss.TableExistsRequest
-	(*TableExistsResponse)(nil),                   // 26: fluss.TableExistsResponse
-	(*MetadataRequest)(nil),                       // 27: fluss.MetadataRequest
-	(*MetadataResponse)(nil),                      // 28: fluss.MetadataResponse
-	(*UpdateMetadataRequest)(nil),                 // 29: fluss.UpdateMetadataRequest
-	(*UpdateMetadataResponse)(nil),                // 30: fluss.UpdateMetadataResponse
-	(*ProduceLogRequest)(nil),                     // 31: fluss.ProduceLogRequest
-	(*ProduceLogResponse)(nil),                    // 32: fluss.ProduceLogResponse
-	(*FetchLogRequest)(nil),                       // 33: fluss.FetchLogRequest
-	(*FetchLogResponse)(nil),                      // 34: fluss.FetchLogResponse
-	(*PutKvRequest)(nil),                          // 35: fluss.PutKvRequest
-	(*PutKvResponse)(nil),                         // 36: fluss.PutKvResponse
-	(*LookupRequest)(nil),                         // 37: fluss.LookupRequest
-	(*LookupResponse)(nil),                        // 38: fluss.LookupResponse
-	(*PrefixLookupRequest)(nil),                   // 39: fluss.PrefixLookupRequest
-	(*PrefixLookupResponse)(nil),                  // 40: fluss.PrefixLookupResponse
-	(*LimitScanRequest)(nil),                      // 41: fluss.LimitScanRequest
-	(*LimitScanResponse)(nil),                     // 42: fluss.LimitScanResponse
-	(*GetTableStatsRequest)(nil),                  // 43: fluss.GetTableStatsRequest
-	(*GetTableStatsResponse)(nil),                 // 44: fluss.GetTableStatsResponse
-	(*NotifyLeaderAndIsrRequest)(nil),             // 45: fluss.NotifyLeaderAndIsrRequest
-	(*NotifyLeaderAndIsrResponse)(nil),            // 46: fluss.NotifyLeaderAndIsrResponse
-	(*StopReplicaRequest)(nil),                    // 47: fluss.StopReplicaRequest
-	(*StopReplicaResponse)(nil),                   // 48: fluss.StopReplicaResponse
-	(*AdjustIsrRequest)(nil),                      // 49: fluss.AdjustIsrRequest
-	(*AdjustIsrResponse)(nil),                     // 50: fluss.AdjustIsrResponse
-	(*ListOffsetsRequest)(nil),                    // 51: fluss.ListOffsetsRequest
-	(*ListOffsetsResponse)(nil),                   // 52: fluss.ListOffsetsResponse
-	(*CommitKvSnapshotRequest)(nil),               // 53: fluss.CommitKvSnapshotRequest
-	(*CommitKvSnapshotResponse)(nil),              // 54: fluss.CommitKvSnapshotResponse
-	(*NotifyKvSnapshotOffsetRequest)(nil),         // 55: fluss.NotifyKvSnapshotOffsetRequest
-	(*NotifyKvSnapshotOffsetResponse)(nil),        // 56: fluss.NotifyKvSnapshotOffsetResponse
-	(*GetLatestKvSnapshotsRequest)(nil),           // 57: fluss.GetLatestKvSnapshotsRequest
-	(*GetLatestKvSnapshotsResponse)(nil),          // 58: fluss.GetLatestKvSnapshotsResponse
-	(*GetKvSnapshotMetadataRequest)(nil),          // 59: fluss.GetKvSnapshotMetadataRequest
-	(*GetKvSnapshotMetadataResponse)(nil),         // 60: fluss.GetKvSnapshotMetadataResponse
-	(*AcquireKvSnapshotLeaseRequest)(nil),         // 61: fluss.AcquireKvSnapshotLeaseRequest
-	(*AcquireKvSnapshotLeaseResponse)(nil),        // 62: fluss.AcquireKvSnapshotLeaseResponse
-	(*ReleaseKvSnapshotLeaseRequest)(nil),         // 63: fluss.ReleaseKvSnapshotLeaseRequest
-	(*ReleaseKvSnapshotLeaseResponse)(nil),        // 64: fluss.ReleaseKvSnapshotLeaseResponse
-	(*DropKvSnapshotLeaseRequest)(nil),            // 65: fluss.DropKvSnapshotLeaseRequest
-	(*DropKvSnapshotLeaseResponse)(nil),           // 66: fluss.DropKvSnapshotLeaseResponse
-	(*GetLakeSnapshotRequest)(nil),                // 67: fluss.GetLakeSnapshotRequest
-	(*GetLakeSnapshotResponse)(nil),               // 68: fluss.GetLakeSnapshotResponse
-	(*GetFileSystemSecurityTokenRequest)(nil),     // 69: fluss.GetFileSystemSecurityTokenRequest
-	(*GetFileSystemSecurityTokenResponse)(nil),    // 70: fluss.GetFileSystemSecurityTokenResponse
-	(*InitWriterRequest)(nil),                     // 71: fluss.InitWriterRequest
-	(*InitWriterResponse)(nil),                    // 72: fluss.InitWriterResponse
-	(*ListPartitionInfosRequest)(nil),             // 73: fluss.ListPartitionInfosRequest
-	(*ListPartitionInfosResponse)(nil),            // 74: fluss.ListPartitionInfosResponse
-	(*CreatePartitionRequest)(nil),                // 75: fluss.CreatePartitionRequest
-	(*CreatePartitionResponse)(nil),               // 76: fluss.CreatePartitionResponse
-	(*DropPartitionRequest)(nil),                  // 77: fluss.DropPartitionRequest
-	(*DropPartitionResponse)(nil),                 // 78: fluss.DropPartitionResponse
-	(*CommitRemoteLogManifestRequest)(nil),        // 79: fluss.CommitRemoteLogManifestRequest
-	(*CommitRemoteLogManifestResponse)(nil),       // 80: fluss.CommitRemoteLogManifestResponse
-	(*NotifyRemoteLogOffsetsRequest)(nil),         // 81: fluss.NotifyRemoteLogOffsetsRequest
-	(*NotifyRemoteLogOffsetsResponse)(nil),        // 82: fluss.NotifyRemoteLogOffsetsResponse
-	(*PrepareLakeTableSnapshotRequest)(nil),       // 83: fluss.PrepareLakeTableSnapshotRequest
-	(*PrepareLakeTableSnapshotResponse)(nil),      // 84: fluss.PrepareLakeTableSnapshotResponse
-	(*CommitLakeTableSnapshotRequest)(nil),        // 85: fluss.CommitLakeTableSnapshotRequest
-	(*CommitLakeTableSnapshotResponse)(nil),       // 86: fluss.CommitLakeTableSnapshotResponse
-	(*PbCommitLakeTableSnapshotRespForTable)(nil), // 87: fluss.PbCommitLakeTableSnapshotRespForTable
-	(*NotifyLakeTableOffsetRequest)(nil),          // 88: fluss.NotifyLakeTableOffsetRequest
-	(*PbNotifyLakeTableOffsetReqForBucket)(nil),   // 89: fluss.PbNotifyLakeTableOffsetReqForBucket
-	(*NotifyLakeTableOffsetResponse)(nil),         // 90: fluss.NotifyLakeTableOffsetResponse
-	(*AuthenticateRequest)(nil),                   // 91: fluss.AuthenticateRequest
-	(*AuthenticateResponse)(nil),                  // 92: fluss.AuthenticateResponse
-	(*ListAclsRequest)(nil),                       // 93: fluss.ListAclsRequest
-	(*ListAclsResponse)(nil),                      // 94: fluss.ListAclsResponse
-	(*CreateAclsRequest)(nil),                     // 95: fluss.CreateAclsRequest
-	(*CreateAclsResponse)(nil),                    // 96: fluss.CreateAclsResponse
-	(*DropAclsRequest)(nil),                       // 97: fluss.DropAclsRequest
-	(*DropAclsResponse)(nil),                      // 98: fluss.DropAclsResponse
-	(*LakeTieringHeartbeatRequest)(nil),           // 99: fluss.LakeTieringHeartbeatRequest
-	(*LakeTieringHeartbeatResponse)(nil),          // 100: fluss.LakeTieringHeartbeatResponse
-	(*ControlledShutdownRequest)(nil),             // 101: fluss.ControlledShutdownRequest
-	(*ControlledShutdownResponse)(nil),            // 102: fluss.ControlledShutdownResponse
-	(*DescribeClusterConfigsRequest)(nil),         // 103: fluss.DescribeClusterConfigsRequest
-	(*DescribeClusterConfigsResponse)(nil),        // 104: fluss.DescribeClusterConfigsResponse
-	(*AlterClusterConfigsRequest)(nil),            // 105: fluss.AlterClusterConfigsRequest
-	(*AlterClusterConfigsResponse)(nil),           // 106: fluss.AlterClusterConfigsResponse
-	(*AddServerTagRequest)(nil),                   // 107: fluss.AddServerTagRequest
-	(*AddServerTagResponse)(nil),                  // 108: fluss.AddServerTagResponse
-	(*RemoveServerTagRequest)(nil),                // 109: fluss.RemoveServerTagRequest
-	(*RemoveServerTagResponse)(nil),               // 110: fluss.RemoveServerTagResponse
-	(*RebalanceRequest)(nil),                      // 111: fluss.RebalanceRequest
-	(*RebalanceResponse)(nil),                     // 112: fluss.RebalanceResponse
-	(*ListRebalanceProgressRequest)(nil),          // 113: fluss.ListRebalanceProgressRequest
-	(*ListRebalanceProgressResponse)(nil),         // 114: fluss.ListRebalanceProgressResponse
-	(*CancelRebalanceRequest)(nil),                // 115: fluss.CancelRebalanceRequest
-	(*CancelRebalanceResponse)(nil),               // 116: fluss.CancelRebalanceResponse
-	(*RegisterProducerOffsetsRequest)(nil),        // 117: fluss.RegisterProducerOffsetsRequest
-	(*RegisterProducerOffsetsResponse)(nil),       // 118: fluss.RegisterProducerOffsetsResponse
-	(*GetProducerOffsetsRequest)(nil),             // 119: fluss.GetProducerOffsetsRequest
-	(*GetProducerOffsetsResponse)(nil),            // 120: fluss.GetProducerOffsetsResponse
-	(*DeleteProducerOffsetsRequest)(nil),          // 121: fluss.DeleteProducerOffsetsRequest
-	(*DeleteProducerOffsetsResponse)(nil),         // 122: fluss.DeleteProducerOffsetsResponse
-	(*PbApiVersion)(nil),                          // 123: fluss.PbApiVersion
-	(*PbTablePath)(nil),                           // 124: fluss.PbTablePath
-	(*PbPhysicalTablePath)(nil),                   // 125: fluss.PbPhysicalTablePath
-	(*PbServerNode)(nil),                          // 126: fluss.PbServerNode
-	(*PbTableMetadata)(nil),                       // 127: fluss.PbTableMetadata
-	(*PbPartitionMetadata)(nil),                   // 128: fluss.PbPartitionMetadata
-	(*PbBucketMetadata)(nil),                      // 129: fluss.PbBucketMetadata
-	(*PbProduceLogReqForBucket)(nil),              // 130: fluss.PbProduceLogReqForBucket
-	(*PbProduceLogRespForBucket)(nil),             // 131: fluss.PbProduceLogRespForBucket
-	(*PbFetchLogReqForTable)(nil),                 // 132: fluss.PbFetchLogReqForTable
-	(*PbFetchLogReqForBucket)(nil),                // 133: fluss.PbFetchLogReqForBucket
-	(*PbFetchLogRespForTable)(nil),                // 134: fluss.PbFetchLogRespForTable
-	(*PbFetchLogRespForBucket)(nil),               // 135: fluss.PbFetchLogRespForBucket
-	(*PbPutKvReqForBucket)(nil),                   // 136: fluss.PbPutKvReqForBucket
-	(*PbPutKvRespForBucket)(nil),                  // 137: fluss.PbPutKvRespForBucket
-	(*PbLookupReqForBucket)(nil),                  // 138: fluss.PbLookupReqForBucket
-	(*PbLookupRespForBucket)(nil),                 // 139: fluss.PbLookupRespForBucket
-	(*PbValue)(nil),                               // 140: fluss.PbValue
-	(*PbValueList)(nil),                           // 141: fluss.PbValueList
-	(*PbPrefixLookupReqForBucket)(nil),            // 142: fluss.PbPrefixLookupReqForBucket
-	(*PbPrefixLookupRespForBucket)(nil),           // 143: fluss.PbPrefixLookupRespForBucket
-	(*PbTableBucket)(nil),                         // 144: fluss.PbTableBucket
-	(*PbAdjustIsrReqForTable)(nil),                // 145: fluss.PbAdjustIsrReqForTable
-	(*PbAdjustIsrReqForBucket)(nil),               // 146: fluss.PbAdjustIsrReqForBucket
-	(*PbAdjustIsrRespForTable)(nil),               // 147: fluss.PbAdjustIsrRespForTable
-	(*PbAdjustIsrRespForBucket)(nil),              // 148: fluss.PbAdjustIsrRespForBucket
-	(*PbListOffsetsRespForBucket)(nil),            // 149: fluss.PbListOffsetsRespForBucket
-	(*PbNotifyLeaderAndIsrReqForBucket)(nil),      // 150: fluss.PbNotifyLeaderAndIsrReqForBucket
-	(*PbNotifyLeaderAndIsrRespForBucket)(nil),     // 151: fluss.PbNotifyLeaderAndIsrRespForBucket
-	(*PbStopReplicaReqForBucket)(nil),             // 152: fluss.PbStopReplicaReqForBucket
-	(*PbStopReplicaRespForBucket)(nil),            // 153: fluss.PbStopReplicaRespForBucket
-	(*PbKvSnapshot)(nil),                          // 154: fluss.PbKvSnapshot
-	(*PbLakeSnapshotForBucket)(nil),               // 155: fluss.PbLakeSnapshotForBucket
-	(*PbRemotePathAndLocalFile)(nil),              // 156: fluss.PbRemotePathAndLocalFile
-	(*PbKeyValue)(nil),                            // 157: fluss.PbKeyValue
-	(*PbRemoteLogFetchInfo)(nil),                  // 158: fluss.PbRemoteLogFetchInfo
-	(*PbRemoteLogSegment)(nil),                    // 159: fluss.PbRemoteLogSegment
-	(*PbPartitionInfo)(nil),                       // 160: fluss.PbPartitionInfo
-	(*PbPartitionSpec)(nil),                       // 161: fluss.PbPartitionSpec
-	(*PbCreateAclRespInfo)(nil),                   // 162: fluss.PbCreateAclRespInfo
-	(*PbAclInfo)(nil),                             // 163: fluss.PbAclInfo
-	(*PbAclFilter)(nil),                           // 164: fluss.PbAclFilter
-	(*PbDropAclsFilterResult)(nil),                // 165: fluss.PbDropAclsFilterResult
-	(*PbDropAclsMatchingAcl)(nil),                 // 166: fluss.PbDropAclsMatchingAcl
-	(*PbLakeTieringTableInfo)(nil),                // 167: fluss.PbLakeTieringTableInfo
-	(*PbHeartbeatReqForTable)(nil),                // 168: fluss.PbHeartbeatReqForTable
-	(*PbHeartbeatRespForTable)(nil),               // 169: fluss.PbHeartbeatRespForTable
-	(*PbAlterConfig)(nil),                         // 170: fluss.PbAlterConfig
-	(*PbAddColumn)(nil),                           // 171: fluss.PbAddColumn
-	(*PbDropColumn)(nil),                          // 172: fluss.PbDropColumn
-	(*PbRenameColumn)(nil),                        // 173: fluss.PbRenameColumn
-	(*PbModifyColumn)(nil),                        // 174: fluss.PbModifyColumn
-	(*PbDescribeConfig)(nil),                      // 175: fluss.PbDescribeConfig
-	(*PbRebalancePlanForTable)(nil),               // 176: fluss.PbRebalancePlanForTable
-	(*PbRebalanceProgressForTable)(nil),           // 177: fluss.PbRebalanceProgressForTable
-	(*PbRebalanceProgressForBucket)(nil),          // 178: fluss.PbRebalanceProgressForBucket
-	(*PbRebalancePlanForBucket)(nil),              // 179: fluss.PbRebalancePlanForBucket
-	(*PbLakeTableSnapshotMetadata)(nil),           // 180: fluss.PbLakeTableSnapshotMetadata
-	(*PbLakeTableSnapshotInfo)(nil),               // 181: fluss.PbLakeTableSnapshotInfo
-	(*PbLakeTableOffsetForBucket)(nil),            // 182: fluss.PbLakeTableOffsetForBucket
-	(*PbPrepareLakeTableRespForTable)(nil),        // 183: fluss.PbPrepareLakeTableRespForTable
-	(*PbTableOffsets)(nil),                        // 184: fluss.PbTableOffsets
-	(*PbBucketOffset)(nil),                        // 185: fluss.PbBucketOffset
-	(*PbProducerTableOffsets)(nil),                // 186: fluss.PbProducerTableOffsets
-	(*PbDatabaseSummary)(nil),                     // 187: fluss.PbDatabaseSummary
-	(*PbKvSnapshotLeaseForTable)(nil),             // 188: fluss.PbKvSnapshotLeaseForTable
-	(*PbKvSnapshotLeaseForBucket)(nil),            // 189: fluss.PbKvSnapshotLeaseForBucket
-	(*PbTableStatsReqForBucket)(nil),              // 190: fluss.PbTableStatsReqForBucket
-	(*PbTableStatsRespForBucket)(nil),             // 191: fluss.PbTableStatsRespForBucket
+	(*AlterDatabaseRequest)(nil),                  // 7: fluss.AlterDatabaseRequest
+	(*AlterDatabaseResponse)(nil),                 // 8: fluss.AlterDatabaseResponse
+	(*GetDatabaseInfoRequest)(nil),                // 9: fluss.GetDatabaseInfoRequest
+	(*GetDatabaseInfoResponse)(nil),               // 10: fluss.GetDatabaseInfoResponse
+	(*DropDatabaseRequest)(nil),                   // 11: fluss.DropDatabaseRequest
+	(*DropDatabaseResponse)(nil),                  // 12: fluss.DropDatabaseResponse
+	(*DatabaseExistsRequest)(nil),                 // 13: fluss.DatabaseExistsRequest
+	(*DatabaseExistsResponse)(nil),                // 14: fluss.DatabaseExistsResponse
+	(*ListDatabasesRequest)(nil),                  // 15: fluss.ListDatabasesRequest
+	(*ListDatabasesResponse)(nil),                 // 16: fluss.ListDatabasesResponse
+	(*CreateTableRequest)(nil),                    // 17: fluss.CreateTableRequest
+	(*CreateTableResponse)(nil),                   // 18: fluss.CreateTableResponse
+	(*AlterTableRequest)(nil),                     // 19: fluss.AlterTableRequest
+	(*PbModifyBucketCount)(nil),                   // 20: fluss.PbModifyBucketCount
+	(*AlterTableResponse)(nil),                    // 21: fluss.AlterTableResponse
+	(*GetTableInfoRequest)(nil),                   // 22: fluss.GetTableInfoRequest
+	(*GetTableInfoResponse)(nil),                  // 23: fluss.GetTableInfoResponse
+	(*ListTablesRequest)(nil),                     // 24: fluss.ListTablesRequest
+	(*ListTablesResponse)(nil),                    // 25: fluss.ListTablesResponse
+	(*DropTableRequest)(nil),                      // 26: fluss.DropTableRequest
+	(*DropTableResponse)(nil),                     // 27: fluss.DropTableResponse
+	(*TableExistsRequest)(nil),                    // 28: fluss.TableExistsRequest
+	(*TableExistsResponse)(nil),                   // 29: fluss.TableExistsResponse
+	(*MetadataRequest)(nil),                       // 30: fluss.MetadataRequest
+	(*MetadataResponse)(nil),                      // 31: fluss.MetadataResponse
+	(*UpdateMetadataRequest)(nil),                 // 32: fluss.UpdateMetadataRequest
+	(*UpdateMetadataResponse)(nil),                // 33: fluss.UpdateMetadataResponse
+	(*ProduceLogRequest)(nil),                     // 34: fluss.ProduceLogRequest
+	(*ProduceLogResponse)(nil),                    // 35: fluss.ProduceLogResponse
+	(*FetchLogRequest)(nil),                       // 36: fluss.FetchLogRequest
+	(*FetchLogResponse)(nil),                      // 37: fluss.FetchLogResponse
+	(*PutKvRequest)(nil),                          // 38: fluss.PutKvRequest
+	(*PutKvResponse)(nil),                         // 39: fluss.PutKvResponse
+	(*LookupRequest)(nil),                         // 40: fluss.LookupRequest
+	(*LookupResponse)(nil),                        // 41: fluss.LookupResponse
+	(*PrefixLookupRequest)(nil),                   // 42: fluss.PrefixLookupRequest
+	(*PrefixLookupResponse)(nil),                  // 43: fluss.PrefixLookupResponse
+	(*LimitScanRequest)(nil),                      // 44: fluss.LimitScanRequest
+	(*LimitScanResponse)(nil),                     // 45: fluss.LimitScanResponse
+	(*PbScanReqForBucket)(nil),                    // 46: fluss.PbScanReqForBucket
+	(*ScanKvRequest)(nil),                         // 47: fluss.ScanKvRequest
+	(*ScanKvResponse)(nil),                        // 48: fluss.ScanKvResponse
+	(*GetTableStatsRequest)(nil),                  // 49: fluss.GetTableStatsRequest
+	(*GetTableStatsResponse)(nil),                 // 50: fluss.GetTableStatsResponse
+	(*NotifyLeaderAndIsrRequest)(nil),             // 51: fluss.NotifyLeaderAndIsrRequest
+	(*NotifyLeaderAndIsrResponse)(nil),            // 52: fluss.NotifyLeaderAndIsrResponse
+	(*StopReplicaRequest)(nil),                    // 53: fluss.StopReplicaRequest
+	(*StopReplicaResponse)(nil),                   // 54: fluss.StopReplicaResponse
+	(*AdjustIsrRequest)(nil),                      // 55: fluss.AdjustIsrRequest
+	(*AdjustIsrResponse)(nil),                     // 56: fluss.AdjustIsrResponse
+	(*ListOffsetsRequest)(nil),                    // 57: fluss.ListOffsetsRequest
+	(*ListOffsetsResponse)(nil),                   // 58: fluss.ListOffsetsResponse
+	(*CommitKvSnapshotRequest)(nil),               // 59: fluss.CommitKvSnapshotRequest
+	(*CommitKvSnapshotResponse)(nil),              // 60: fluss.CommitKvSnapshotResponse
+	(*NotifyKvSnapshotOffsetRequest)(nil),         // 61: fluss.NotifyKvSnapshotOffsetRequest
+	(*NotifyKvSnapshotOffsetResponse)(nil),        // 62: fluss.NotifyKvSnapshotOffsetResponse
+	(*GetLatestKvSnapshotsRequest)(nil),           // 63: fluss.GetLatestKvSnapshotsRequest
+	(*GetLatestKvSnapshotsResponse)(nil),          // 64: fluss.GetLatestKvSnapshotsResponse
+	(*GetKvSnapshotMetadataRequest)(nil),          // 65: fluss.GetKvSnapshotMetadataRequest
+	(*GetKvSnapshotMetadataResponse)(nil),         // 66: fluss.GetKvSnapshotMetadataResponse
+	(*AcquireKvSnapshotLeaseRequest)(nil),         // 67: fluss.AcquireKvSnapshotLeaseRequest
+	(*AcquireKvSnapshotLeaseResponse)(nil),        // 68: fluss.AcquireKvSnapshotLeaseResponse
+	(*ReleaseKvSnapshotLeaseRequest)(nil),         // 69: fluss.ReleaseKvSnapshotLeaseRequest
+	(*ReleaseKvSnapshotLeaseResponse)(nil),        // 70: fluss.ReleaseKvSnapshotLeaseResponse
+	(*DropKvSnapshotLeaseRequest)(nil),            // 71: fluss.DropKvSnapshotLeaseRequest
+	(*DropKvSnapshotLeaseResponse)(nil),           // 72: fluss.DropKvSnapshotLeaseResponse
+	(*GetLakeSnapshotRequest)(nil),                // 73: fluss.GetLakeSnapshotRequest
+	(*GetLakeSnapshotResponse)(nil),               // 74: fluss.GetLakeSnapshotResponse
+	(*GetFileSystemSecurityTokenRequest)(nil),     // 75: fluss.GetFileSystemSecurityTokenRequest
+	(*GetFileSystemSecurityTokenResponse)(nil),    // 76: fluss.GetFileSystemSecurityTokenResponse
+	(*InitWriterRequest)(nil),                     // 77: fluss.InitWriterRequest
+	(*InitWriterResponse)(nil),                    // 78: fluss.InitWriterResponse
+	(*ListPartitionInfosRequest)(nil),             // 79: fluss.ListPartitionInfosRequest
+	(*ListPartitionInfosResponse)(nil),            // 80: fluss.ListPartitionInfosResponse
+	(*ListRemoteLogManifestsRequest)(nil),         // 81: fluss.ListRemoteLogManifestsRequest
+	(*ListRemoteLogManifestsResponse)(nil),        // 82: fluss.ListRemoteLogManifestsResponse
+	(*PbRemoteLogManifestEntry)(nil),              // 83: fluss.PbRemoteLogManifestEntry
+	(*ListKvSnapshotsRequest)(nil),                // 84: fluss.ListKvSnapshotsRequest
+	(*ListKvSnapshotsResponse)(nil),               // 85: fluss.ListKvSnapshotsResponse
+	(*CreatePartitionRequest)(nil),                // 86: fluss.CreatePartitionRequest
+	(*CreatePartitionResponse)(nil),               // 87: fluss.CreatePartitionResponse
+	(*DropPartitionRequest)(nil),                  // 88: fluss.DropPartitionRequest
+	(*DropPartitionResponse)(nil),                 // 89: fluss.DropPartitionResponse
+	(*CommitRemoteLogManifestRequest)(nil),        // 90: fluss.CommitRemoteLogManifestRequest
+	(*CommitRemoteLogManifestResponse)(nil),       // 91: fluss.CommitRemoteLogManifestResponse
+	(*NotifyRemoteLogOffsetsRequest)(nil),         // 92: fluss.NotifyRemoteLogOffsetsRequest
+	(*NotifyRemoteLogOffsetsResponse)(nil),        // 93: fluss.NotifyRemoteLogOffsetsResponse
+	(*PrepareLakeTableSnapshotRequest)(nil),       // 94: fluss.PrepareLakeTableSnapshotRequest
+	(*PrepareLakeTableSnapshotResponse)(nil),      // 95: fluss.PrepareLakeTableSnapshotResponse
+	(*CommitLakeTableSnapshotRequest)(nil),        // 96: fluss.CommitLakeTableSnapshotRequest
+	(*CommitLakeTableSnapshotResponse)(nil),       // 97: fluss.CommitLakeTableSnapshotResponse
+	(*PbCommitLakeTableSnapshotRespForTable)(nil), // 98: fluss.PbCommitLakeTableSnapshotRespForTable
+	(*NotifyLakeTableOffsetRequest)(nil),          // 99: fluss.NotifyLakeTableOffsetRequest
+	(*PbNotifyLakeTableOffsetReqForBucket)(nil),   // 100: fluss.PbNotifyLakeTableOffsetReqForBucket
+	(*NotifyLakeTableOffsetResponse)(nil),         // 101: fluss.NotifyLakeTableOffsetResponse
+	(*AuthenticateRequest)(nil),                   // 102: fluss.AuthenticateRequest
+	(*AuthenticateResponse)(nil),                  // 103: fluss.AuthenticateResponse
+	(*ListAclsRequest)(nil),                       // 104: fluss.ListAclsRequest
+	(*ListAclsResponse)(nil),                      // 105: fluss.ListAclsResponse
+	(*CreateAclsRequest)(nil),                     // 106: fluss.CreateAclsRequest
+	(*CreateAclsResponse)(nil),                    // 107: fluss.CreateAclsResponse
+	(*DropAclsRequest)(nil),                       // 108: fluss.DropAclsRequest
+	(*DropAclsResponse)(nil),                      // 109: fluss.DropAclsResponse
+	(*LakeTieringHeartbeatRequest)(nil),           // 110: fluss.LakeTieringHeartbeatRequest
+	(*LakeTieringHeartbeatResponse)(nil),          // 111: fluss.LakeTieringHeartbeatResponse
+	(*ControlledShutdownRequest)(nil),             // 112: fluss.ControlledShutdownRequest
+	(*ControlledShutdownResponse)(nil),            // 113: fluss.ControlledShutdownResponse
+	(*DescribeClusterConfigsRequest)(nil),         // 114: fluss.DescribeClusterConfigsRequest
+	(*DescribeClusterConfigsResponse)(nil),        // 115: fluss.DescribeClusterConfigsResponse
+	(*AlterClusterConfigsRequest)(nil),            // 116: fluss.AlterClusterConfigsRequest
+	(*AlterClusterConfigsResponse)(nil),           // 117: fluss.AlterClusterConfigsResponse
+	(*AddServerTagRequest)(nil),                   // 118: fluss.AddServerTagRequest
+	(*AddServerTagResponse)(nil),                  // 119: fluss.AddServerTagResponse
+	(*AddServerTagByRackRequest)(nil),             // 120: fluss.AddServerTagByRackRequest
+	(*AddServerTagByRackResponse)(nil),            // 121: fluss.AddServerTagByRackResponse
+	(*RemoveServerTagRequest)(nil),                // 122: fluss.RemoveServerTagRequest
+	(*RemoveServerTagResponse)(nil),               // 123: fluss.RemoveServerTagResponse
+	(*RemoveServerTagByRackRequest)(nil),          // 124: fluss.RemoveServerTagByRackRequest
+	(*RemoveServerTagByRackResponse)(nil),         // 125: fluss.RemoveServerTagByRackResponse
+	(*RebalanceRequest)(nil),                      // 126: fluss.RebalanceRequest
+	(*RebalanceResponse)(nil),                     // 127: fluss.RebalanceResponse
+	(*ListRebalanceProgressRequest)(nil),          // 128: fluss.ListRebalanceProgressRequest
+	(*ListRebalanceProgressResponse)(nil),         // 129: fluss.ListRebalanceProgressResponse
+	(*CancelRebalanceRequest)(nil),                // 130: fluss.CancelRebalanceRequest
+	(*CancelRebalanceResponse)(nil),               // 131: fluss.CancelRebalanceResponse
+	(*RegisterProducerOffsetsRequest)(nil),        // 132: fluss.RegisterProducerOffsetsRequest
+	(*RegisterProducerOffsetsResponse)(nil),       // 133: fluss.RegisterProducerOffsetsResponse
+	(*GetProducerOffsetsRequest)(nil),             // 134: fluss.GetProducerOffsetsRequest
+	(*GetProducerOffsetsResponse)(nil),            // 135: fluss.GetProducerOffsetsResponse
+	(*DeleteProducerOffsetsRequest)(nil),          // 136: fluss.DeleteProducerOffsetsRequest
+	(*DeleteProducerOffsetsResponse)(nil),         // 137: fluss.DeleteProducerOffsetsResponse
+	(*GetClusterHealthRequest)(nil),               // 138: fluss.GetClusterHealthRequest
+	(*GetClusterHealthResponse)(nil),              // 139: fluss.GetClusterHealthResponse
+	(*PbApiVersion)(nil),                          // 140: fluss.PbApiVersion
+	(*PbTablePath)(nil),                           // 141: fluss.PbTablePath
+	(*PbPhysicalTablePath)(nil),                   // 142: fluss.PbPhysicalTablePath
+	(*PbServerNode)(nil),                          // 143: fluss.PbServerNode
+	(*PbTableMetadata)(nil),                       // 144: fluss.PbTableMetadata
+	(*PbPartitionMetadata)(nil),                   // 145: fluss.PbPartitionMetadata
+	(*PbBucketMetadata)(nil),                      // 146: fluss.PbBucketMetadata
+	(*PbProduceLogReqForBucket)(nil),              // 147: fluss.PbProduceLogReqForBucket
+	(*PbProduceLogRespForBucket)(nil),             // 148: fluss.PbProduceLogRespForBucket
+	(*PbFetchLogReqForTable)(nil),                 // 149: fluss.PbFetchLogReqForTable
+	(*PbFetchLogReqForBucket)(nil),                // 150: fluss.PbFetchLogReqForBucket
+	(*PbFetchLogRespForTable)(nil),                // 151: fluss.PbFetchLogRespForTable
+	(*PbFetchLogRespForBucket)(nil),               // 152: fluss.PbFetchLogRespForBucket
+	(*PbPutKvReqForBucket)(nil),                   // 153: fluss.PbPutKvReqForBucket
+	(*PbPutKvRespForBucket)(nil),                  // 154: fluss.PbPutKvRespForBucket
+	(*PbLookupReqForBucket)(nil),                  // 155: fluss.PbLookupReqForBucket
+	(*PbLookupRespForBucket)(nil),                 // 156: fluss.PbLookupRespForBucket
+	(*PbValue)(nil),                               // 157: fluss.PbValue
+	(*PbValueList)(nil),                           // 158: fluss.PbValueList
+	(*PbPrefixLookupReqForBucket)(nil),            // 159: fluss.PbPrefixLookupReqForBucket
+	(*PbPrefixLookupRespForBucket)(nil),           // 160: fluss.PbPrefixLookupRespForBucket
+	(*PbTableBucket)(nil),                         // 161: fluss.PbTableBucket
+	(*PbAdjustIsrReqForTable)(nil),                // 162: fluss.PbAdjustIsrReqForTable
+	(*PbAdjustIsrReqForBucket)(nil),               // 163: fluss.PbAdjustIsrReqForBucket
+	(*PbAdjustIsrRespForTable)(nil),               // 164: fluss.PbAdjustIsrRespForTable
+	(*PbAdjustIsrRespForBucket)(nil),              // 165: fluss.PbAdjustIsrRespForBucket
+	(*PbListOffsetsRespForBucket)(nil),            // 166: fluss.PbListOffsetsRespForBucket
+	(*PbNotifyLeaderAndIsrReqForBucket)(nil),      // 167: fluss.PbNotifyLeaderAndIsrReqForBucket
+	(*PbNotifyLeaderAndIsrRespForBucket)(nil),     // 168: fluss.PbNotifyLeaderAndIsrRespForBucket
+	(*PbStopReplicaReqForBucket)(nil),             // 169: fluss.PbStopReplicaReqForBucket
+	(*PbStopReplicaRespForBucket)(nil),            // 170: fluss.PbStopReplicaRespForBucket
+	(*PbKvSnapshot)(nil),                          // 171: fluss.PbKvSnapshot
+	(*PbLakeSnapshotForBucket)(nil),               // 172: fluss.PbLakeSnapshotForBucket
+	(*PbRemotePathAndLocalFile)(nil),              // 173: fluss.PbRemotePathAndLocalFile
+	(*PbKeyValue)(nil),                            // 174: fluss.PbKeyValue
+	(*PbRemoteLogFetchInfo)(nil),                  // 175: fluss.PbRemoteLogFetchInfo
+	(*PbRemoteLogSegment)(nil),                    // 176: fluss.PbRemoteLogSegment
+	(*PbPartitionInfo)(nil),                       // 177: fluss.PbPartitionInfo
+	(*PbPartitionSpec)(nil),                       // 178: fluss.PbPartitionSpec
+	(*PbCreateAclRespInfo)(nil),                   // 179: fluss.PbCreateAclRespInfo
+	(*PbAclInfo)(nil),                             // 180: fluss.PbAclInfo
+	(*PbAclFilter)(nil),                           // 181: fluss.PbAclFilter
+	(*PbDropAclsFilterResult)(nil),                // 182: fluss.PbDropAclsFilterResult
+	(*PbDropAclsMatchingAcl)(nil),                 // 183: fluss.PbDropAclsMatchingAcl
+	(*PbLakeTieringTableInfo)(nil),                // 184: fluss.PbLakeTieringTableInfo
+	(*PbHeartbeatReqForTable)(nil),                // 185: fluss.PbHeartbeatReqForTable
+	(*PbLakeTieringStats)(nil),                    // 186: fluss.PbLakeTieringStats
+	(*PbHeartbeatRespForTable)(nil),               // 187: fluss.PbHeartbeatRespForTable
+	(*PbAlterConfig)(nil),                         // 188: fluss.PbAlterConfig
+	(*PbAddColumn)(nil),                           // 189: fluss.PbAddColumn
+	(*PbDropColumn)(nil),                          // 190: fluss.PbDropColumn
+	(*PbRenameColumn)(nil),                        // 191: fluss.PbRenameColumn
+	(*PbModifyColumn)(nil),                        // 192: fluss.PbModifyColumn
+	(*PbDescribeConfig)(nil),                      // 193: fluss.PbDescribeConfig
+	(*PbRebalancePlanForTable)(nil),               // 194: fluss.PbRebalancePlanForTable
+	(*PbRebalanceProgressForTable)(nil),           // 195: fluss.PbRebalanceProgressForTable
+	(*PbRebalanceProgressForBucket)(nil),          // 196: fluss.PbRebalanceProgressForBucket
+	(*PbRebalancePlanForBucket)(nil),              // 197: fluss.PbRebalancePlanForBucket
+	(*PbLakeTableSnapshotMetadata)(nil),           // 198: fluss.PbLakeTableSnapshotMetadata
+	(*PbLakeTableSnapshotInfo)(nil),               // 199: fluss.PbLakeTableSnapshotInfo
+	(*PbLakeTableOffsetForBucket)(nil),            // 200: fluss.PbLakeTableOffsetForBucket
+	(*PbPrepareLakeTableRespForTable)(nil),        // 201: fluss.PbPrepareLakeTableRespForTable
+	(*PbTableOffsets)(nil),                        // 202: fluss.PbTableOffsets
+	(*PbBucketOffset)(nil),                        // 203: fluss.PbBucketOffset
+	(*PbProducerTableOffsets)(nil),                // 204: fluss.PbProducerTableOffsets
+	(*PbDatabaseSummary)(nil),                     // 205: fluss.PbDatabaseSummary
+	(*PbKvSnapshotLeaseForTable)(nil),             // 206: fluss.PbKvSnapshotLeaseForTable
+	(*PbKvSnapshotLeaseForBucket)(nil),            // 207: fluss.PbKvSnapshotLeaseForBucket
+	(*PbTableStatsReqForBucket)(nil),              // 208: fluss.PbTableStatsReqForBucket
+	(*PbTableStatsRespForBucket)(nil),             // 209: fluss.PbTableStatsRespForBucket
+	(*PbPredicate)(nil),                           // 210: fluss.PbPredicate
+	(*PbLeafPredicate)(nil),                       // 211: fluss.PbLeafPredicate
+	(*PbCompoundPredicate)(nil),                   // 212: fluss.PbCompoundPredicate
+	(*PbLiteralValue)(nil),                        // 213: fluss.PbLiteralValue
 }
 var file_third_party_apache_fluss_FlussApi_proto_depIdxs = []int32{
-	123, // 0: fluss.ApiVersionsResponse.api_versions:type_name -> fluss.PbApiVersion
-	124, // 1: fluss.GetTableSchemaRequest.table_path:type_name -> fluss.PbTablePath
-	187, // 2: fluss.ListDatabasesResponse.database_summary:type_name -> fluss.PbDatabaseSummary
-	124, // 3: fluss.CreateTableRequest.table_path:type_name -> fluss.PbTablePath
-	124, // 4: fluss.AlterTableRequest.table_path:type_name -> fluss.PbTablePath
-	170, // 5: fluss.AlterTableRequest.config_changes:type_name -> fluss.PbAlterConfig
-	171, // 6: fluss.AlterTableRequest.add_columns:type_name -> fluss.PbAddColumn
-	172, // 7: fluss.AlterTableRequest.drop_columns:type_name -> fluss.PbDropColumn
-	173, // 8: fluss.AlterTableRequest.rename_columns:type_name -> fluss.PbRenameColumn
-	174, // 9: fluss.AlterTableRequest.modify_columns:type_name -> fluss.PbModifyColumn
-	124, // 10: fluss.GetTableInfoRequest.table_path:type_name -> fluss.PbTablePath
-	124, // 11: fluss.DropTableRequest.table_path:type_name -> fluss.PbTablePath
-	124, // 12: fluss.TableExistsRequest.table_path:type_name -> fluss.PbTablePath
-	124, // 13: fluss.MetadataRequest.table_path:type_name -> fluss.PbTablePath
-	125, // 14: fluss.MetadataRequest.partitions_path:type_name -> fluss.PbPhysicalTablePath
-	126, // 15: fluss.MetadataResponse.coordinator_server:type_name -> fluss.PbServerNode
-	126, // 16: fluss.MetadataResponse.tablet_servers:type_name -> fluss.PbServerNode
-	127, // 17: fluss.MetadataResponse.table_metadata:type_name -> fluss.PbTableMetadata
-	128, // 18: fluss.MetadataResponse.partition_metadata:type_name -> fluss.PbPartitionMetadata
-	126, // 19: fluss.UpdateMetadataRequest.coordinator_server:type_name -> fluss.PbServerNode
-	126, // 20: fluss.UpdateMetadataRequest.tablet_servers:type_name -> fluss.PbServerNode
-	127, // 21: fluss.UpdateMetadataRequest.table_metadata:type_name -> fluss.PbTableMetadata
-	128, // 22: fluss.UpdateMetadataRequest.partition_metadata:type_name -> fluss.PbPartitionMetadata
-	130, // 23: fluss.ProduceLogRequest.buckets_req:type_name -> fluss.PbProduceLogReqForBucket
-	131, // 24: fluss.ProduceLogResponse.buckets_resp:type_name -> fluss.PbProduceLogRespForBucket
-	132, // 25: fluss.FetchLogRequest.tables_req:type_name -> fluss.PbFetchLogReqForTable
-	134, // 26: fluss.FetchLogResponse.tables_resp:type_name -> fluss.PbFetchLogRespForTable
-	136, // 27: fluss.PutKvRequest.buckets_req:type_name -> fluss.PbPutKvReqForBucket
-	137, // 28: fluss.PutKvResponse.buckets_resp:type_name -> fluss.PbPutKvRespForBucket
-	138, // 29: fluss.LookupRequest.buckets_req:type_name -> fluss.PbLookupReqForBucket
-	139, // 30: fluss.LookupResponse.buckets_resp:type_name -> fluss.PbLookupRespForBucket
-	142, // 31: fluss.PrefixLookupRequest.buckets_req:type_name -> fluss.PbPrefixLookupReqForBucket
-	143, // 32: fluss.PrefixLookupResponse.buckets_resp:type_name -> fluss.PbPrefixLookupRespForBucket
-	190, // 33: fluss.GetTableStatsRequest.buckets_req:type_name -> fluss.PbTableStatsReqForBucket
-	191, // 34: fluss.GetTableStatsResponse.buckets_resp:type_name -> fluss.PbTableStatsRespForBucket
-	150, // 35: fluss.NotifyLeaderAndIsrRequest.notify_buckets_leader_req:type_name -> fluss.PbNotifyLeaderAndIsrReqForBucket
-	151, // 36: fluss.NotifyLeaderAndIsrResponse.notify_buckets_leader_resp:type_name -> fluss.PbNotifyLeaderAndIsrRespForBucket
-	152, // 37: fluss.StopReplicaRequest.stop_replicas_req:type_name -> fluss.PbStopReplicaReqForBucket
-	153, // 38: fluss.StopReplicaResponse.stop_replicas_resp:type_name -> fluss.PbStopReplicaRespForBucket
-	145, // 39: fluss.AdjustIsrRequest.tables_req:type_name -> fluss.PbAdjustIsrReqForTable
-	147, // 40: fluss.AdjustIsrResponse.tables_resp:type_name -> fluss.PbAdjustIsrRespForTable
-	149, // 41: fluss.ListOffsetsResponse.buckets_resp:type_name -> fluss.PbListOffsetsRespForBucket
-	124, // 42: fluss.GetLatestKvSnapshotsRequest.table_path:type_name -> fluss.PbTablePath
-	154, // 43: fluss.GetLatestKvSnapshotsResponse.latest_snapshots:type_name -> fluss.PbKvSnapshot
-	156, // 44: fluss.GetKvSnapshotMetadataResponse.snapshot_files:type_name -> fluss.PbRemotePathAndLocalFile
-	188, // 45: fluss.AcquireKvSnapshotLeaseRequest.snapshots_to_lease:type_name -> fluss.PbKvSnapshotLeaseForTable
-	188, // 46: fluss.AcquireKvSnapshotLeaseResponse.unavailable_snapshots:type_name -> fluss.PbKvSnapshotLeaseForTable
-	144, // 47: fluss.ReleaseKvSnapshotLeaseRequest.buckets_to_release:type_name -> fluss.PbTableBucket
-	124, // 48: fluss.GetLakeSnapshotRequest.table_path:type_name -> fluss.PbTablePath
-	155, // 49: fluss.GetLakeSnapshotResponse.bucket_snapshots:type_name -> fluss.PbLakeSnapshotForBucket
-	157, // 50: fluss.GetFileSystemSecurityTokenResponse.addition_info:type_name -> fluss.PbKeyValue
-	124, // 51: fluss.InitWriterRequest.table_path:type_name -> fluss.PbTablePath
-	124, // 52: fluss.ListPartitionInfosRequest.table_path:type_name -> fluss.PbTablePath
-	161, // 53: fluss.ListPartitionInfosRequest.partial_partition_spec:type_name -> fluss.PbPartitionSpec
-	160, // 54: fluss.ListPartitionInfosResponse.partitions_info:type_name -> fluss.PbPartitionInfo
-	124, // 55: fluss.CreatePartitionRequest.table_path:type_name -> fluss.PbTablePath
-	161, // 56: fluss.CreatePartitionRequest.partition_spec:type_name -> fluss.PbPartitionSpec
-	124, // 57: fluss.DropPartitionRequest.table_path:type_name -> fluss.PbTablePath
-	161, // 58: fluss.DropPartitionRequest.partition_spec:type_name -> fluss.PbPartitionSpec
-	184, // 59: fluss.PrepareLakeTableSnapshotRequest.bucket_offsets:type_name -> fluss.PbTableOffsets
-	183, // 60: fluss.PrepareLakeTableSnapshotResponse.prepare_lake_table_resp:type_name -> fluss.PbPrepareLakeTableRespForTable
-	181, // 61: fluss.CommitLakeTableSnapshotRequest.tables_req:type_name -> fluss.PbLakeTableSnapshotInfo
-	180, // 62: fluss.CommitLakeTableSnapshotRequest.lake_table_snapshot_metadata:type_name -> fluss.PbLakeTableSnapshotMetadata
-	87,  // 63: fluss.CommitLakeTableSnapshotResponse.table_resp:type_name -> fluss.PbCommitLakeTableSnapshotRespForTable
-	89,  // 64: fluss.NotifyLakeTableOffsetRequest.notify_buckets_req:type_name -> fluss.PbNotifyLakeTableOffsetReqForBucket
-	164, // 65: fluss.ListAclsRequest.acl_filter:type_name -> fluss.PbAclFilter
-	163, // 66: fluss.ListAclsResponse.acl:type_name -> fluss.PbAclInfo
-	163, // 67: fluss.CreateAclsRequest.acl:type_name -> fluss.PbAclInfo
-	162, // 68: fluss.CreateAclsResponse.aclRes:type_name -> fluss.PbCreateAclRespInfo
-	164, // 69: fluss.DropAclsRequest.acl_filter:type_name -> fluss.PbAclFilter
-	165, // 70: fluss.DropAclsResponse.filter_results:type_name -> fluss.PbDropAclsFilterResult
-	168, // 71: fluss.LakeTieringHeartbeatRequest.tiering_tables:type_name -> fluss.PbHeartbeatReqForTable
-	168, // 72: fluss.LakeTieringHeartbeatRequest.finished_tables:type_name -> fluss.PbHeartbeatReqForTable
-	168, // 73: fluss.LakeTieringHeartbeatRequest.failed_tables:type_name -> fluss.PbHeartbeatReqForTable
-	167, // 74: fluss.LakeTieringHeartbeatResponse.tiering_table:type_name -> fluss.PbLakeTieringTableInfo
-	169, // 75: fluss.LakeTieringHeartbeatResponse.tiering_table_resp:type_name -> fluss.PbHeartbeatRespForTable
-	169, // 76: fluss.LakeTieringHeartbeatResponse.finished_table_resp:type_name -> fluss.PbHeartbeatRespForTable
-	169, // 77: fluss.LakeTieringHeartbeatResponse.failed_table_resp:type_name -> fluss.PbHeartbeatRespForTable
-	144, // 78: fluss.ControlledShutdownResponse.remaining_leader_buckets:type_name -> fluss.PbTableBucket
-	175, // 79: fluss.DescribeClusterConfigsResponse.configs:type_name -> fluss.PbDescribeConfig
-	170, // 80: fluss.AlterClusterConfigsRequest.alter_configs:type_name -> fluss.PbAlterConfig
-	177, // 81: fluss.ListRebalanceProgressResponse.table_progress:type_name -> fluss.PbRebalanceProgressForTable
-	186, // 82: fluss.RegisterProducerOffsetsRequest.table_offsets:type_name -> fluss.PbProducerTableOffsets
-	186, // 83: fluss.GetProducerOffsetsResponse.table_offsets:type_name -> fluss.PbProducerTableOffsets
-	124, // 84: fluss.PbTableMetadata.table_path:type_name -> fluss.PbTablePath
-	129, // 85: fluss.PbTableMetadata.bucket_metadata:type_name -> fluss.PbBucketMetadata
-	129, // 86: fluss.PbPartitionMetadata.bucket_metadata:type_name -> fluss.PbBucketMetadata
-	133, // 87: fluss.PbFetchLogReqForTable.buckets_req:type_name -> fluss.PbFetchLogReqForBucket
-	135, // 88: fluss.PbFetchLogRespForTable.buckets_resp:type_name -> fluss.PbFetchLogRespForBucket
-	158, // 89: fluss.PbFetchLogRespForBucket.remote_log_fetch_info:type_name -> fluss.PbRemoteLogFetchInfo
-	140, // 90: fluss.PbLookupRespForBucket.values:type_name -> fluss.PbValue
-	141, // 91: fluss.PbPrefixLookupRespForBucket.value_lists:type_name -> fluss.PbValueList
-	146, // 92: fluss.PbAdjustIsrReqForTable.buckets_req:type_name -> fluss.PbAdjustIsrReqForBucket
-	148, // 93: fluss.PbAdjustIsrRespForTable.buckets_resp:type_name -> fluss.PbAdjustIsrRespForBucket
-	125, // 94: fluss.PbNotifyLeaderAndIsrReqForBucket.physical_table_path:type_name -> fluss.PbPhysicalTablePath
-	144, // 95: fluss.PbNotifyLeaderAndIsrReqForBucket.table_bucket:type_name -> fluss.PbTableBucket
-	144, // 96: fluss.PbNotifyLeaderAndIsrRespForBucket.table_bucket:type_name -> fluss.PbTableBucket
-	144, // 97: fluss.PbStopReplicaReqForBucket.table_bucket:type_name -> fluss.PbTableBucket
-	144, // 98: fluss.PbStopReplicaRespForBucket.table_bucket:type_name -> fluss.PbTableBucket
-	159, // 99: fluss.PbRemoteLogFetchInfo.remote_log_segments:type_name -> fluss.PbRemoteLogSegment
-	161, // 100: fluss.PbPartitionInfo.partition_spec:type_name -> fluss.PbPartitionSpec
-	157, // 101: fluss.PbPartitionSpec.partition_key_values:type_name -> fluss.PbKeyValue
-	163, // 102: fluss.PbCreateAclRespInfo.acl:type_name -> fluss.PbAclInfo
-	166, // 103: fluss.PbDropAclsFilterResult.matching_acls:type_name -> fluss.PbDropAclsMatchingAcl
-	163, // 104: fluss.PbDropAclsMatchingAcl.acl:type_name -> fluss.PbAclInfo
-	124, // 105: fluss.PbLakeTieringTableInfo.table_path:type_name -> fluss.PbTablePath
-	0,   // 106: fluss.PbHeartbeatRespForTable.error:type_name -> fluss.ErrorResponse
-	179, // 107: fluss.PbRebalancePlanForTable.buckets_plan:type_name -> fluss.PbRebalancePlanForBucket
-	178, // 108: fluss.PbRebalanceProgressForTable.buckets_progress:type_name -> fluss.PbRebalanceProgressForBucket
-	179, // 109: fluss.PbRebalanceProgressForBucket.rebalance_plan:type_name -> fluss.PbRebalancePlanForBucket
-	182, // 110: fluss.PbLakeTableSnapshotInfo.buckets_req:type_name -> fluss.PbLakeTableOffsetForBucket
-	124, // 111: fluss.PbLakeTableSnapshotInfo.table_path:type_name -> fluss.PbTablePath
-	124, // 112: fluss.PbTableOffsets.table_path:type_name -> fluss.PbTablePath
-	185, // 113: fluss.PbTableOffsets.bucket_offsets:type_name -> fluss.PbBucketOffset
-	185, // 114: fluss.PbProducerTableOffsets.bucket_offsets:type_name -> fluss.PbBucketOffset
-	189, // 115: fluss.PbKvSnapshotLeaseForTable.bucket_snapshots:type_name -> fluss.PbKvSnapshotLeaseForBucket
-	116, // [116:116] is the sub-list for method output_type
-	116, // [116:116] is the sub-list for method input_type
-	116, // [116:116] is the sub-list for extension type_name
-	116, // [116:116] is the sub-list for extension extendee
-	0,   // [0:116] is the sub-list for field type_name
+	140, // 0: fluss.ApiVersionsResponse.api_versions:type_name -> fluss.PbApiVersion
+	141, // 1: fluss.GetTableSchemaRequest.table_path:type_name -> fluss.PbTablePath
+	188, // 2: fluss.AlterDatabaseRequest.config_changes:type_name -> fluss.PbAlterConfig
+	205, // 3: fluss.ListDatabasesResponse.database_summary:type_name -> fluss.PbDatabaseSummary
+	141, // 4: fluss.CreateTableRequest.table_path:type_name -> fluss.PbTablePath
+	141, // 5: fluss.AlterTableRequest.table_path:type_name -> fluss.PbTablePath
+	188, // 6: fluss.AlterTableRequest.config_changes:type_name -> fluss.PbAlterConfig
+	189, // 7: fluss.AlterTableRequest.add_columns:type_name -> fluss.PbAddColumn
+	190, // 8: fluss.AlterTableRequest.drop_columns:type_name -> fluss.PbDropColumn
+	191, // 9: fluss.AlterTableRequest.rename_columns:type_name -> fluss.PbRenameColumn
+	192, // 10: fluss.AlterTableRequest.modify_columns:type_name -> fluss.PbModifyColumn
+	20,  // 11: fluss.AlterTableRequest.modify_bucket_count:type_name -> fluss.PbModifyBucketCount
+	141, // 12: fluss.GetTableInfoRequest.table_path:type_name -> fluss.PbTablePath
+	141, // 13: fluss.DropTableRequest.table_path:type_name -> fluss.PbTablePath
+	141, // 14: fluss.TableExistsRequest.table_path:type_name -> fluss.PbTablePath
+	141, // 15: fluss.MetadataRequest.table_path:type_name -> fluss.PbTablePath
+	142, // 16: fluss.MetadataRequest.partitions_path:type_name -> fluss.PbPhysicalTablePath
+	143, // 17: fluss.MetadataResponse.coordinator_server:type_name -> fluss.PbServerNode
+	143, // 18: fluss.MetadataResponse.tablet_servers:type_name -> fluss.PbServerNode
+	144, // 19: fluss.MetadataResponse.table_metadata:type_name -> fluss.PbTableMetadata
+	145, // 20: fluss.MetadataResponse.partition_metadata:type_name -> fluss.PbPartitionMetadata
+	143, // 21: fluss.UpdateMetadataRequest.coordinator_server:type_name -> fluss.PbServerNode
+	143, // 22: fluss.UpdateMetadataRequest.tablet_servers:type_name -> fluss.PbServerNode
+	144, // 23: fluss.UpdateMetadataRequest.table_metadata:type_name -> fluss.PbTableMetadata
+	145, // 24: fluss.UpdateMetadataRequest.partition_metadata:type_name -> fluss.PbPartitionMetadata
+	147, // 25: fluss.ProduceLogRequest.buckets_req:type_name -> fluss.PbProduceLogReqForBucket
+	148, // 26: fluss.ProduceLogResponse.buckets_resp:type_name -> fluss.PbProduceLogRespForBucket
+	149, // 27: fluss.FetchLogRequest.tables_req:type_name -> fluss.PbFetchLogReqForTable
+	151, // 28: fluss.FetchLogResponse.tables_resp:type_name -> fluss.PbFetchLogRespForTable
+	153, // 29: fluss.PutKvRequest.buckets_req:type_name -> fluss.PbPutKvReqForBucket
+	154, // 30: fluss.PutKvResponse.buckets_resp:type_name -> fluss.PbPutKvRespForBucket
+	155, // 31: fluss.LookupRequest.buckets_req:type_name -> fluss.PbLookupReqForBucket
+	156, // 32: fluss.LookupResponse.buckets_resp:type_name -> fluss.PbLookupRespForBucket
+	159, // 33: fluss.PrefixLookupRequest.buckets_req:type_name -> fluss.PbPrefixLookupReqForBucket
+	160, // 34: fluss.PrefixLookupResponse.buckets_resp:type_name -> fluss.PbPrefixLookupRespForBucket
+	46,  // 35: fluss.ScanKvRequest.bucket_scan_req:type_name -> fluss.PbScanReqForBucket
+	208, // 36: fluss.GetTableStatsRequest.buckets_req:type_name -> fluss.PbTableStatsReqForBucket
+	209, // 37: fluss.GetTableStatsResponse.buckets_resp:type_name -> fluss.PbTableStatsRespForBucket
+	167, // 38: fluss.NotifyLeaderAndIsrRequest.notify_buckets_leader_req:type_name -> fluss.PbNotifyLeaderAndIsrReqForBucket
+	168, // 39: fluss.NotifyLeaderAndIsrResponse.notify_buckets_leader_resp:type_name -> fluss.PbNotifyLeaderAndIsrRespForBucket
+	169, // 40: fluss.StopReplicaRequest.stop_replicas_req:type_name -> fluss.PbStopReplicaReqForBucket
+	170, // 41: fluss.StopReplicaResponse.stop_replicas_resp:type_name -> fluss.PbStopReplicaRespForBucket
+	162, // 42: fluss.AdjustIsrRequest.tables_req:type_name -> fluss.PbAdjustIsrReqForTable
+	164, // 43: fluss.AdjustIsrResponse.tables_resp:type_name -> fluss.PbAdjustIsrRespForTable
+	166, // 44: fluss.ListOffsetsResponse.buckets_resp:type_name -> fluss.PbListOffsetsRespForBucket
+	141, // 45: fluss.GetLatestKvSnapshotsRequest.table_path:type_name -> fluss.PbTablePath
+	171, // 46: fluss.GetLatestKvSnapshotsResponse.latest_snapshots:type_name -> fluss.PbKvSnapshot
+	173, // 47: fluss.GetKvSnapshotMetadataResponse.snapshot_files:type_name -> fluss.PbRemotePathAndLocalFile
+	206, // 48: fluss.AcquireKvSnapshotLeaseRequest.snapshots_to_lease:type_name -> fluss.PbKvSnapshotLeaseForTable
+	206, // 49: fluss.AcquireKvSnapshotLeaseResponse.unavailable_snapshots:type_name -> fluss.PbKvSnapshotLeaseForTable
+	161, // 50: fluss.ReleaseKvSnapshotLeaseRequest.buckets_to_release:type_name -> fluss.PbTableBucket
+	141, // 51: fluss.GetLakeSnapshotRequest.table_path:type_name -> fluss.PbTablePath
+	172, // 52: fluss.GetLakeSnapshotResponse.bucket_snapshots:type_name -> fluss.PbLakeSnapshotForBucket
+	174, // 53: fluss.GetFileSystemSecurityTokenResponse.addition_info:type_name -> fluss.PbKeyValue
+	141, // 54: fluss.InitWriterRequest.table_path:type_name -> fluss.PbTablePath
+	141, // 55: fluss.ListPartitionInfosRequest.table_path:type_name -> fluss.PbTablePath
+	178, // 56: fluss.ListPartitionInfosRequest.partial_partition_spec:type_name -> fluss.PbPartitionSpec
+	177, // 57: fluss.ListPartitionInfosResponse.partitions_info:type_name -> fluss.PbPartitionInfo
+	83,  // 58: fluss.ListRemoteLogManifestsResponse.manifests:type_name -> fluss.PbRemoteLogManifestEntry
+	161, // 59: fluss.PbRemoteLogManifestEntry.table_bucket:type_name -> fluss.PbTableBucket
+	171, // 60: fluss.ListKvSnapshotsResponse.active_snapshots:type_name -> fluss.PbKvSnapshot
+	141, // 61: fluss.CreatePartitionRequest.table_path:type_name -> fluss.PbTablePath
+	178, // 62: fluss.CreatePartitionRequest.partition_spec:type_name -> fluss.PbPartitionSpec
+	141, // 63: fluss.DropPartitionRequest.table_path:type_name -> fluss.PbTablePath
+	178, // 64: fluss.DropPartitionRequest.partition_spec:type_name -> fluss.PbPartitionSpec
+	202, // 65: fluss.PrepareLakeTableSnapshotRequest.bucket_offsets:type_name -> fluss.PbTableOffsets
+	201, // 66: fluss.PrepareLakeTableSnapshotResponse.prepare_lake_table_resp:type_name -> fluss.PbPrepareLakeTableRespForTable
+	199, // 67: fluss.CommitLakeTableSnapshotRequest.tables_req:type_name -> fluss.PbLakeTableSnapshotInfo
+	198, // 68: fluss.CommitLakeTableSnapshotRequest.lake_table_snapshot_metadata:type_name -> fluss.PbLakeTableSnapshotMetadata
+	98,  // 69: fluss.CommitLakeTableSnapshotResponse.table_resp:type_name -> fluss.PbCommitLakeTableSnapshotRespForTable
+	100, // 70: fluss.NotifyLakeTableOffsetRequest.notify_buckets_req:type_name -> fluss.PbNotifyLakeTableOffsetReqForBucket
+	181, // 71: fluss.ListAclsRequest.acl_filter:type_name -> fluss.PbAclFilter
+	180, // 72: fluss.ListAclsResponse.acl:type_name -> fluss.PbAclInfo
+	180, // 73: fluss.CreateAclsRequest.acl:type_name -> fluss.PbAclInfo
+	179, // 74: fluss.CreateAclsResponse.aclRes:type_name -> fluss.PbCreateAclRespInfo
+	181, // 75: fluss.DropAclsRequest.acl_filter:type_name -> fluss.PbAclFilter
+	182, // 76: fluss.DropAclsResponse.filter_results:type_name -> fluss.PbDropAclsFilterResult
+	185, // 77: fluss.LakeTieringHeartbeatRequest.tiering_tables:type_name -> fluss.PbHeartbeatReqForTable
+	185, // 78: fluss.LakeTieringHeartbeatRequest.finished_tables:type_name -> fluss.PbHeartbeatReqForTable
+	185, // 79: fluss.LakeTieringHeartbeatRequest.failed_tables:type_name -> fluss.PbHeartbeatReqForTable
+	184, // 80: fluss.LakeTieringHeartbeatResponse.tiering_table:type_name -> fluss.PbLakeTieringTableInfo
+	187, // 81: fluss.LakeTieringHeartbeatResponse.tiering_table_resp:type_name -> fluss.PbHeartbeatRespForTable
+	187, // 82: fluss.LakeTieringHeartbeatResponse.finished_table_resp:type_name -> fluss.PbHeartbeatRespForTable
+	187, // 83: fluss.LakeTieringHeartbeatResponse.failed_table_resp:type_name -> fluss.PbHeartbeatRespForTable
+	161, // 84: fluss.ControlledShutdownResponse.remaining_leader_buckets:type_name -> fluss.PbTableBucket
+	193, // 85: fluss.DescribeClusterConfigsResponse.configs:type_name -> fluss.PbDescribeConfig
+	188, // 86: fluss.AlterClusterConfigsRequest.alter_configs:type_name -> fluss.PbAlterConfig
+	195, // 87: fluss.ListRebalanceProgressResponse.table_progress:type_name -> fluss.PbRebalanceProgressForTable
+	204, // 88: fluss.RegisterProducerOffsetsRequest.table_offsets:type_name -> fluss.PbProducerTableOffsets
+	204, // 89: fluss.GetProducerOffsetsResponse.table_offsets:type_name -> fluss.PbProducerTableOffsets
+	141, // 90: fluss.PbTableMetadata.table_path:type_name -> fluss.PbTablePath
+	146, // 91: fluss.PbTableMetadata.bucket_metadata:type_name -> fluss.PbBucketMetadata
+	146, // 92: fluss.PbPartitionMetadata.bucket_metadata:type_name -> fluss.PbBucketMetadata
+	150, // 93: fluss.PbFetchLogReqForTable.buckets_req:type_name -> fluss.PbFetchLogReqForBucket
+	210, // 94: fluss.PbFetchLogReqForTable.filter_predicate:type_name -> fluss.PbPredicate
+	152, // 95: fluss.PbFetchLogRespForTable.buckets_resp:type_name -> fluss.PbFetchLogRespForBucket
+	175, // 96: fluss.PbFetchLogRespForBucket.remote_log_fetch_info:type_name -> fluss.PbRemoteLogFetchInfo
+	157, // 97: fluss.PbLookupRespForBucket.values:type_name -> fluss.PbValue
+	158, // 98: fluss.PbPrefixLookupRespForBucket.value_lists:type_name -> fluss.PbValueList
+	163, // 99: fluss.PbAdjustIsrReqForTable.buckets_req:type_name -> fluss.PbAdjustIsrReqForBucket
+	165, // 100: fluss.PbAdjustIsrRespForTable.buckets_resp:type_name -> fluss.PbAdjustIsrRespForBucket
+	142, // 101: fluss.PbNotifyLeaderAndIsrReqForBucket.physical_table_path:type_name -> fluss.PbPhysicalTablePath
+	161, // 102: fluss.PbNotifyLeaderAndIsrReqForBucket.table_bucket:type_name -> fluss.PbTableBucket
+	161, // 103: fluss.PbNotifyLeaderAndIsrRespForBucket.table_bucket:type_name -> fluss.PbTableBucket
+	161, // 104: fluss.PbStopReplicaReqForBucket.table_bucket:type_name -> fluss.PbTableBucket
+	161, // 105: fluss.PbStopReplicaRespForBucket.table_bucket:type_name -> fluss.PbTableBucket
+	176, // 106: fluss.PbRemoteLogFetchInfo.remote_log_segments:type_name -> fluss.PbRemoteLogSegment
+	178, // 107: fluss.PbPartitionInfo.partition_spec:type_name -> fluss.PbPartitionSpec
+	174, // 108: fluss.PbPartitionSpec.partition_key_values:type_name -> fluss.PbKeyValue
+	180, // 109: fluss.PbCreateAclRespInfo.acl:type_name -> fluss.PbAclInfo
+	183, // 110: fluss.PbDropAclsFilterResult.matching_acls:type_name -> fluss.PbDropAclsMatchingAcl
+	180, // 111: fluss.PbDropAclsMatchingAcl.acl:type_name -> fluss.PbAclInfo
+	141, // 112: fluss.PbLakeTieringTableInfo.table_path:type_name -> fluss.PbTablePath
+	186, // 113: fluss.PbHeartbeatReqForTable.lake_tiering_stats:type_name -> fluss.PbLakeTieringStats
+	0,   // 114: fluss.PbHeartbeatRespForTable.error:type_name -> fluss.ErrorResponse
+	174, // 115: fluss.PbAddColumn.agg_function_params:type_name -> fluss.PbKeyValue
+	197, // 116: fluss.PbRebalancePlanForTable.buckets_plan:type_name -> fluss.PbRebalancePlanForBucket
+	196, // 117: fluss.PbRebalanceProgressForTable.buckets_progress:type_name -> fluss.PbRebalanceProgressForBucket
+	197, // 118: fluss.PbRebalanceProgressForBucket.rebalance_plan:type_name -> fluss.PbRebalancePlanForBucket
+	200, // 119: fluss.PbLakeTableSnapshotInfo.buckets_req:type_name -> fluss.PbLakeTableOffsetForBucket
+	141, // 120: fluss.PbLakeTableSnapshotInfo.table_path:type_name -> fluss.PbTablePath
+	141, // 121: fluss.PbTableOffsets.table_path:type_name -> fluss.PbTablePath
+	203, // 122: fluss.PbTableOffsets.bucket_offsets:type_name -> fluss.PbBucketOffset
+	203, // 123: fluss.PbProducerTableOffsets.bucket_offsets:type_name -> fluss.PbBucketOffset
+	207, // 124: fluss.PbKvSnapshotLeaseForTable.bucket_snapshots:type_name -> fluss.PbKvSnapshotLeaseForBucket
+	211, // 125: fluss.PbPredicate.leaf:type_name -> fluss.PbLeafPredicate
+	212, // 126: fluss.PbPredicate.compound:type_name -> fluss.PbCompoundPredicate
+	213, // 127: fluss.PbLeafPredicate.literals:type_name -> fluss.PbLiteralValue
+	210, // 128: fluss.PbCompoundPredicate.children:type_name -> fluss.PbPredicate
+	129, // [129:129] is the sub-list for method output_type
+	129, // [129:129] is the sub-list for method input_type
+	129, // [129:129] is the sub-list for extension type_name
+	129, // [129:129] is the sub-list for extension extendee
+	0,   // [0:129] is the sub-list for field type_name
 }
 
 func init() { file_third_party_apache_fluss_FlussApi_proto_init() }
@@ -12064,7 +13934,7 @@ func file_third_party_apache_fluss_FlussApi_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_third_party_apache_fluss_FlussApi_proto_rawDesc), len(file_third_party_apache_fluss_FlussApi_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   192,
+			NumMessages:   214,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

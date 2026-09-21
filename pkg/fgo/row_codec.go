@@ -85,7 +85,7 @@ func EncodePrimaryKey(schema Schema, key PrimaryKey) ([]byte, error) {
 	return encodeKeyColumns(schema, schema.PrimaryKey, key)
 }
 
-// EncodeLookupKey selects the key contract negotiated for Lookup v0 or v1. Fluss 0.9.1 uses the
+// EncodeLookupKey selects the key contract negotiated for Lookup v0 or v1. Fluss 1.0 uses the
 // same compacted key bytes in both versions; keeping the version explicit prevents silent use of a
 // future incompatible layout.
 func EncodeLookupKey(schema Schema, key PrimaryKey, version int16) ([]byte, error) {

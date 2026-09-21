@@ -22,7 +22,7 @@ func sortedBuckets(buckets map[int32]ServerNode) ([]int32, error) {
 	return ids, nil
 }
 
-// flussBucket implements FlussBucketingFunction from Fluss 0.9.1. Its first hash is the
+// flussBucket implements FlussBucketingFunction from Fluss 1.0. Its first hash is the
 // little-endian, seed-42 Murmur3 variant used by MurmurHashUtils.hashUnsafeBytes.
 func flussBucket(key []byte, bucketCount int) (int32, error) {
 	if len(key) == 0 || bucketCount <= 0 {

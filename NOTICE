@@ -1,11 +1,11 @@
 Fluss-Go
 Copyright 2026 Pletor Co., Ltd.
 
-This distribution includes unmodified Apache Fluss v0.9.1-incubating protocol
+This distribution includes unmodified Apache Fluss v1.0.0 protocol
 inputs under third_party/apache-fluss. The following notices are retained from
 the upstream Apache Fluss NOTICE file:
 
-Apache Fluss (incubating)
+Apache Fluss
 Copyright 2025-2026 The Apache Software Foundation
 
 This product includes software developed at

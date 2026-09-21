@@ -20,7 +20,7 @@ var (
 	ErrValidation    = errors.New("fgo: validation failure")
 )
 
-// ServerError is a Fluss 0.9.1 server failure with safe request context.
+// ServerError is an Apache Fluss server failure with safe request context.
 // Unknown future error codes remain inspectable and are never retriable by default.
 type ServerError struct {
 	// Code is the numeric Fluss protocol error code.
@@ -108,11 +108,13 @@ func errorCategory(code fmsg.ErrorCode) error {
 		return ErrUnknownPartition
 	case fmsg.ErrorCodeNotLeaderOrFollower, fmsg.ErrorCodeUnknownTableOrBucketException,
 		fmsg.ErrorCodeInvalidCoordinatorException, fmsg.ErrorCodeFencedLeaderEpochException,
-		fmsg.ErrorCodeLeaderNotAvailableException, fmsg.ErrorCodeServerNotExistException:
+		fmsg.ErrorCodeLeaderNotAvailableException, fmsg.ErrorCodeServerNotExistException,
+		fmsg.ErrorCodeNotCoordinatorLeaderException, fmsg.ErrorCodeInvalidBucketRouting:
 		return ErrMetadata
 	case fmsg.ErrorCodeRequestTimeOut, fmsg.ErrorCodeNetworkException:
 		return ErrTimeout
-	case fmsg.ErrorCodeLogStorageException, fmsg.ErrorCodeKvStorageException, fmsg.ErrorCodeStorageException:
+	case fmsg.ErrorCodeLogStorageException, fmsg.ErrorCodeKvStorageException, fmsg.ErrorCodeStorageException,
+		fmsg.ErrorCodeDiskWriteLocked, fmsg.ErrorCodeStorageBackpressureException:
 		return ErrStorage
 	case fmsg.ErrorCodeOutOfOrderSequenceException, fmsg.ErrorCodeDuplicateSequenceException, fmsg.ErrorCodeUnknownWriterIdException:
 		return ErrSequence
@@ -129,7 +131,9 @@ func retriableErrorCode(code fmsg.ErrorCode) bool {
 		fmsg.ErrorCodeInvalidCoordinatorException, fmsg.ErrorCodeRequestTimeOut,
 		fmsg.ErrorCodeOperationNotAttemptedException, fmsg.ErrorCodeNotEnoughReplicasAfterAppendException,
 		fmsg.ErrorCodeNotEnoughReplicasException, fmsg.ErrorCodeLeaderNotAvailableException,
-		fmsg.ErrorCodeRetriableAuthenticateException, fmsg.ErrorCodeIneligibleReplicaException:
+		fmsg.ErrorCodeRetriableAuthenticateException, fmsg.ErrorCodeIneligibleReplicaException,
+		fmsg.ErrorCodeNotCoordinatorLeaderException, fmsg.ErrorCodeInvalidBucketRouting,
+		fmsg.ErrorCodeDiskWriteLocked, fmsg.ErrorCodeStorageBackpressureException:
 		return true
 	default:
 		return false

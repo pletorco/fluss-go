@@ -669,7 +669,7 @@ func TestAppendWriterMovesStickyBatchAfterSizeBoundary(t *testing.T) {
 	}
 }
 
-func TestClientAppendWriterBackendUsesFluss091Messages(t *testing.T) {
+func TestClientAppendWriterBackendUsesFluss100Messages(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	var produced *fmsg.ProduceLogRequest
 	client := routedWriterClient(t,
@@ -693,6 +693,9 @@ func TestClientAppendWriterBackendUsesFluss091Messages(t *testing.T) {
 				}
 				message.WriterId = proto.Int64(77)
 			case *fmsg.ProduceLogResponse:
+				if request.Version() != 1 {
+					t.Fatalf("ProduceLog version = %d, want negotiated v1", request.Version())
+				}
 				produced = request.(*fmsg.MessageRequest).Message().(*fmsg.ProduceLogRequest)
 				message.BucketsResp = []*fmsg.PbProduceLogRespForBucket{{
 					BucketId: proto.Int32(0), ErrorCode: proto.Int32(0), BaseOffset: proto.Int64(100),
@@ -811,7 +814,7 @@ func routedWriterClient(
 	tablet := newClient(tabletHandler, nil)
 	tablet.serverID, tablet.address, tablet.serverType = 2, tabletNode.Address, TabletServer
 	tablet.versions[fmsg.APIKeyInitWriter] = 0
-	tablet.versions[fmsg.APIKeyProduceLog] = 0
+	tablet.versions[fmsg.APIKeyProduceLog] = 1
 	manager := newConnectionManager(config{})
 	manager.clients[connectionKey{id: 1, address: coordinatorNode.Address, serverType: Coordinator}] = coordinator
 	manager.clients[connectionKey{id: 2, address: tabletNode.Address, serverType: TabletServer}] = tablet

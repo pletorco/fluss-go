@@ -1,6 +1,6 @@
 # Write scheduling decision
 
-Status: accepted for the Apache Fluss 0.9.1 client.
+Status: accepted for the Apache Fluss 1.0 client.
 
 ## Current ownership
 
@@ -73,7 +73,7 @@ transport can multiplex requests, and the saturation benchmark shows the
 throughput available when eight independent buckets can make progress. Doing
 the same for one bucket would require allocating sequences before completion,
 committing responses in sequence order, retaining later successful responses
-behind a failed earlier request, and implementing the Fluss 0.9.1 writer-ID
+behind a failed earlier request, and implementing the Fluss 1.0 writer-ID
 reset rules. The synthetic upper bound does not justify that state machine for
 the initial Go client. One active request per bucket remains the explicit
 ordering and idempotence boundary.

@@ -229,9 +229,11 @@ func (r *ScanResult) Release() {
 }
 
 type scannerFetch struct {
-	records       []byte
-	highWatermark int64
-	remote        *RemoteLogFetchInfo
+	records                []byte
+	highWatermark          int64
+	filteredEndOffset      int64
+	filteredEndOffsetKnown bool
+	remote                 *RemoteLogFetchInfo
 }
 
 type logScannerBackend interface {
@@ -366,7 +368,11 @@ func (b clientLogScannerBackend) fetch(
 		}
 		records = append(remoteRecords, records...)
 	}
-	return scannerFetch{records: records, highWatermark: result.GetHighWatermark(), remote: remote}, nil
+	return scannerFetch{
+		records: records, highWatermark: result.GetHighWatermark(),
+		filteredEndOffset: result.GetFilteredEndOffset(), filteredEndOffsetKnown: result.FilteredEndOffset != nil,
+		remote: remote,
+	}, nil
 }
 
 func remoteLogFetchInfo(info *fmsg.PbRemoteLogFetchInfo) *RemoteLogFetchInfo {
@@ -687,6 +693,19 @@ func (s *LogScanner) pollBucket(
 		})
 		result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: err})
 		return nil
+	}
+	if fetched.filteredEndOffsetKnown {
+		if fetched.filteredEndOffset < offset {
+			releaseScanArrows(arrows)
+			result.BucketErrors = append(result.BucketErrors, BucketScanError{
+				Bucket: bucket,
+				Err:    fmt.Errorf("%w: filtered end offset %d precedes fetch offset %d", ErrValidation, fetched.filteredEndOffset, offset),
+			})
+			return nil
+		}
+		if fetched.filteredEndOffset > next {
+			next = fetched.filteredEndOffset
+		}
 	}
 	if s.dynamic {
 		rows = s.projectScanRows(rows)

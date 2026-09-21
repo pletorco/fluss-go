@@ -31,13 +31,13 @@ SonarQube Community Edition records these local analyses under its single
 reported by the scanner against `git rev-parse HEAD` and use the Quality Gate
 result for that revision.
 
-The current prepared prerelease is `v0.1.0-beta.11`, with release notes in
-`.github/releases/v0.1.0-beta.11.md`.
+The current prepared prerelease is `v0.2.0-beta.1`, with release notes in
+`.github/releases/v0.2.0-beta.1.md`.
 
 ## Before publication
 
 1. Merge the release-preparation PR.
-2. Confirm the required CI, dependency review, `Fluss 0.9.1 live` integration,
+2. Confirm the required CI, dependency review, `Fluss 1.0 live` integration,
    and security checks passed for the exact merge commit. The integration check
    is a stable branch-protection context and must not be bypassed for runtime,
    protocol, fixture, or dependency changes. Inspect its retained reliability
@@ -74,28 +74,28 @@ fix `main` through another reviewed PR and release the corrected commit.
 Create an annotated tag on the verified `main` commit:
 
 ```sh
-git tag -a v0.1.0-beta.11 -m "fluss-go v0.1.0-beta.11"
-git show --no-patch --decorate v0.1.0-beta.11
-git push origin v0.1.0-beta.11
+git tag -a v0.2.0-beta.1 -m "fluss-go v0.2.0-beta.1"
+git show --no-patch --decorate v0.2.0-beta.1
+git push origin v0.2.0-beta.1
 ```
 
 Then create the GitHub prerelease from the committed notes:
 
 ```sh
-gh release create v0.1.0-beta.11 \
+gh release create v0.2.0-beta.1 \
   --repo pletorco/fluss-go \
   --verify-tag \
   --prerelease \
-  --title "fluss-go v0.1.0-beta.11" \
-  --notes-file .github/releases/v0.1.0-beta.11.md
+  --title "fluss-go v0.2.0-beta.1" \
+  --notes-file .github/releases/v0.2.0-beta.1.md
 ```
 
 Verify that the release target SHA equals the peeled annotated tag and the
 reviewed `main` commit:
 
 ```sh
-test "$(git rev-parse v0.1.0-beta.11^{})" = "$(git rev-parse origin/main)"
-gh release view v0.1.0-beta.11 --repo pletorco/fluss-go
+test "$(git rev-parse v0.2.0-beta.1^{})" = "$(git rev-parse origin/main)"
+gh release view v0.2.0-beta.1 --repo pletorco/fluss-go
 ```
 
 ### Adapter module tags
@@ -105,12 +105,12 @@ root tag first, wait until the public Go proxy resolves it, and then publish
 path-prefixed adapter tags on the same reviewed commit:
 
 ```sh
-git tag -a adapters/hdfs/v0.1.0-beta.11 -m "fluss-go HDFS adapter v0.1.0-beta.11"
-git tag -a adapters/oss/v0.1.0-beta.11 -m "fluss-go OSS adapter v0.1.0-beta.11"
-git tag -a adapters/otel/v0.1.0-beta.11 -m "fluss-go OpenTelemetry adapter v0.1.0-beta.11"
-git tag -a adapters/s3/v0.1.0-beta.11 -m "fluss-go S3 adapter v0.1.0-beta.11"
-git push origin adapters/hdfs/v0.1.0-beta.11 adapters/oss/v0.1.0-beta.11 \
-  adapters/otel/v0.1.0-beta.11 adapters/s3/v0.1.0-beta.11
+git tag -a adapters/hdfs/v0.2.0-beta.1 -m "fluss-go HDFS adapter v0.2.0-beta.1"
+git tag -a adapters/oss/v0.2.0-beta.1 -m "fluss-go OSS adapter v0.2.0-beta.1"
+git tag -a adapters/otel/v0.2.0-beta.1 -m "fluss-go OpenTelemetry adapter v0.2.0-beta.1"
+git tag -a adapters/s3/v0.2.0-beta.1 -m "fluss-go S3 adapter v0.2.0-beta.1"
+git push origin adapters/hdfs/v0.2.0-beta.1 adapters/oss/v0.2.0-beta.1 \
+  adapters/otel/v0.2.0-beta.1 adapters/s3/v0.2.0-beta.1
 ```
 
 The adapter `go.mod` files use a repository-local `replace` for development.
@@ -127,10 +127,10 @@ direct VCS fallback:
 
 ```sh
 GOPROXY=https://proxy.golang.org GONOSUMDB= \
-  go list -m -json github.com/pletorco/fluss-go@v0.1.0-beta.11
+  go list -m -json github.com/pletorco/fluss-go@v0.2.0-beta.1
 ```
 
-Confirm that the returned `Version` is `v0.1.0-beta.11` and that its origin hash
+Confirm that the returned `Version` is `v0.2.0-beta.1` and that its origin hash
 matches the released commit. The proxy may need a short propagation interval,
 but a failed lookup must not be hidden by `GOPROXY=direct`.
 
@@ -138,19 +138,19 @@ For beta.7 and later, repeat the proxy check for every published adapter:
 
 ```sh
 GOPROXY=https://proxy.golang.org GONOSUMDB= \
-  go list -m -json github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.11
+  go list -m -json github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.1
 ```
 
 Open the version-pinned online references and verify their package manuals,
 exported contracts, and examples:
 
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.1.0-beta.11`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.1.0-beta.11`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.1.0-beta.11`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.1.0-beta.11`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.1.0-beta.11`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/otel@v0.1.0-beta.11`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/s3@v0.1.0-beta.11`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.2.0-beta.1`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.2.0-beta.1`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.2.0-beta.1`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.2.0-beta.1`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.2.0-beta.1`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/otel@v0.2.0-beta.1`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.1`
 
 Check at minimum the `fgo` TLS/SASL and error examples and the `fadm` advanced
 administration examples. Record any pkg.go.dev indexing delay on the release

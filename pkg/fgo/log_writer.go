@@ -31,7 +31,7 @@ const (
 // LogFormat selects the row or Arrow encoding used for log batches.
 type LogFormat string
 
-// Log write formats supported by Apache Fluss 0.9.1.
+// Log write formats supported by Apache Fluss 1.0.
 const (
 	LogFormatAuto      LogFormat = "auto"
 	LogFormatArrow     LogFormat = "arrow"
@@ -215,6 +215,10 @@ type WriteResult struct {
 	OffsetKnown bool
 	// Records is the number of records completed by this result.
 	Records int
+	// Pressure is the successful KV response's normalized storage pressure when PressureKnown is true.
+	Pressure float32
+	// PressureKnown reports whether Fluss supplied a KV storage-pressure signal.
+	PressureKnown bool
 	// Err is the terminal mutation error.
 	Err error
 }

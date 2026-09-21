@@ -7,10 +7,10 @@ readonly COMPOSE_FILE="$ROOT/integration/compose.yml"
 readonly TLS_COMPOSE_FILE="$ROOT/integration/compose-tls.yml"
 readonly PROJECT="fluss-go-integration"
 readonly TLS_PROJECT="fluss-go-tls-integration"
-readonly FLUSS_IMAGE="apache/fluss@sha256:65f5513b33dde10ace4f8adb3956f17226a2a1e2663f92b3096e4769b0ee1d1c"
+readonly FLUSS_IMAGE="apache/fluss@sha256:ff461b45438033da4fd1c2556d3f978f3603bb3632fe075c2bd57388339a58cb"
 readonly HAPROXY_IMAGE="haproxy@sha256:66e25cc9a8332635f4e897f7f4b1e5622c25f09f0ee23cddc6ce9bdb3a24772a"
-readonly FLUSS_VERSION="0.9.1-incubating"
-readonly FLUSS_COMMIT="6bf969f71af8d6f9cc37383ab89ae46a58b0e227"
+readonly FLUSS_VERSION="1.0.0"
+readonly FLUSS_COMMIT="5c07f88e50a8ff41b0ebc214a0458e5dba60be37"
 readonly TLS_DIR="$(mktemp -d)"
 
 export FLUSS_INTEGRATION=1
@@ -107,23 +107,23 @@ go test ./pkg/fgo -run '^Test(CompactedPrimaryKeyMatchesJavaFixture|RowsMatchJav
 go test -tags=integration -run '^TestReliabilityConfigValidation$' ./integration
 
 if [[ "${FLUSS_RELIABILITY_ONLY:-0}" == "1" ]]; then
-  selected_reliability="$(go test -tags=integration -list '^TestFluss091Reliability$' ./integration)"
-  if ! grep -qx 'TestFluss091Reliability' <<<"$selected_reliability"; then
-    printf 'no Fluss 0.9.1 reliability test was selected\n' >&2
+  selected_reliability="$(go test -tags=integration -list '^TestFluss100Reliability$' ./integration)"
+  if ! grep -qx 'TestFluss100Reliability' <<<"$selected_reliability"; then
+    printf 'no Fluss 1.0 reliability test was selected\n' >&2
     exit 1
   fi
-  go test -tags=integration -count=1 -timeout=35m -v -run '^TestFluss091Reliability$' ./integration
+  go test -tags=integration -count=1 -timeout=35m -v -run '^TestFluss100Reliability$' ./integration
   exit 0
 fi
 
-selected_tests="$(go test -tags=integration -list '^TestFluss091(Integration|Reliability)$' ./integration)"
-for test_name in TestFluss091Integration TestFluss091Reliability; do
+selected_tests="$(go test -tags=integration -list '^TestFluss100(Integration|Reliability)$' ./integration)"
+for test_name in TestFluss100Integration TestFluss100Reliability; do
   if ! grep -qx "$test_name" <<<"$selected_tests"; then
-    printf 'required Fluss 0.9.1 live test %s was not selected\n' "$test_name" >&2
+    printf 'required Fluss 1.0 live test %s was not selected\n' "$test_name" >&2
     exit 1
   fi
 done
-go test -tags=integration -count=1 -timeout=7m -v -run '^TestFluss091(Integration|Reliability)$' ./integration
+go test -tags=integration -count=1 -timeout=7m -v -run '^TestFluss100(Integration|Reliability)$' ./integration
 
 compose down --volumes --remove-orphans >/dev/null
 tls_compose up --detach --wait --wait-timeout 180
@@ -143,9 +143,9 @@ if [[ "$actual_proxy_image" != "$HAPROXY_IMAGE" ]]; then
   exit 1
 fi
 
-selected_tls_tests="$(go test -tags=integration -list '^TestFluss091TLSIntegration$' ./integration)"
-if ! grep -qx 'TestFluss091TLSIntegration' <<<"$selected_tls_tests"; then
-  printf 'no Fluss 0.9.1 TLS integration test was selected\n' >&2
+selected_tls_tests="$(go test -tags=integration -list '^TestFluss100TLSIntegration$' ./integration)"
+if ! grep -qx 'TestFluss100TLSIntegration' <<<"$selected_tls_tests"; then
+  printf 'no Fluss 1.0 TLS integration test was selected\n' >&2
   exit 1
 fi
-go test -tags=integration -count=1 -timeout=3m -v -run '^TestFluss091TLSIntegration$' ./integration
+go test -tags=integration -count=1 -timeout=3m -v -run '^TestFluss100TLSIntegration$' ./integration

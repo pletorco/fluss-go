@@ -137,11 +137,11 @@ func (b schedulingKVBackend) initWriter(
 	return b.schedule.initWriter(ctx, path, bucket)
 }
 
-func (b schedulingKVBackend) put(ctx context.Context, request kvPutRequest) (int64, error) {
+func (b schedulingKVBackend) put(ctx context.Context, request kvPutRequest) (kvPutResult, error) {
 	b.schedule.calls.Add(1)
 	batch, err := DecodeKVBatch(request.records)
 	if err != nil {
-		return 0, err
+		return kvPutResult{}, err
 	}
 	b.schedule.mu.Lock()
 	control := b.schedule.controls[batch.WriterID]
@@ -153,13 +153,13 @@ func (b schedulingKVBackend) put(ctx context.Context, request kvPutRequest) (int
 		select {
 		case <-control.block:
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return kvPutResult{}, ctx.Err()
 		}
 	}
 	if control != nil && control.err != nil {
-		return 0, control.err
+		return kvPutResult{}, control.err
 	}
-	return b.schedule.calls.Load(), nil
+	return kvPutResult{logEnd: b.schedule.calls.Load()}, nil
 }
 
 type bucketExecutionProbe struct {
@@ -258,12 +258,13 @@ func (bucketIsolationKVBackend) initWriter(
 func (b bucketIsolationKVBackend) put(
 	ctx context.Context,
 	request kvPutRequest,
-) (int64, error) {
+) (kvPutResult, error) {
 	batch, err := DecodeKVBatch(request.records)
 	if err != nil {
-		return 0, err
+		return kvPutResult{}, err
 	}
-	return b.probe.execute(ctx, request.bucket, batch.BatchSequence)
+	offset, err := b.probe.execute(ctx, request.bucket, batch.BatchSequence)
+	return kvPutResult{logEnd: offset}, err
 }
 
 func twoBucketLocations() map[int32]ServerNode {

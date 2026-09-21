@@ -34,6 +34,8 @@ type UpsertWriterConfig struct {
 	// RetryPolicy controls bounded retries of idempotent batches. More than one
 	// attempt requires Acks=-1.
 	RetryPolicy WriterRetryPolicy
+	// BackpressureMaxThrottle bounds the per-bucket delay derived from successful KV pressure signals.
+	BackpressureMaxThrottle time.Duration
 	// Partition selects one named physical partition; empty selects the table.
 	Partition string
 	// MergeMode selects merge-engine or overwrite semantics.
@@ -134,6 +136,18 @@ func WithUpsertRetryPolicy(policy WriterRetryPolicy) UpsertWriterOption {
 	}
 }
 
+// WithUpsertBackpressureMaxThrottle sets the maximum per-bucket pressure delay.
+// Positive pressure p applies a quadratic delay of max*p*p before the next batch.
+func WithUpsertBackpressureMaxThrottle(maximum time.Duration) UpsertWriterOption {
+	return func(config *UpsertWriterConfig) error {
+		if maximum < 0 || maximum > time.Minute {
+			return fmt.Errorf("%w: KV backpressure throttle must be between zero and one minute", ErrInvalidConfig)
+		}
+		config.BackpressureMaxThrottle = maximum
+		return nil
+	}
+}
+
 // WithUpsertPartition routes writes to the named physical partition.
 func WithUpsertPartition(partition string) UpsertWriterOption {
 	return func(config *UpsertWriterConfig) error {
@@ -161,7 +175,13 @@ func WithUpsertPartitionSpec(schema Schema, spec PartitionSpec) UpsertWriterOpti
 type upsertWriterBackend interface {
 	metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
-	put(context.Context, kvPutRequest) (int64, error)
+	put(context.Context, kvPutRequest) (kvPutResult, error)
+}
+
+type kvPutResult struct {
+	logEnd        int64
+	pressure      float32
+	pressureKnown bool
 }
 
 type clientUpsertWriterBackend struct{ client *Client }
@@ -197,10 +217,10 @@ func (b clientUpsertWriterBackend) initWriter(ctx context.Context, path Physical
 func (b clientUpsertWriterBackend) put(
 	ctx context.Context,
 	input kvPutRequest,
-) (int64, error) {
+) (kvPutResult, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyPutKv, 0)
 	if err != nil {
-		return 0, err
+		return kvPutResult{}, err
 	}
 	message := request.Message().(*fmsg.PutKvRequest)
 	message.Acks = proto.Int32(input.acks)
@@ -215,20 +235,26 @@ func (b clientUpsertWriterBackend) put(
 	message.BucketsReq = []*fmsg.PbPutKvReqForBucket{bucketRequest}
 	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
 	if err != nil {
-		return 0, err
+		return kvPutResult{}, err
 	}
 	put, ok := response.Message().(*fmsg.PutKvResponse)
 	if !ok {
-		return 0, fmt.Errorf("fgo: put KV: unexpected response %T", response.Message())
+		return kvPutResult{}, fmt.Errorf("fgo: put KV: unexpected response %T", response.Message())
 	}
 	if len(put.GetBucketsResp()) != 1 || put.GetBucketsResp()[0].GetBucketId() != input.bucket {
-		return 0, fmt.Errorf("%w: put KV response omitted bucket %d", ErrValidation, input.bucket)
+		return kvPutResult{}, fmt.Errorf("%w: put KV response omitted bucket %d", ErrValidation, input.bucket)
 	}
 	result := put.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyPutKv); err != nil {
-		return 0, err
+		return kvPutResult{}, err
 	}
-	return result.GetLogEndOffset(), nil
+	pressure := result.GetPressure()
+	if result.Pressure != nil && (math.IsNaN(float64(pressure)) || pressure < 0 || pressure >= 1) {
+		return kvPutResult{}, fmt.Errorf("%w: invalid KV pressure %v", ErrValidation, pressure)
+	}
+	return kvPutResult{
+		logEnd: result.GetLogEndOffset(), pressure: pressure, pressureKnown: result.Pressure != nil,
+	}, nil
 }
 
 // UpsertWriter batches primary-key upserts and deletes.
@@ -281,6 +307,7 @@ type upsertWriterLoop struct {
 	active      map[int32]bool
 	sequences   map[int32]int32
 	poisoned    map[int32]error
+	throttle    map[int32]time.Time
 	completions chan kvBatchCompletion
 	inFlight    int
 	timer       *time.Timer
@@ -288,13 +315,15 @@ type upsertWriterLoop struct {
 }
 
 type kvBatchCompletion struct {
-	bucket      int32
-	batch       *kvPendingBatch
-	logEnd      int64
-	offsetKnown bool
-	bytes       int
-	started     time.Time
-	err         error
+	bucket        int32
+	batch         *kvPendingBatch
+	logEnd        int64
+	offsetKnown   bool
+	pressure      float32
+	pressureKnown bool
+	bytes         int
+	started       time.Time
+	err           error
 }
 
 // NewUpsertWriter creates a primary-key writer for table.
@@ -390,7 +419,7 @@ func upsertWriterConfig(options []UpsertWriterOption) (UpsertWriterConfig, error
 		MaxBatchBytes: 1 << 20, MaxBatchRecords: 1000, MaxBuffered: 10_000,
 		MaxConcurrentRequests: 4,
 		BatchTimeout:          5 * time.Millisecond, RequestTimeout: 30 * time.Second, Acks: -1,
-		RetryPolicy: defaultWriterRetryPolicy(),
+		RetryPolicy: defaultWriterRetryPolicy(), BackpressureMaxThrottle: time.Second,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -689,7 +718,7 @@ func (w *UpsertWriter) run() {
 	loop := &upsertWriterLoop{
 		writer: w, batches: make(map[int32]*kvPendingBatch), pending: make(map[int32][]*kvPendingBatch),
 		active: make(map[int32]bool), sequences: make(map[int32]int32),
-		poisoned:    make(map[int32]error),
+		poisoned: make(map[int32]error), throttle: make(map[int32]time.Time),
 		completions: make(chan kvBatchCompletion, w.config.MaxConcurrentRequests),
 		timer:       timer,
 	}
@@ -778,7 +807,7 @@ func (l *upsertWriterLoop) flushBucket(bucket int32) error {
 	delete(l.batches, bucket)
 	if err := l.poisoned[bucket]; err != nil {
 		poisoned := fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err)
-		l.writer.completeKVBatch(batch, bucket, 0, false, poisoned)
+		l.writer.completeKVBatch(batch, bucket, 0, false, 0, false, poisoned)
 		return poisoned
 	}
 	l.pending[bucket] = append(l.pending[bucket], batch)
@@ -798,7 +827,12 @@ func (l *upsertWriterLoop) dispatch() {
 			l.active[bucket] = true
 			l.inFlight++
 			sequence := l.sequences[bucket]
-			go l.executeBatch(bucket, batch, sequence)
+			delay := time.Until(l.throttle[bucket])
+			if delay <= 0 {
+				delete(l.throttle, bucket)
+				delay = 0
+			}
+			go l.executeBatch(bucket, batch, sequence, delay)
 			dispatched = true
 			if l.inFlight == l.writer.config.MaxConcurrentRequests {
 				break
@@ -810,24 +844,33 @@ func (l *upsertWriterLoop) dispatch() {
 	}
 }
 
-func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequence int32) {
+func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequence int32, throttle time.Duration) {
 	encoded, err := (KVBatch{
 		SchemaID: int16(l.writer.table.SchemaID), WriterID: l.writer.writerID,
 		BatchSequence: sequence, Records: batch.records,
 	}).Encode()
 	var result writerAttemptResult
+	var pressure float32
+	var pressureKnown bool
 	started := metricStart(l.writer.observer)
 	if err == nil {
+		if throttle > 0 {
+			timer := time.NewTimer(throttle)
+			<-timer.C
+		}
 		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.RequestTimeout)
 		result = executeWriterAttempts(
 			requestCtx, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
 			func(ctx context.Context) (int64, bool, error) {
-				offset, err := l.writer.backend.put(ctx, kvPutRequest{
+				put, err := l.writer.backend.put(ctx, kvPutRequest{
 					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 					targets: batch.targets, records: encoded, timeout: l.writer.config.RequestTimeout, acks: l.writer.config.Acks,
 					mergeMode: l.writer.config.MergeMode,
 				})
-				return offset, err == nil, err
+				if err == nil {
+					pressure, pressureKnown = put.pressure, put.pressureKnown
+				}
+				return put.logEnd, err == nil, err
 			},
 		)
 		if result.err != nil && requestCtx.Err() != nil {
@@ -839,6 +882,7 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 	}
 	l.completions <- kvBatchCompletion{
 		bucket: bucket, batch: batch, logEnd: result.offset, offsetKnown: result.offsetKnown,
+		pressure: pressure, pressureKnown: pressureKnown,
 		bytes: len(encoded), started: started, err: result.err,
 	}
 }
@@ -858,18 +902,25 @@ func (l *upsertWriterLoop) handleCompletion(completion kvBatchCompletion) error 
 	})
 	if completion.err != nil {
 		l.poisoned[completion.bucket] = completion.err
-		l.writer.completeKVBatch(completion.batch, completion.bucket, 0, false, completion.err)
+		l.writer.completeKVBatch(completion.batch, completion.bucket, 0, false, 0, false, completion.err)
 		for _, batch := range l.pending[completion.bucket] {
 			poisoned := fmt.Errorf(
 				"%w: bucket %d: %v", ErrWriterState, completion.bucket, completion.err,
 			)
-			l.writer.completeKVBatch(batch, completion.bucket, 0, false, poisoned)
+			l.writer.completeKVBatch(batch, completion.bucket, 0, false, 0, false, poisoned)
 		}
 		delete(l.pending, completion.bucket)
 	} else {
+		if completion.pressureKnown && completion.pressure > 0 && l.writer.config.BackpressureMaxThrottle > 0 {
+			delay := time.Duration(float64(l.writer.config.BackpressureMaxThrottle) * float64(completion.pressure) * float64(completion.pressure))
+			l.throttle[completion.bucket] = time.Now().Add(delay)
+		} else if completion.pressureKnown {
+			delete(l.throttle, completion.bucket)
+		}
 		l.sequences[completion.bucket]++
 		l.writer.completeKVBatch(
-			completion.batch, completion.bucket, completion.logEnd, completion.offsetKnown, nil,
+			completion.batch, completion.bucket, completion.logEnd, completion.offsetKnown,
+			completion.pressure, completion.pressureKnown, nil,
 		)
 	}
 	l.dispatch()
@@ -916,6 +967,8 @@ func (w *UpsertWriter) completeKVBatch(
 	bucket int32,
 	logEnd int64,
 	offsetKnown bool,
+	pressure float32,
+	pressureKnown bool,
 	err error,
 ) {
 	first := int64(0)
@@ -925,7 +978,7 @@ func (w *UpsertWriter) completeKVBatch(
 	for index, item := range batch.items {
 		item.future.complete(WriteResult{
 			Bucket: bucket, BaseOffset: first + int64(index), OffsetKnown: offsetKnown,
-			Records: 1, Err: err,
+			Records: 1, Pressure: pressure, PressureKnown: pressureKnown, Err: err,
 		})
 	}
 }

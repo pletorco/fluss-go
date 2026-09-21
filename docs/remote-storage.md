@@ -2,7 +2,7 @@
 
 `fluss-go` keeps filesystem SDKs optional. Configure
 `fgo.WithRemoteFileReader` to read remote log segments advertised by Fluss
-0.9.1. When the client has a current filesystem security token, each request
+1.0. When the client has a current filesystem security token, each request
 receives a clone. Requests may have a nil token when refresh is disabled or no
 valid token is available. Implementations must not include token bytes in
 errors or logs.
@@ -163,7 +163,7 @@ instead of returning an untyped generic error.
 The integration contract is covered by
 `TestRemoteAndLocalLogPayloadsMergeWithoutGaps`,
 `TestRemoteSnapshotBatchProviderDownloadsAndDecodes`, and the opt-in Fluss
-0.9.1 suite. A filesystem adapter should additionally run those tests against
+1.0 suite. A filesystem adapter should additionally run those tests against
 its lake-enabled environment.
 
 ## Native lake formats

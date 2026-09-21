@@ -1,4 +1,4 @@
-name: Fluss 0.9.1 Reliability
+name: Fluss 1.0 Reliability
 
 on:
   schedule:
@@ -40,7 +40,7 @@ on:
         type: string
 
 concurrency:
-  group: fluss-0.9.1-reliability-${{ github.event_name }}-${{ github.ref }}
+  group: fluss-1.0-reliability-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:

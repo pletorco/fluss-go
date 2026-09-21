@@ -1,4 +1,4 @@
-name: Fluss 0.9.1 Integration
+name: Fluss 1.0 Integration
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
     - cron: '31 2 * * 3'
 
 concurrency:
-  group: fluss-0.9.1-integration-${{ github.event.pull_request.number || github.ref }}
+  group: fluss-1.0-integration-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   live:
-    name: Fluss 0.9.1 live
+    name: Fluss 1.0 live
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

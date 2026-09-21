@@ -4,7 +4,7 @@ go 1.25.0
 
 toolchain go1.26.6
 
-require github.com/pletorco/fluss-go v0.1.0-beta.11
+require github.com/pletorco/fluss-go v0.2.0-beta.1
 
 require (
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect

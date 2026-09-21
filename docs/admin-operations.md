@@ -1,14 +1,31 @@
 # Advanced administration
 
-Package `fadm` exposes the Apache Fluss 0.9.1-incubating coordinator APIs that
+Package `fadm` exposes the Apache Fluss 1.0.0 coordinator APIs that
 are outside the catalog and ACL workflows. Construct one `fadm.Client` from the
 application's shared `fgo.Client`; the admin client does not own or close the
 underlying connections.
 
-The APIs in this guide use server-assigned IDs and Fluss 0.9.1 protocol status
+The APIs in this guide use server-assigned IDs and Fluss 1.0 protocol status
 codes. Do not persist inferred meanings for raw numeric codes across Fluss
 versions. Resolve logical paths again after catalog changes and use the IDs
 returned by the current cluster.
+
+## Fluss 1.0 catalog and health operations
+
+`AlterDatabase` changes a database comment and applies the same set, delete,
+append, and subtract configuration operations used by table and cluster
+alteration. An empty change is rejected locally. As with every catalog
+mutation, reconcile an ambiguous result with `GetDatabaseInfo` before retrying.
+
+`GetClusterHealth` returns aggregate replica, in-sync replica, leader, and
+active-leader counts plus `ClusterHealthGreen`, `ClusterHealthYellow`,
+`ClusterHealthRed`, or `ClusterHealthUnknown`. The value is a point-in-time
+observation, not a readiness subscription.
+
+`AlterTable` accepts `BucketCount` for Fluss 1.0 bucket rescaling. The requested
+count must be positive. Refresh table metadata after the operation and route
+with the server-reported bucket count and epoch; do not retain a pre-rescale
+bucket snapshot.
 
 ## Cluster configuration
 
@@ -35,7 +52,7 @@ See the compile-checked
 `GetServerNodes` returns the coordinator followed by alive tablet servers.
 `AddServerTag` and `RemoveServerTag` accept server IDs from that current
 snapshot and one of `ServerTagPermanentOffline` or
-`ServerTagTemporaryOffline`. Apache Fluss 0.9.1 rejects every other numeric
+`ServerTagTemporaryOffline`. Apache Fluss 1.0 rejects every other numeric
 value.
 
 Server membership can change between discovery and mutation. Refresh the node
@@ -50,16 +67,16 @@ the [live evidence matrix](live-evidence.md).
 
 ## Rebalance lifecycle
 
-`Rebalance` requires one or more Fluss 0.9.1 goal IDs and returns a
+`Rebalance` requires one or more Fluss 1.0 goal IDs and returns a
 server-assigned rebalance ID. Preserve that ID for progress queries and
 cancellation. Goal IDs and status values are raw protocol codes because Fluss
-0.9.1 does not expose a stable named enum through this client.
+1.0 does not expose a stable named enum through this client.
 
 `ListRebalanceProgress` performs one query. `WaitRebalance` polls at the requested
 positive interval until the top-level status is not zero, where zero means
 running. A nonzero status is terminal but is not necessarily success; inspect
 the top-level and per-bucket status codes according to the target cluster's
-Fluss 0.9.1 operational definitions.
+Fluss 1.0 operational definitions.
 
 Canceling the wait context stops only local polling. It does not cancel the
 server operation. On timeout, shutdown, or another abandoned wait, call
@@ -104,6 +121,11 @@ for a specific table, partition, bucket, and snapshot ID.
 Snapshot IDs are scoped by their table, partition, and bucket. A
 `PartitionID` of -1 identifies an unpartitioned table; all other IDs and bucket
 numbers must be non-negative.
+
+`ListKVSnapshots` lists every active retained or still-in-use snapshot for one
+table or partition and preserves multiple entries for the same bucket.
+`GetLatestKVSnapshots` remains the logical-path convenience for the latest
+snapshot per bucket.
 
 `AcquireKVSnapshotLease` requires an application-unique lease ID, a positive
 duration, and at least one snapshot. Its returned slice contains snapshots
@@ -151,6 +173,11 @@ partition, bucket, and log-offset entries. As with KV snapshots,
 `PartitionID == -1` means the table is unpartitioned. Treat the returned
 physical IDs as a coherent point-in-time set and do not combine bucket entries
 from separate responses without an application-level consistency policy.
+
+`ListRemoteLogManifests` returns the committed manifest path and remote log end
+offset for every listed bucket. It accepts current physical IDs; use `-1` for
+an unpartitioned table and refresh metadata after rescaling or partition
+changes.
 
 ## Per-bucket table statistics
 

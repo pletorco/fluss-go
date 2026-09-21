@@ -37,7 +37,7 @@ OSS, 84 for OpenTelemetry, and 89 for S3 with their local root replacement.
 Module graph size is not binary size, but separating requirements also narrows
 license, update, and vulnerability review for core-only consumers.
 
-Apache Arrow remains a root dependency. Fluss 0.9.1 uses Arrow record batches,
+Apache Arrow remains a root dependency. Fluss 1.0 uses Arrow record batches,
 and exported `fgo` APIs intentionally accept and return Arrow types with
 explicit ownership. Moving those APIs now would break the data client while
 leaving row/log decoding dependent on Arrow IPC and compression. This is an

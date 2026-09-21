@@ -1,6 +1,6 @@
 # Data operations and advanced options
 
-This guide covers the Apache Fluss 0.9.1 data features that build on an opened
+This guide covers the Apache Fluss 1.0 data features that build on an opened
 `fgo.Client` and authoritative `fgo.Table`. All resources return validation or
 classified server errors; they do not silently repair invalid input.
 
@@ -127,7 +127,7 @@ projection, cache, and error contract.
 `MergeModeOverwrite` bypasses it and writes the supplied values as replacements.
 One writer uses one mode for every mutation it accepts.
 
-`PartialUpsert` sends the complete compacted row shape required by Fluss 0.9.1
+`PartialUpsert` sends the complete compacted row shape required by Fluss 1.0
 and marks only the selected target columns for application. Omitted nullable
 fields are encoded as null placeholders in that payload; the server preserves
 their existing stored values. The selection must include every primary-key
@@ -198,6 +198,7 @@ scanner, err := client.NewBatchScanner(
 	table,
 	buckets[0],
 	fgo.WithBatchLimit(1_000),
+	fgo.WithBatchSizeBytes(1<<20),
 	fgo.WithBatchProjection("id", "name"),
 )
 if err != nil {
@@ -212,7 +213,11 @@ if err != nil {
 defer result.Release()
 ```
 
-Current-state scans use LIMIT_SCAN once. Snapshot scans use
+Primary-key current-state scans use the Fluss 1.0 `SCAN_KV` session API. Each
+poll advances the server-validated call sequence; `WithBatchSizeBytes` bounds a
+response and `Close` explicitly releases an unfinished session. An empty bucket
+may complete without allocating a scanner ID. Log-table current-state scans
+continue to use one bounded `LIMIT_SCAN` request. Snapshot scans use
 `NewSnapshotBatchScanner` and require a `SnapshotBatchProvider` configured when
 the client is opened. A snapshot provider may return its final rows and
 `io.EOF` together; `Poll` then returns those rows with `Done` set. Process the

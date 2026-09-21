@@ -1,4 +1,4 @@
-// Package fgo provides the Apache Fluss 0.9.1 data client.
+// Package fgo provides the Apache Fluss 1.0 data client.
 //
 // Open one [Client] for an application and derive table handles, writers,
 // scanners, lookupers, and administrative clients from it. A Client owns
@@ -39,7 +39,7 @@
 // # Errors and compatibility
 //
 // Public errors support errors.Is and errors.As. The package negotiates
-// protocol versions but intentionally supports only Apache Fluss 0.9.1.
+// protocol versions but intentionally supports only Apache Fluss 1.0.
 // Later server versions require explicit protocol, fixture, and integration
 // validation before they are supported.
 //

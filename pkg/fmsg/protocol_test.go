@@ -94,7 +94,7 @@ func TestProtocolGoldenBytes(t *testing.T) {
 
 func TestErrorCodeRegistry(t *testing.T) {
 	errors := ErrorCodes()
-	if got, want := len(errors), 65; got != want {
+	if got, want := len(errors), 76; got != want {
 		t.Fatalf("ErrorCodes() length = %d, want %d", got, want)
 	}
 	for _, entry := range errors {
@@ -103,8 +103,11 @@ func TestErrorCodeRegistry(t *testing.T) {
 			t.Fatalf("LookupErrorCode(%d) = %#v, %t", entry.Code, got, ok)
 		}
 	}
-	if _, ok := LookupErrorCode(64); ok {
-		t.Fatal("LookupErrorCode(64) unexpectedly succeeded")
+	if got, ok := LookupErrorCode(74); !ok || got.Code != ErrorCodeInvalidBucketRouting {
+		t.Fatalf("LookupErrorCode(74) = %#v, %t", got, ok)
+	}
+	if _, ok := LookupErrorCode(75); ok {
+		t.Fatal("LookupErrorCode(75) unexpectedly succeeded")
 	}
 }
 
@@ -123,9 +126,9 @@ func TestResponseRetainsUnknownFields(t *testing.T) {
 }
 
 func TestRequestValidation(t *testing.T) {
-	_, err := NewRequest(APIKeyPutKv, 2)
+	_, err := NewRequest(APIKeyPutKv, 4)
 	if !errors.Is(err, ErrUnsupportedVersion) {
-		t.Fatalf("NewRequest(PUT_KV, 2) error = %v, want ErrUnsupportedVersion", err)
+		t.Fatalf("NewRequest(PUT_KV, 4) error = %v, want ErrUnsupportedVersion", err)
 	}
 	_, err = NewRequest(APIKeyUpdateMetadata, 0)
 	if !errors.Is(err, ErrPrivateAPI) {

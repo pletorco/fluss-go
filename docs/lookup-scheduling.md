@@ -1,6 +1,6 @@
 # Lookup scheduling decision
 
-Status: accepted for the Apache Fluss 0.9.1 client.
+Status: accepted for the Apache Fluss 1.0 client.
 
 ## Design
 

@@ -1,7 +1,7 @@
 # Reliability testing
 
 The reliability harness runs bounded workloads against the official Apache
-Fluss `0.9.1-incubating` image pinned by digest. It is evidence for client
+Fluss `1.0.0` image pinned by digest. It is evidence for client
 scheduler, connection, memory, cancellation, and shutdown behavior; it is not
 a server benchmark or a production capacity estimate.
 

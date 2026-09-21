@@ -13,7 +13,7 @@ func TestLoadAPIsFromPinnedInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadAPIs() error = %v", err)
 	}
-	if got, want := len(apis), 60; got != want {
+	if got, want := len(apis), expectedAPIKeyCount; got != want {
 		t.Fatalf("len(apis) = %d, want %d", got, want)
 	}
 	for index, api := range apis {
@@ -21,20 +21,26 @@ func TestLoadAPIsFromPinnedInputs(t *testing.T) {
 			t.Fatalf("apis[%d].key = %d, want %d", index, got, want)
 		}
 	}
-	if got, want := apis[16].max, 1; got != want {
-		t.Fatalf("PUT_KV max version = %d, want %d", got, want)
-	}
 	if got, want := apis[17].max, 1; got != want {
 		t.Fatalf("LOOKUP max version = %d, want %d", got, want)
 	}
 	if got, want := apis[34].max, 1; got != want {
 		t.Fatalf("PREFIX_LOOKUP max version = %d, want %d", got, want)
 	}
+	if got, want := apis[14].max, 1; got != want {
+		t.Fatalf("PRODUCE_LOG max version = %d, want %d", got, want)
+	}
+	if got, want := apis[16].max, 3; got != want {
+		t.Fatalf("PUT_KV max version = %d, want %d", got, want)
+	}
+	if got, want := apis[24].max, 1; got != want {
+		t.Fatalf("GET_KV_SNAPSHOT_METADATA max version = %d, want %d", got, want)
+	}
 	errors, err := loadErrors(inputs)
 	if err != nil {
 		t.Fatalf("loadErrors() error = %v", err)
 	}
-	if got, want := len(errors), 65; got != want {
+	if got, want := len(errors), expectedErrorCount; got != want {
 		t.Fatalf("len(errors) = %d, want %d", got, want)
 	}
 	if errors[0].enumName != "UNKNOWN_SERVER_ERROR" || errors[0].code != -1 {

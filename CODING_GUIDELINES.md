@@ -220,7 +220,7 @@ NOTICE, 업데이트 방법과 보안 패치 책임을 함께 기록한다.
 - goroutine, channel, connection, callback, cache와 비동기 상태를 변경하면 race test와
   종료·취소 테스트를 포함해야 한다.
 - 사용자에게 공개되는 Fluss workflow는 unit test만으로 완료하지 않고 Apache Fluss
-  0.9.1 cluster를 사용하는 integration test로 검증한다.
+  Fluss 1.0 cluster를 사용하는 integration test로 검증한다.
 - 실행 환경 때문에 필수 integration 또는 race test를 수행하지 못한 PR은 검증 누락
   상태를 명시하고, 이를 보완할 후속 조건 없이 merge하지 않는다.
 - 생성 코드는 생성 결과 자체의 line coverage보다 generator test, deterministic
@@ -260,7 +260,7 @@ NOTICE, 업데이트 방법과 보안 패치 책임을 함께 기록한다.
 - `task test`: 전체 unit 및 golden test
 - `task test:race`: 동시성 관련 package의 race test
 - `task test:fuzz`: CI에서 실행 가능한 bounded fuzz smoke test
-- `task test:integration`: Apache Fluss 0.9.1 integration test
+- `task test:integration`: Apache Fluss 1.0 integration test
 - `task docs:check`: 공개 package manual과 canonical example 검증
 - `task security`: `govulncheck`, Trivy와 의존성 무결성 검사를 포함하는 로컬 보안 gate
 - `task verify`: PR 전에 필요한 formatter, generation, static analysis와 테스트 검증

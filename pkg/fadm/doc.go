@@ -1,4 +1,4 @@
-// Package fadm provides Apache Fluss 0.9.1 administrative operations.
+// Package fadm provides Apache Fluss 1.0 administrative operations.
 //
 // Construct a [Client] with [New] from an existing fgo.Client. The
 // administrative client reuses the data client's negotiated connections and
@@ -8,7 +8,8 @@
 // The package covers databases, tables, schemas, partitions, offsets, ACLs,
 // cluster configuration, server discovery and tags, rebalance operations,
 // producer offsets, primary-key snapshots and leases, filesystem security
-// tokens, lake snapshots, and table statistics.
+// tokens, lake snapshots, table statistics, cluster health, remote-log
+// manifests, and bucket-count changes.
 //
 // Advanced operational semantics, asynchronous cleanup, ID scopes, leases,
 // and partial-result handling are described in the

@@ -17,7 +17,7 @@ const partitionValueSeparator = "$"
 // PartitionSpec maps every partition key to one value.
 type PartitionSpec map[string]string
 
-// PartitionName resolves a spec in schema partition-key order. Fluss 0.9.1 joins values with "$".
+// PartitionName resolves a spec in schema partition-key order. Fluss joins values with "$".
 func (s Schema) PartitionName(spec PartitionSpec) (string, error) {
 	if len(s.PartitionKey) == 0 {
 		return "", fmt.Errorf("%w: table is not partitioned", ErrInvalidSchema)
@@ -222,11 +222,21 @@ func waitContext(ctx context.Context, delay time.Duration) error {
 
 func (c *Client) checkPartition(ctx context.Context, path PhysicalTablePath) error {
 	if c.router == nil {
-		_, err := c.fetchPartitionMetadata(ctx, path)
-		return err
+		partition, err := c.fetchPartitionMetadata(ctx, path)
+		if err != nil {
+			return err
+		}
+		if _, ok := partition.Buckets[0]; !ok {
+			return fmt.Errorf("%w: %s bucket 0", ErrNoBucketLeader, path)
+		}
+		return nil
 	}
 	c.router.InvalidatePhysical(path)
-	return c.router.RefreshPhysical(ctx, path)
+	if err := c.router.RefreshPhysical(ctx, path); err != nil {
+		return err
+	}
+	_, err := c.router.RoutePhysical(ctx, path, 0)
+	return err
 }
 
 func (c *Client) createPartition(ctx context.Context, path TablePath, spec PartitionSpec) error {

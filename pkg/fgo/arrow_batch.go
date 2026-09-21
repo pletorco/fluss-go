@@ -16,7 +16,7 @@ import (
 // ArrowCompressionType identifies the Arrow IPC compression codec.
 type ArrowCompressionType uint8
 
-// Arrow compression codecs supported by Apache Fluss 0.9.1.
+// Arrow compression codecs supported by Apache Fluss 1.0.
 const (
 	ArrowCompressionNone ArrowCompressionType = iota
 	ArrowCompressionLZ4

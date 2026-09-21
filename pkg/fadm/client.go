@@ -392,6 +392,8 @@ type AlterTable struct {
 	Drop []string
 	// Rename contains column renames.
 	Rename []RenameColumn
+	// BucketCount changes the table distribution when non-nil. Fluss 1.0 requires a positive value.
+	BucketCount *int32
 }
 
 // AlterTable applies configuration and schema changes to path.
@@ -399,8 +401,11 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 	if err := path.Validate(); err != nil {
 		return err
 	}
-	if len(changes.Config)+len(changes.Add)+len(changes.Drop)+len(changes.Rename) == 0 {
+	if len(changes.Config)+len(changes.Add)+len(changes.Drop)+len(changes.Rename) == 0 && changes.BucketCount == nil {
 		return fmt.Errorf("%w: alter table has no changes", fgo.ErrInvalidConfig)
+	}
+	if changes.BucketCount != nil && *changes.BucketCount <= 0 {
+		return fmt.Errorf("%w: alter table bucket count must be positive", fgo.ErrInvalidConfig)
 	}
 	request, err := fmsg.NewRequest(fmsg.APIKeyAlterTable, 0)
 	if err != nil {
@@ -420,18 +425,18 @@ func (c *Client) AlterTable(ctx context.Context, path fgo.TablePath, changes Alt
 	if err := appendRenamedColumns(message, changes.Rename); err != nil {
 		return err
 	}
+	if changes.BucketCount != nil {
+		message.ModifyBucketCount = &fmsg.PbModifyBucketCount{NewBucketCount: changes.BucketCount}
+	}
 	_, err = c.requester.RequestCoordinator(ctx, request)
 	return err
 }
 
 func appendAlterConfigs(message *fmsg.AlterTableRequest, changes []AlterConfig) error {
 	for _, change := range changes {
-		if change.Key == "" || change.Op < ConfigSet || change.Op > ConfigSubtract {
-			return fmt.Errorf("%w: invalid table config change", fgo.ErrInvalidConfig)
-		}
-		item := &fmsg.PbAlterConfig{ConfigKey: proto.String(change.Key), OpType: proto.Int32(int32(change.Op))}
-		if change.Value != nil {
-			item.ConfigValue = proto.String(*change.Value)
+		item, err := alterConfigMessage(change)
+		if err != nil {
+			return err
 		}
 		message.ConfigChanges = append(message.ConfigChanges, item)
 	}

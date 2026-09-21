@@ -49,7 +49,7 @@ body:
     attributes:
       label: Apache Fluss version
       description: Include the image digest or commit when available.
-      placeholder: 0.9.1-incubating
+      placeholder: 1.0.0
     validations:
       required: true
   - type: input
