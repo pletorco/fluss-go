@@ -18,7 +18,7 @@ import (
 	"github.com/pletorco/fluss-go/pkg/fgo"
 )
 
-func TestFluss091TLSIntegration(t *testing.T) {
+func TestFluss100TLSIntegration(t *testing.T) {
 	requireEnvironment(t)
 	coordinator := net.JoinHostPort("127.0.0.1", "19323")
 	tlsConfig := trustedTLSConfig(t)

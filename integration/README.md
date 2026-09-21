@@ -1,10 +1,10 @@
-# Fluss 0.9.1 live compatibility
+# Fluss 1.0 live compatibility
 
 `task test:integration` first starts two isolated clusters from the official
-`apache/fluss:0.9.1-incubating` image pinned to digest
-`sha256:65f5513b33dde10ace4f8adb3956f17226a2a1e2663f92b3096e4769b0ee1d1c`.
+`apache/fluss:1.0.0` image pinned to digest
+`sha256:ff461b45438033da4fd1c2556d3f978f3603bb3632fe075c2bd57388339a58cb`.
 The release tag resolves to upstream commit
-`6bf969f71af8d6f9cc37383ab89ae46a58b0e227`.
+`5c07f88e50a8ff41b0ebc214a0458e5dba60be37`.
 
 The plaintext cluster has one coordinator and three tablet servers with a
 replication factor of three. The second cluster has SASL PLAIN enabled on its
@@ -15,8 +15,8 @@ not a native Fluss TLS listener. The runner generates an ephemeral CA,
 certificate, and passwords, removes them on exit, and redacts credentials from
 failure diagnostics.
 
-The suite verifies the Java 0.9.1 golden fixtures before running live protocol,
-request-cancellation isolation, authentication, routing, catalog, log, KV,
+The suite verifies the byte-level compatibility fixtures before running live
+protocol, request-cancellation isolation, authentication, routing, catalog, log, KV,
 lookup, prefix-lookup, tablet leader-failover data correctness, and coordinator
 restart recovery checks. Failover writes cover every bucket and compare
 acknowledged offsets with a bounded final scan; KV values are verified before

@@ -26,12 +26,12 @@ import (
 )
 
 const (
-	expectedVersion = "0.9.1-incubating"
-	expectedCommit  = "6bf969f71af8d6f9cc37383ab89ae46a58b0e227"
-	expectedImage   = "apache/fluss@sha256:65f5513b33dde10ace4f8adb3956f17226a2a1e2663f92b3096e4769b0ee1d1c"
+	expectedVersion = "1.0.0"
+	expectedCommit  = "5c07f88e50a8ff41b0ebc214a0458e5dba60be37"
+	expectedImage   = "apache/fluss@sha256:ff461b45438033da4fd1c2556d3f978f3603bb3632fe075c2bd57388339a58cb"
 )
 
-func TestFluss091Integration(t *testing.T) {
+func TestFluss100Integration(t *testing.T) {
 	requireEnvironment(t)
 	plainAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_COORDINATOR_PORT", "19123"))
 	saslAddress := net.JoinHostPort("127.0.0.1", env("FLUSS_SASL_COORDINATOR_PORT", "19223"))

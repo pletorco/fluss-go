@@ -8,8 +8,8 @@ set:
   - pipefail
 
 vars:
-  FLUSS_VERSION: 0.9.1-incubating
-  FLUSS_COMMIT: 6bf969f71af8d6f9cc37383ab89ae46a58b0e227
+  FLUSS_VERSION: 1.0.0
+  FLUSS_COMMIT: 5c07f88e50a8ff41b0ebc214a0458e5dba60be37
   FUZZ_ITERATIONS: 1000
   FUZZ_PARALLELISM: 1
   GO_PACKAGES:
@@ -218,7 +218,7 @@ tasks:
         .task/coverage/s3.out > coverage.out
 
   test:integration:
-    desc: Run live tests against pinned plaintext, SASL, and TLS-terminated Fluss 0.9.1 clusters
+    desc: Run live tests against pinned plaintext, SASL, and TLS-terminated Fluss 1.0 clusters
     preconditions:
       - sh: command -v docker >/dev/null 2>&1
         msg: Docker is required for the Fluss integration environment.
@@ -230,7 +230,7 @@ tasks:
       - ./integration/run.sh
 
   test:reliability:
-    desc: Run one configurable reliability profile against pinned Fluss 0.9.1
+    desc: Run one configurable reliability profile against pinned Fluss 1.0
     preconditions:
       - sh: command -v docker >/dev/null 2>&1
         msg: Docker is required for the Fluss reliability environment.

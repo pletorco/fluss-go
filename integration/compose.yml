@@ -1,6 +1,6 @@
 name: fluss-go-integration
 
-x-fluss-image: &fluss-image apache/fluss@sha256:65f5513b33dde10ace4f8adb3956f17226a2a1e2663f92b3096e4769b0ee1d1c
+x-fluss-image: &fluss-image apache/fluss@sha256:ff461b45438033da4fd1c2556d3f978f3603bb3632fe075c2bd57388339a58cb
 x-zookeeper-image: &zookeeper-image zookeeper@sha256:43d39109cbd4de394742efbfc162a8a0a93731e806374b71f3865f4ef4460a56
 x-fluss-health: &fluss-health
   interval: 2s

@@ -120,7 +120,7 @@ type reliabilityWorker struct {
 	metrics        *reliabilityMetrics
 }
 
-func TestFluss091Reliability(t *testing.T) {
+func TestFluss100Reliability(t *testing.T) {
 	requireEnvironment(t)
 	config, err := loadReliabilityConfig()
 	if err != nil {
