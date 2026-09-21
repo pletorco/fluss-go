@@ -697,6 +697,41 @@ func TestLogScannerPollPreservesBucketOrderAndPartialErrors(t *testing.T) {
 	_ = scanner.Close()
 }
 
+func TestLogScannerAdvancesPastServerFilteredBatches(t *testing.T) {
+	table := appendWriterTable()
+	backend := scannerBackend(0)
+	backend.fetches[0] = scannerFetch{
+		highWatermark: 20, filteredEndOffset: 12, filteredEndOffsetKnown: true,
+	}
+	scanner, err := newLogScanner(context.Background(), backend, table, AtOffset(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 0 {
+		t.Fatalf("first Poll() = %#v, %v", result, err)
+	}
+	result.Release()
+	backend.fetches[0] = scannerFetch{}
+	_, _ = scanner.Poll(context.Background())
+	if calls := backend.fetchCalls(); len(calls) != 2 || calls[1].offset != 12 {
+		t.Fatalf("fetch calls = %#v", calls)
+	}
+	_ = scanner.Close()
+
+	backend = scannerBackend(0)
+	backend.fetches[0] = scannerFetch{filteredEndOffset: 4, filteredEndOffsetKnown: true}
+	scanner, err = newLogScanner(context.Background(), backend, table, AtOffset(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = scanner.Poll(context.Background())
+	if err != nil || len(result.BucketErrors) != 1 || !errors.Is(result.BucketErrors[0].Err, ErrValidation) {
+		t.Fatalf("invalid filtered offset Poll() = %#v, %v", result, err)
+	}
+	_ = scanner.Close()
+}
+
 func TestLogScannerRowLimitAndStoppingOffsets(t *testing.T) {
 	table := appendWriterTable()
 	table.BucketCount = 2

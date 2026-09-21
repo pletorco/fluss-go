@@ -215,6 +215,10 @@ type WriteResult struct {
 	OffsetKnown bool
 	// Records is the number of records completed by this result.
 	Records int
+	// Pressure is the successful KV response's normalized storage pressure when PressureKnown is true.
+	Pressure float32
+	// PressureKnown reports whether Fluss supplied a KV storage-pressure signal.
+	PressureKnown bool
 	// Err is the terminal mutation error.
 	Err error
 }

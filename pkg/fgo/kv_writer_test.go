@@ -33,6 +33,7 @@ type fakeUpsertWriterBackend struct {
 	initErr     error
 	putErr      error
 	putErrs     []error
+	putResults  []kvPutResult
 	block       <-chan struct{}
 	calls       []putKVCall
 }
@@ -48,12 +49,12 @@ func (b *fakeUpsertWriterBackend) initWriter(context.Context, PhysicalTablePath,
 func (b *fakeUpsertWriterBackend) put(
 	ctx context.Context,
 	input kvPutRequest,
-) (int64, error) {
+) (kvPutResult, error) {
 	if b.block != nil {
 		select {
 		case <-b.block:
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return kvPutResult{}, ctx.Err()
 		}
 	}
 	b.mu.Lock()
@@ -67,17 +68,22 @@ func (b *fakeUpsertWriterBackend) put(
 		err := b.putErrs[0]
 		b.putErrs = b.putErrs[1:]
 		if err != nil {
-			return 0, err
+			return kvPutResult{}, err
 		}
 	}
 	if b.putErr != nil {
-		return 0, b.putErr
+		return kvPutResult{}, b.putErr
+	}
+	if len(b.putResults) != 0 {
+		result := b.putResults[0]
+		b.putResults = b.putResults[1:]
+		return result, nil
 	}
 	batch, err := DecodeKVBatch(input.records)
 	if err != nil {
-		return 0, err
+		return kvPutResult{}, err
 	}
-	return int64(len(b.calls)*10 + len(batch.Records)), nil
+	return kvPutResult{logEnd: int64(len(b.calls)*10 + len(batch.Records))}, nil
 }
 
 func (b *fakeUpsertWriterBackend) putCalls() []putKVCall {
@@ -168,6 +174,36 @@ func TestUpsertWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 	first, err := DecodeKVBatch(calls[0].records)
 	if err != nil || first.WriterID != 99 || first.BatchSequence != 0 {
 		t.Fatalf("retried batch = %#v, %v", first, err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpsertWriterAppliesKVPressureThrottle(t *testing.T) {
+	backend := kvBackend(0)
+	backend.putResults = []kvPutResult{
+		{logEnd: 1, pressure: 0.5, pressureKnown: true},
+		{logEnd: 2},
+	}
+	writer, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(),
+		WithUpsertBatchLimits(1<<20, 1), WithUpsertBackpressureMaxThrottle(100*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := writer.Upsert(context.Background(), Row{int32(1), "a", int64(1)}).Await(context.Background())
+	if first.Err != nil || !first.PressureKnown || first.Pressure != 0.5 {
+		t.Fatalf("first result = %#v", first)
+	}
+	started := time.Now()
+	second := writer.Upsert(context.Background(), Row{int32(2), "b", int64(2)}).Await(context.Background())
+	if second.Err != nil {
+		t.Fatalf("second result = %#v", second)
+	}
+	if elapsed := time.Since(started); elapsed < 20*time.Millisecond {
+		t.Fatalf("pressure throttle elapsed = %s, want at least 20ms", elapsed)
 	}
 	if err := writer.Close(context.Background()); err != nil {
 		t.Fatal(err)
@@ -519,6 +555,7 @@ func TestUpsertWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"concurrency", table, kvBackend(0), []UpsertWriterOption{WithUpsertConcurrency(65)}, ErrInvalidConfig},
 		{"batch timeout", table, kvBackend(0), []UpsertWriterOption{WithUpsertBatchTimeout(-1)}, ErrInvalidConfig},
 		{"request", table, kvBackend(0), []UpsertWriterOption{WithUpsertRequest(0, 2)}, ErrInvalidConfig},
+		{"backpressure", table, kvBackend(0), []UpsertWriterOption{WithUpsertBackpressureMaxThrottle(time.Minute + 1)}, ErrInvalidConfig},
 		{"metadata", table, &fakeUpsertWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", table, kvBackend(), nil, ErrMetadata},
 		{"init", table, &fakeUpsertWriterBackend{physicalID: 11, locations: kvBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
@@ -549,19 +586,19 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 			case *fmsg.InitWriterResponse:
 				message.WriterId = proto.Int64(5)
 			case *fmsg.PutKvResponse:
-				if request.Version() != 1 {
-					t.Fatalf("PutKv version = %d, want negotiated v1", request.Version())
+				if request.Version() != 3 {
+					t.Fatalf("PutKv version = %d, want negotiated v3", request.Version())
 				}
 				requestMessage = request.(*fmsg.MessageRequest).Message().(*fmsg.PutKvRequest)
 				message.BucketsResp = []*fmsg.PbPutKvRespForBucket{{
-					BucketId: proto.Int32(0), LogEndOffset: proto.Int64(10),
+					BucketId: proto.Int32(0), LogEndOffset: proto.Int64(10), Pressure: proto.Float32(0.25),
 				}}
 			}
 			return response, nil
 		},
 	)
 	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
-	tablet.versions[fmsg.APIKeyPutKv] = 1
+	tablet.versions[fmsg.APIKeyPutKv] = 3
 	writer, err := client.NewUpsertWriter(
 		context.Background(), upsertWriterTable(),
 		WithUpsertBatchTimeout(0), WithUpsertMergeMode(MergeModeOverwrite),
@@ -570,7 +607,7 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := writer.PartialUpsert(context.Background(), []string{"id", "name"}, Row{int32(1), "one"}).Await(context.Background())
-	if result.Err != nil {
+	if result.Err != nil || !result.PressureKnown || result.Pressure != 0.25 {
 		t.Fatal(result.Err)
 	}
 	if requestMessage.GetTableId() != 11 || requestMessage.GetAggMode() != 1 ||
@@ -578,12 +615,12 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 		t.Fatalf("PutKv request = %#v", requestMessage)
 	}
 	backend := clientUpsertWriterBackend{client: client}
-	offset, err := backend.put(context.Background(), kvPutRequest{
+	put, err := backend.put(context.Background(), kvPutRequest{
 		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: 11, partitionID: 23,
 		records: []byte{1}, timeout: time.Second, acks: 1,
 	})
-	if err != nil || offset != 10 || requestMessage.GetBucketsReq()[0].GetPartitionId() != 23 {
-		t.Fatalf("partition PutKv = %#v, offset %d, error %v", requestMessage, offset, err)
+	if err != nil || put.logEnd != 10 || !put.pressureKnown || put.pressure != 0.25 || requestMessage.GetBucketsReq()[0].GetPartitionId() != 23 {
+		t.Fatalf("partition PutKv = %#v, result %#v, error %v", requestMessage, put, err)
 	}
 	_ = writer.Close(context.Background())
 
