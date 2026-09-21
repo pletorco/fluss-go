@@ -1,18 +1,17 @@
 # Apache Fluss protocol inputs
 
-The files in this directory are unmodified copies from Apache Fluss
-v0.9.1-incubating, resolved to commit
-6bf969f71af8d6f9cc37383ab89ae46a58b0e227.
+The files in this directory are unmodified copies from Apache Fluss v1.0.0,
+resolved to commit 5c07f88e50a8ff41b0ebc214a0458e5dba60be37.
 
 | File | SHA-256 |
 | --- | --- |
-| FlussApi.proto | ba1c347c0042f9682f59ad079a8b1f94181333363279a3497d5441a510bcb0d8 |
-| ApiKeys.java | 1b5b6bc57b750bab67f9661889882b47b7da1214c80ffd8dad7fad334b3335f4 |
-| Errors.java | b97dd458c0e34b2c738e8277a1f94cae2a42ca60d58d003852b5f771c000b833 |
-| NOTICE | b49ac8277466ec814b98fceea934f90f9d54cc79dfdf2212ede42613f9fd86cb |
+| FlussApi.proto | 79d699a06f4f6b8dbc04d97185397478881ad5b0a3555e111b1df6d374705dca |
+| ApiKeys.java | a533a1a07e3318fc3797a15e09a998bbd72d8ac40f1639fdd0f27b8ae2803ec9 |
+| Errors.java | 113e917684d2ad70446c0efce19295a2068d3f27e0525b342ca70b69e5b92a17 |
+| NOTICE | 5bb45be4a780881576b32a31f0017026cdc63bcb0bb24cd770dcdb8fb7aa5a82 |
 
 The copied files are licensed under Apache License 2.0. Their source headers
 and the complete upstream NOTICE are retained. The NOTICE has only its final
-blank line removed to satisfy repository whitespace checks. Do not edit these
-copies; update them only by importing and recording a reviewed upstream Apache
-Fluss release.
+headers are retained. The NOTICE has only its final blank line removed to
+satisfy repository whitespace checks. Do not edit these copies; update them
+only by importing and recording a reviewed upstream Apache Fluss release.
