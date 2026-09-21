@@ -44,6 +44,26 @@ type ServerNode struct {
 	ServerType ServerType
 }
 
+// BucketMetadata describes one bucket's leader and replica state.
+type BucketMetadata struct {
+	// ID is the bucket identifier within its logical table or physical partition.
+	ID int32
+	// Leader is nil while no leader is elected.
+	Leader *ServerNode
+	// Replicas lists all replica node IDs in server order.
+	Replicas []int32
+	// ISR lists the in-sync replica node IDs in server order.
+	ISR []int32
+	// LeaderEpoch is the current leader generation when LeaderEpochKnown is true.
+	LeaderEpoch int32
+	// LeaderEpochKnown reports whether Fluss supplied a leader epoch.
+	LeaderEpochKnown bool
+	// BucketEpoch is the generation of the complete leader/ISR state when BucketEpochKnown is true.
+	BucketEpoch int32
+	// BucketEpochKnown reports whether Fluss supplied a bucket epoch.
+	BucketEpochKnown bool
+}
+
 // TableMetadata contains table IDs, bucket leaders, and named partitions.
 type TableMetadata struct {
 	// Path is the logical table path.
@@ -54,6 +74,16 @@ type TableMetadata struct {
 	SchemaID int32
 	// Buckets maps bucket IDs to current tablet leaders.
 	Buckets map[int32]ServerNode
+	// BucketDetails maps bucket IDs to complete Fluss 1.0 leader and replica state.
+	BucketDetails map[int32]BucketMetadata
+	// BucketCount is the routing bucket count for the logical table.
+	BucketCount int32
+	// BucketCountEpoch is the table bucket-count generation when BucketCountEpochKnown is true.
+	BucketCountEpoch int64
+	// BucketCountEpochKnown reports whether Fluss supplied a bucket-count epoch.
+	BucketCountEpochKnown bool
+	// RemoteDataDirectory is the server-advertised remote storage directory.
+	RemoteDataDirectory string
 	// Partitions maps canonical partition names to physical metadata.
 	Partitions map[string]PartitionMetadata
 
@@ -69,6 +99,10 @@ type PartitionMetadata struct {
 	ID int64
 	// Buckets maps bucket IDs to current tablet leaders.
 	Buckets map[int32]ServerNode
+	// BucketDetails maps bucket IDs to complete Fluss 1.0 leader and replica state.
+	BucketDetails map[int32]BucketMetadata
+	// BucketCount is the partition's actual routing bucket count.
+	BucketCount int32
 
 	coordinator ServerNode
 	tablets     map[int32]ServerNode
@@ -131,40 +165,83 @@ func (r *Router) Coordinator() ServerNode {
 // Route returns the current tablet leader for a logical table bucket,
 // refreshing missing metadata once.
 func (r *Router) Route(ctx context.Context, path TablePath, bucket int32) (ServerNode, error) {
-	if err := path.Validate(); err != nil {
-		return ServerNode{}, err
-	}
-	if node, ok := r.lookup(path, bucket); ok {
-		return node, nil
-	}
-	if err := r.Refresh(ctx, path); err != nil {
-		return ServerNode{}, err
-	}
-	if node, ok := r.lookup(path, bucket); ok {
-		return node, nil
-	}
-	return ServerNode{}, fmt.Errorf("%w: %s bucket %d", ErrUnknownBucket, path, bucket)
+	node, _, err := r.routePhysical(ctx, PhysicalTablePath{TablePath: path}, bucket)
+	return node, err
 }
 
 // RoutePhysical returns the leader for a bucket in a named partition. An empty partition names
 // the unpartitioned table and behaves like Route.
 func (r *Router) RoutePhysical(ctx context.Context, path PhysicalTablePath, bucket int32) (ServerNode, error) {
+	node, _, err := r.routePhysical(ctx, path, bucket)
+	return node, err
+}
+
+func (r *Router) routePhysical(ctx context.Context, path PhysicalTablePath, bucket int32) (ServerNode, int32, error) {
 	if err := path.Validate(); err != nil {
-		return ServerNode{}, err
+		return ServerNode{}, 0, err
 	}
 	if path.Partition == "" {
-		return r.Route(ctx, path.TablePath, bucket)
+		if node, count, err := r.lookupPhysical(path, bucket); node != (ServerNode{}) || err != nil {
+			return node, count, err
+		}
+		if err := r.Refresh(ctx, path.TablePath); err != nil {
+			return ServerNode{}, 0, err
+		}
+		return r.lookupPhysicalRequired(path, bucket)
 	}
-	if node, ok := r.lookupPartition(path, bucket); ok {
-		return node, nil
+	if node, count, err := r.lookupPhysical(path, bucket); node != (ServerNode{}) || err != nil {
+		return node, count, err
 	}
 	if err := r.refreshPhysical(ctx, path, false); err != nil {
-		return ServerNode{}, err
+		return ServerNode{}, 0, err
 	}
-	if node, ok := r.lookupPartition(path, bucket); ok {
-		return node, nil
+	return r.lookupPhysicalRequired(path, bucket)
+}
+
+func (r *Router) lookupPhysicalRequired(path PhysicalTablePath, bucket int32) (ServerNode, int32, error) {
+	node, count, err := r.lookupPhysical(path, bucket)
+	if node != (ServerNode{}) || err != nil {
+		return node, count, err
 	}
-	return ServerNode{}, fmt.Errorf("%w: %s bucket %d", ErrUnknownBucket, path, bucket)
+	return ServerNode{}, count, fmt.Errorf("%w: %s bucket %d", ErrUnknownBucket, path, bucket)
+}
+
+func (r *Router) lookupPhysical(path PhysicalTablePath, bucket int32) (ServerNode, int32, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	table, ok := r.metadata.Tables[path.TablePath]
+	if !ok {
+		return ServerNode{}, 0, nil
+	}
+	if path.Partition == "" {
+		return routedBucket(path.String(), bucket, table.BucketCount, table.Buckets, table.BucketDetails)
+	}
+	partition, ok := table.Partitions[physicalTableKey(path)]
+	if !ok {
+		return ServerNode{}, 0, nil
+	}
+	return routedBucket(path.String(), bucket, partition.BucketCount, partition.Buckets, partition.BucketDetails)
+}
+
+func routedBucket(path string, bucket, count int32, leaders map[int32]ServerNode, details map[int32]BucketMetadata) (ServerNode, int32, error) {
+	node, hasLeader := leaders[bucket]
+	_, hasDetails := details[bucket]
+	if !hasLeader && !hasDetails {
+		return ServerNode{}, count, nil
+	}
+	if count <= 0 {
+		count = int32(len(details))
+		if count == 0 {
+			count = int32(len(leaders))
+		}
+	}
+	if count <= 0 {
+		return ServerNode{}, 0, fmt.Errorf("%w: %s has no routing bucket count", ErrMetadata, path)
+	}
+	if hasLeader {
+		return node, count, nil
+	}
+	return ServerNode{}, count, fmt.Errorf("%w: %s bucket %d", ErrNoBucketLeader, path, bucket)
 }
 
 // Refresh replaces cached metadata for path with an authoritative snapshot.
@@ -342,35 +419,6 @@ func (r *Router) RouteAfterMetadataError(ctx context.Context, path TablePath, bu
 	return r.Route(ctx, path, bucket)
 }
 
-func (r *Router) lookup(path TablePath, bucket int32) (ServerNode, bool) {
-	r.mu.RLock()
-	table, ok := r.metadata.Tables[path]
-	if !ok {
-		r.mu.RUnlock()
-		return ServerNode{}, false
-	}
-	node, ok := table.Buckets[bucket]
-	r.mu.RUnlock()
-	return node, ok
-}
-
-func (r *Router) lookupPartition(path PhysicalTablePath, bucket int32) (ServerNode, bool) {
-	r.mu.RLock()
-	table, ok := r.metadata.Tables[path.TablePath]
-	if !ok {
-		r.mu.RUnlock()
-		return ServerNode{}, false
-	}
-	partition, ok := table.Partitions[physicalTableKey(path)]
-	if !ok {
-		r.mu.RUnlock()
-		return ServerNode{}, false
-	}
-	node, ok := partition.Buckets[bucket]
-	r.mu.RUnlock()
-	return node, ok
-}
-
 func (r *Router) hasPartition(path PhysicalTablePath) bool {
 	table, ok := r.metadata.Tables[path.TablePath]
 	if !ok {
@@ -403,7 +451,7 @@ func cloneMetadata(metadata Metadata) Metadata {
 }
 
 func cloneTableMetadata(table TableMetadata) TableMetadata {
-	next := TableMetadata{Path: table.Path, ID: table.ID, SchemaID: table.SchemaID, Buckets: make(map[int32]ServerNode, len(table.Buckets)), Partitions: make(map[string]PartitionMetadata, len(table.Partitions)), coordinator: table.coordinator, tablets: cloneNodes(table.tablets)}
+	next := TableMetadata{Path: table.Path, ID: table.ID, SchemaID: table.SchemaID, Buckets: make(map[int32]ServerNode, len(table.Buckets)), BucketDetails: cloneBucketDetails(table.BucketDetails), BucketCount: table.BucketCount, BucketCountEpoch: table.BucketCountEpoch, BucketCountEpochKnown: table.BucketCountEpochKnown, RemoteDataDirectory: table.RemoteDataDirectory, Partitions: make(map[string]PartitionMetadata, len(table.Partitions)), coordinator: table.coordinator, tablets: cloneNodes(table.tablets)}
 	for bucket, node := range table.Buckets {
 		next.Buckets[bucket] = node
 	}
@@ -414,9 +462,27 @@ func cloneTableMetadata(table TableMetadata) TableMetadata {
 }
 
 func clonePartitionMetadata(partition PartitionMetadata) PartitionMetadata {
-	next := PartitionMetadata{Path: partition.Path, ID: partition.ID, Buckets: make(map[int32]ServerNode, len(partition.Buckets)), coordinator: partition.coordinator, tablets: cloneNodes(partition.tablets)}
+	next := PartitionMetadata{Path: partition.Path, ID: partition.ID, Buckets: make(map[int32]ServerNode, len(partition.Buckets)), BucketDetails: cloneBucketDetails(partition.BucketDetails), BucketCount: partition.BucketCount, coordinator: partition.coordinator, tablets: cloneNodes(partition.tablets)}
 	for bucket, node := range partition.Buckets {
 		next.Buckets[bucket] = node
+	}
+	return next
+}
+
+func cloneBucketDetails(details map[int32]BucketMetadata) map[int32]BucketMetadata {
+	if details == nil {
+		return nil
+	}
+	next := make(map[int32]BucketMetadata, len(details))
+	for id, detail := range details {
+		copy := detail
+		copy.Replicas = append([]int32(nil), detail.Replicas...)
+		copy.ISR = append([]int32(nil), detail.ISR...)
+		if detail.Leader != nil {
+			leader := *detail.Leader
+			copy.Leader = &leader
+		}
+		next[id] = copy
 	}
 	return next
 }

@@ -119,6 +119,23 @@ func TestRouterRoutesPhysicalPartitionAndCoalescesRefresh(t *testing.T) {
 	}
 }
 
+func TestRouterUsesPhysicalPartitionBucketCount(t *testing.T) {
+	table := TablePath{Database: "db", Table: "events"}
+	path := PhysicalTablePath{TablePath: table, Partition: "day=2026-07-30"}
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
+		return TableMetadata{Path: table}, nil
+	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
+		return PartitionMetadata{
+			Path: path, BucketCount: 6,
+			Buckets: map[int32]ServerNode{2: {ID: 4, Address: "tablet:9123", ServerType: TabletServer}},
+		}, nil
+	})
+	node, count, err := router.routePhysical(context.Background(), path, 2)
+	if err != nil || node.ID != 4 || count != 6 {
+		t.Fatalf("routePhysical() = %#v, %d, %v", node, count, err)
+	}
+}
+
 func TestRouterPhysicalAndTableFailuresAreTyped(t *testing.T) {
 	table := TablePath{Database: "db", Table: "missing"}
 	missing := NewRouter(ServerNode{}, nil)

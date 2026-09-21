@@ -337,10 +337,11 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 	if c.router == nil {
 		return nil, fmt.Errorf("%w: client does not manage metadata", ErrClosed)
 	}
-	node, err := c.router.RoutePhysical(ctx, path, bucket)
+	node, bucketCount, err := c.router.routePhysical(ctx, path, bucket)
 	if err != nil {
 		return nil, err
 	}
+	setRoutingBucketCount(request, bucketCount)
 	response, err := c.RequestTo(ctx, node, request)
 	if !errors.Is(err, ErrMetadata) {
 		if shouldReplaceConnection(err) {
@@ -352,11 +353,59 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 		return response, err
 	}
 	c.router.InvalidatePhysical(path)
-	node, refreshErr := c.router.RoutePhysical(ctx, path, bucket)
+	node, bucketCount, refreshErr := c.router.routePhysical(ctx, path, bucket)
 	if refreshErr != nil {
 		return nil, refreshErr
 	}
+	setRoutingBucketCount(request, bucketCount)
 	return c.RequestTo(ctx, node, request)
+}
+
+func setRoutingBucketCount(request fmsg.Request, count int32) {
+	if request == nil || count <= 0 {
+		return
+	}
+	typed, ok := request.(interface{ Message() proto.Message })
+	if !ok {
+		return
+	}
+	value := proto.Int32(count)
+	switch message := typed.Message().(type) {
+	case *fmsg.ProduceLogRequest:
+		for _, bucket := range message.GetBucketsReq() {
+			bucket.RoutingBucketCount = value
+		}
+	case *fmsg.FetchLogRequest:
+		for _, table := range message.GetTablesReq() {
+			for _, bucket := range table.GetBucketsReq() {
+				bucket.RoutingBucketCount = value
+			}
+		}
+	case *fmsg.PutKvRequest:
+		for _, bucket := range message.GetBucketsReq() {
+			bucket.RoutingBucketCount = value
+		}
+	case *fmsg.LookupRequest:
+		for _, bucket := range message.GetBucketsReq() {
+			bucket.RoutingBucketCount = value
+		}
+	case *fmsg.PrefixLookupRequest:
+		for _, bucket := range message.GetBucketsReq() {
+			bucket.RoutingBucketCount = value
+		}
+	case *fmsg.LimitScanRequest:
+		message.RoutingBucketCount = value
+	case *fmsg.ScanKvRequest:
+		if message.BucketScanReq != nil {
+			message.BucketScanReq.RoutingBucketCount = value
+		}
+	case *fmsg.ListOffsetsRequest:
+		message.RoutingBucketCount = value
+	case *fmsg.GetTableStatsRequest:
+		for _, bucket := range message.GetBucketsReq() {
+			bucket.RoutingBucketCount = value
+		}
+	}
 }
 
 func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {

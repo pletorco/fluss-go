@@ -59,7 +59,7 @@ func tableMetadataFromResponse(response *fmsg.MetadataResponse, path TablePath) 
 		if item.GetTablePath().GetDatabaseName() != path.Database || item.GetTablePath().GetTableName() != path.Table {
 			continue
 		}
-		buckets, err := bucketLeaders(item.GetBucketMetadata(), tablets)
+		buckets, details, err := bucketMetadata(item.GetBucketMetadata(), tablets)
 		if err != nil {
 			return TableMetadata{}, err
 		}
@@ -69,13 +69,17 @@ func tableMetadataFromResponse(response *fmsg.MetadataResponse, path TablePath) 
 				continue
 			}
 			partitionPath := PhysicalTablePath{TablePath: path, Partition: partition.GetPartitionName()}
-			partitionBuckets, err := bucketLeaders(partition.GetBucketMetadata(), tablets)
+			partitionBuckets, partitionDetails, err := bucketMetadata(partition.GetBucketMetadata(), tablets)
 			if err != nil {
 				return TableMetadata{}, err
 			}
-			partitions[physicalTableKey(partitionPath)] = PartitionMetadata{Path: partitionPath, ID: partition.GetPartitionId(), Buckets: partitionBuckets, coordinator: coordinator, tablets: tablets}
+			count := partition.GetBucketCount()
+			if partition.BucketCount == nil {
+				count = int32(len(partitionDetails))
+			}
+			partitions[physicalTableKey(partitionPath)] = PartitionMetadata{Path: partitionPath, ID: partition.GetPartitionId(), Buckets: partitionBuckets, BucketDetails: partitionDetails, BucketCount: count, coordinator: coordinator, tablets: tablets}
 		}
-		return TableMetadata{Path: path, ID: item.GetTableId(), SchemaID: item.GetSchemaId(), Buckets: buckets, Partitions: partitions, coordinator: coordinator, tablets: tablets}, nil
+		return TableMetadata{Path: path, ID: item.GetTableId(), SchemaID: item.GetSchemaId(), Buckets: buckets, BucketDetails: details, BucketCount: int32(len(details)), BucketCountEpoch: item.GetBucketCountEpoch(), BucketCountEpochKnown: item.BucketCountEpoch != nil, RemoteDataDirectory: item.GetRemoteDataDir(), Partitions: partitions, coordinator: coordinator, tablets: tablets}, nil
 	}
 	return TableMetadata{}, fmt.Errorf("%w: %s", ErrUnknownTable, path)
 }
@@ -89,11 +93,15 @@ func partitionMetadataFromResponse(response *fmsg.MetadataResponse, path Physica
 		if item.GetPartitionName() != path.Partition {
 			continue
 		}
-		buckets, err := bucketLeaders(item.GetBucketMetadata(), tablets)
+		buckets, details, err := bucketMetadata(item.GetBucketMetadata(), tablets)
 		if err != nil {
 			return PartitionMetadata{}, err
 		}
-		return PartitionMetadata{Path: path, ID: item.GetPartitionId(), Buckets: buckets, coordinator: coordinator, tablets: tablets}, nil
+		count := item.GetBucketCount()
+		if item.BucketCount == nil {
+			count = int32(len(details))
+		}
+		return PartitionMetadata{Path: path, ID: item.GetPartitionId(), Buckets: buckets, BucketDetails: details, BucketCount: count, coordinator: coordinator, tablets: tablets}, nil
 	}
 	return PartitionMetadata{}, fmt.Errorf("%w: %s", ErrUnknownPartition, path)
 }
@@ -125,17 +133,29 @@ func nodeFromProto(server *fmsg.PbServerNode, serverType ServerType) (ServerNode
 	return ServerNode{ID: server.GetNodeId(), Address: net.JoinHostPort(server.GetHost(), strconv.Itoa(int(server.GetPort()))), ServerType: serverType}, nil
 }
 
-func bucketLeaders(buckets []*fmsg.PbBucketMetadata, tablets map[int32]ServerNode) (map[int32]ServerNode, error) {
-	result := make(map[int32]ServerNode, len(buckets))
+func bucketMetadata(buckets []*fmsg.PbBucketMetadata, tablets map[int32]ServerNode) (map[int32]ServerNode, map[int32]BucketMetadata, error) {
+	leaders := make(map[int32]ServerNode, len(buckets))
+	details := make(map[int32]BucketMetadata, len(buckets))
 	for _, bucket := range buckets {
-		if bucket == nil || bucket.LeaderId == nil {
-			return nil, fmt.Errorf("%w: bucket %d", ErrNoBucketLeader, bucket.GetBucketId())
+		if bucket == nil || bucket.BucketId == nil || bucket.GetBucketId() < 0 {
+			return nil, nil, fmt.Errorf("%w: invalid bucket metadata", ErrMetadata)
 		}
-		node, ok := tablets[bucket.GetLeaderId()]
-		if !ok {
-			return nil, fmt.Errorf("%w: bucket %d leader %d", ErrNoBucketLeader, bucket.GetBucketId(), bucket.GetLeaderId())
+		detail := BucketMetadata{
+			ID: bucket.GetBucketId(), Replicas: append([]int32(nil), bucket.GetReplicaId()...),
+			ISR: append([]int32(nil), bucket.GetIsr()...), LeaderEpoch: bucket.GetLeaderEpoch(),
+			LeaderEpochKnown: bucket.LeaderEpoch != nil, BucketEpoch: bucket.GetBucketEpoch(),
+			BucketEpochKnown: bucket.BucketEpoch != nil,
 		}
-		result[bucket.GetBucketId()] = node
+		if bucket.LeaderId != nil {
+			node, ok := tablets[bucket.GetLeaderId()]
+			if !ok {
+				return nil, nil, fmt.Errorf("%w: bucket %d leader %d", ErrNoBucketLeader, bucket.GetBucketId(), bucket.GetLeaderId())
+			}
+			leader := node
+			detail.Leader = &leader
+			leaders[bucket.GetBucketId()] = node
+		}
+		details[bucket.GetBucketId()] = detail
 	}
-	return result, nil
+	return leaders, details, nil
 }

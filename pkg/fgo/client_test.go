@@ -212,6 +212,65 @@ func TestClientCloseRejectsPublicOperationsAndResourceConstruction(t *testing.T)
 	}
 }
 
+func TestSetRoutingBucketCount(t *testing.T) {
+	tests := []struct {
+		name string
+		key  fmsg.APIKey
+		set  func(*fmsg.MessageRequest)
+		get  func(*fmsg.MessageRequest) int32
+	}{
+		{"produce", fmsg.APIKeyProduceLog, func(request *fmsg.MessageRequest) {
+			request.Message().(*fmsg.ProduceLogRequest).BucketsReq = []*fmsg.PbProduceLogReqForBucket{{}}
+		}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.ProduceLogRequest).BucketsReq[0].GetRoutingBucketCount()
+		}},
+		{"fetch", fmsg.APIKeyFetchLog, func(request *fmsg.MessageRequest) {
+			request.Message().(*fmsg.FetchLogRequest).TablesReq = []*fmsg.PbFetchLogReqForTable{{BucketsReq: []*fmsg.PbFetchLogReqForBucket{{}}}}
+		}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.FetchLogRequest).TablesReq[0].BucketsReq[0].GetRoutingBucketCount()
+		}},
+		{"put", fmsg.APIKeyPutKv, func(request *fmsg.MessageRequest) {
+			request.Message().(*fmsg.PutKvRequest).BucketsReq = []*fmsg.PbPutKvReqForBucket{{}}
+		}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.PutKvRequest).BucketsReq[0].GetRoutingBucketCount()
+		}},
+		{"lookup", fmsg.APIKeyLookup, func(request *fmsg.MessageRequest) {
+			request.Message().(*fmsg.LookupRequest).BucketsReq = []*fmsg.PbLookupReqForBucket{{}}
+		}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.LookupRequest).BucketsReq[0].GetRoutingBucketCount()
+		}},
+		{"prefix lookup", fmsg.APIKeyPrefixLookup, func(request *fmsg.MessageRequest) {
+			request.Message().(*fmsg.PrefixLookupRequest).BucketsReq = []*fmsg.PbPrefixLookupReqForBucket{{}}
+		}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.PrefixLookupRequest).BucketsReq[0].GetRoutingBucketCount()
+		}},
+		{"limit scan", fmsg.APIKeyLimitScan, func(*fmsg.MessageRequest) {}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.LimitScanRequest).GetRoutingBucketCount()
+		}},
+		{"list offsets", fmsg.APIKeyListOffsets, func(*fmsg.MessageRequest) {}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.ListOffsetsRequest).GetRoutingBucketCount()
+		}},
+		{"table stats", fmsg.APIKeyGetTableStats, func(request *fmsg.MessageRequest) {
+			request.Message().(*fmsg.GetTableStatsRequest).BucketsReq = []*fmsg.PbTableStatsReqForBucket{{}}
+		}, func(request *fmsg.MessageRequest) int32 {
+			return request.Message().(*fmsg.GetTableStatsRequest).BucketsReq[0].GetRoutingBucketCount()
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := fmsg.NewRequest(test.key, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.set(request)
+			setRoutingBucketCount(request, 6)
+			if got := test.get(request); got != 6 {
+				t.Fatalf("routing bucket count = %d, want 6", got)
+			}
+		})
+	}
+}
+
 func TestClientOptions(t *testing.T) {
 	var cfg config
 	if err := WithBootstrapServers("a:1", "b:2")(&cfg); err != nil || len(cfg.bootstrapServers) != 2 {

@@ -494,6 +494,12 @@ type Table struct {
 	Schema Schema
 	// BucketCount is the logical table bucket count.
 	BucketCount int
+	// BucketCountEpoch is the server generation for bucket-count changes when BucketCountEpochKnown is true.
+	BucketCountEpoch int64
+	// BucketCountEpochKnown reports whether Fluss supplied a bucket-count epoch.
+	BucketCountEpochKnown bool
+	// RemoteDataDirectory is the server-advertised remote storage directory.
+	RemoteDataDirectory string
 	// Properties contains server-reported table properties.
 	Properties map[string]string
 }
@@ -563,7 +569,8 @@ func (c *Client) GetTable(ctx context.Context, path TablePath) (Table, error) {
 	table := Table{
 		ID: info.GetTableId(), SchemaID: info.GetSchemaId(), Path: path,
 		Kind: kind, Schema: schema, BucketCount: descriptor.BucketCount,
-		Properties: descriptor.Properties,
+		BucketCountEpoch: info.GetBucketCountEpoch(), BucketCountEpochKnown: info.BucketCountEpoch != nil,
+		RemoteDataDirectory: info.GetRemoteDataDir(), Properties: descriptor.Properties,
 	}
 	if c.schemas != nil {
 		c.schemas.store(path, table.SchemaID, schema)

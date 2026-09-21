@@ -16,11 +16,18 @@ func TestMetadataResponseConversion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if table.ID != 9 || table.SchemaID != 3 || table.Buckets[0].Address != "tablet:9123" {
+	if table.ID != 9 || table.SchemaID != 3 || table.Buckets[0].Address != "tablet:9123" ||
+		table.BucketCount != 1 || !table.BucketCountEpochKnown || table.BucketCountEpoch != 8 ||
+		table.RemoteDataDirectory != "s3://bucket/table" {
 		t.Fatalf("table metadata = %#v", table)
 	}
+	detail := table.BucketDetails[0]
+	if detail.Leader == nil || detail.Leader.ID != 2 || !detail.LeaderEpochKnown || detail.LeaderEpoch != 4 ||
+		!detail.BucketEpochKnown || detail.BucketEpoch != 5 || len(detail.Replicas) != 2 || len(detail.ISR) != 1 {
+		t.Fatalf("bucket metadata = %#v", detail)
+	}
 	partition, ok := table.Partitions[physicalTableKey(PhysicalTablePath{TablePath: path, Partition: "day=2026-07-30"})]
-	if !ok || partition.ID != 10 || partition.Buckets[1].ID != 2 {
+	if !ok || partition.ID != 10 || partition.Buckets[1].ID != 2 || partition.BucketCount != 3 {
 		t.Fatalf("partition metadata = %#v", table.Partitions)
 	}
 
@@ -34,8 +41,9 @@ func TestMetadataResponseConversionFailures(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	response := metadataResponse(path)
 	response.TableMetadata[0].BucketMetadata[0].LeaderId = nil
-	if _, err := tableMetadataFromResponse(response, path); !errors.Is(err, ErrNoBucketLeader) {
-		t.Fatalf("missing leader error = %v", err)
+	metadata, err := tableMetadataFromResponse(response, path)
+	if err != nil || metadata.BucketDetails[0].Leader != nil {
+		t.Fatalf("missing leader metadata = %#v, %v", metadata, err)
 	}
 
 	response = metadataResponse(path)
@@ -119,6 +127,7 @@ func TestGetTableLoadsServerSchema(t *testing.T) {
 			}
 			message.TableId, message.SchemaId = proto.Int64(9), proto.Int32(3)
 			message.TableJson = []byte(`{"bucket_key":["id"],"partition_key":[],"bucket_count":4,"properties":{"table.merge-engine":"aggregation"}}`)
+			message.RemoteDataDir, message.BucketCountEpoch = proto.String("s3://bucket/table"), proto.Int64(8)
 		case *fmsg.GetTableSchemaResponse:
 			if request.(*fmsg.MessageRequest).Message().(*fmsg.GetTableSchemaRequest).GetSchemaId() != 3 {
 				t.Fatal("missing schema id")
@@ -135,6 +144,7 @@ func TestGetTableLoadsServerSchema(t *testing.T) {
 	table, err := client.GetTable(context.Background(), path)
 	if err != nil || table.ID != 9 || table.SchemaID != 3 || table.Kind != PrimaryKeyTable ||
 		table.BucketCount != 4 || len(table.Schema.BucketKey) != 1 ||
+		!table.BucketCountEpochKnown || table.BucketCountEpoch != 8 || table.RemoteDataDirectory != "s3://bucket/table" ||
 		table.Properties["table.merge-engine"] != "aggregation" {
 		t.Fatalf("GetTable() = %#v, %v", table, err)
 	}
@@ -146,10 +156,15 @@ func metadataResponse(path TablePath) *fmsg.MetadataResponse {
 		TabletServers:     []*fmsg.PbServerNode{serverNode(2, "tablet", 9123)},
 		TableMetadata: []*fmsg.PbTableMetadata{{
 			TablePath: pbTablePath(path), TableId: proto.Int64(9), SchemaId: proto.Int32(3),
-			BucketMetadata: []*fmsg.PbBucketMetadata{{BucketId: proto.Int32(0), LeaderId: proto.Int32(2)}},
+			RemoteDataDir: proto.String("s3://bucket/table"), BucketCountEpoch: proto.Int64(8),
+			BucketMetadata: []*fmsg.PbBucketMetadata{{
+				BucketId: proto.Int32(0), LeaderId: proto.Int32(2), ReplicaId: []int32{2, 3},
+				LeaderEpoch: proto.Int32(4), BucketEpoch: proto.Int32(5), Isr: []int32{2},
+			}},
 		}},
 		PartitionMetadata: []*fmsg.PbPartitionMetadata{{
 			TableId: proto.Int64(9), PartitionName: proto.String("day=2026-07-30"), PartitionId: proto.Int64(10),
+			BucketCount:    proto.Int32(3),
 			BucketMetadata: []*fmsg.PbBucketMetadata{{BucketId: proto.Int32(1), LeaderId: proto.Int32(2)}},
 		}},
 	}
