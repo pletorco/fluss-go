@@ -1,6 +1,7 @@
 package fgo
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -25,6 +27,8 @@ type BatchScannerConfig struct {
 	Limit int
 	// Projection lists returned columns in result order; nil selects all.
 	Projection []string
+	// BatchSizeBytes bounds each Fluss 1.0 KV scan-session response.
+	BatchSizeBytes int32
 }
 
 // WithBatchLimit bounds the number of rows returned by a current-state request or snapshot poll.
@@ -45,6 +49,17 @@ func WithBatchProjection(columns ...string) BatchScannerOption {
 			return fmt.Errorf("%w: batch projection is empty", ErrInvalidConfig)
 		}
 		config.Projection = append([]string(nil), columns...)
+		return nil
+	}
+}
+
+// WithBatchSizeBytes bounds each server-side KV scan-session response.
+func WithBatchSizeBytes(bytes int32) BatchScannerOption {
+	return func(config *BatchScannerConfig) error {
+		if bytes <= 0 {
+			return fmt.Errorf("%w: batch scan byte limit must be positive", ErrInvalidConfig)
+		}
+		config.BatchSizeBytes = bytes
 		return nil
 	}
 }
@@ -126,6 +141,16 @@ type batchScanBackend interface {
 	limitScan(context.Context, TableBucket, int32) (bool, []byte, error)
 }
 
+type kvSessionScanBackend interface {
+	scanKV(context.Context, TableBucket, int64, int32, []byte, int32, bool) (kvSessionBatch, error)
+}
+
+type kvSessionBatch struct {
+	scannerID []byte
+	hasMore   bool
+	records   []byte
+}
+
 type clientBatchScanBackend struct{ client *Client }
 
 func (b clientBatchScanBackend) schemaResolver() schemaResolver {
@@ -151,7 +176,7 @@ func (c *Client) ResolveTableBuckets(
 		if err != nil {
 			return nil, err
 		}
-		return resolvedTableBuckets(table.ID, -1, table.Buckets)
+		return resolvedTableBuckets(table.ID, -1, table.BucketCount, table.Buckets)
 	}
 	partition, err := c.fetchPartitionMetadata(ctx, path)
 	if err != nil {
@@ -161,11 +186,12 @@ func (c *Client) ResolveTableBuckets(
 	if err != nil {
 		return nil, err
 	}
-	return resolvedTableBuckets(table.ID, partition.ID, partition.Buckets)
+	return resolvedTableBuckets(table.ID, partition.ID, partition.BucketCount, partition.Buckets)
 }
 
 func resolvedTableBuckets(
 	tableID, partitionID int64,
+	bucketCount int32,
 	locations map[int32]ServerNode,
 ) ([]TableBucket, error) {
 	buckets, err := sortedBuckets(locations)
@@ -175,7 +201,8 @@ func resolvedTableBuckets(
 	result := make([]TableBucket, len(buckets))
 	for index, bucket := range buckets {
 		result[index] = TableBucket{
-			TableID: tableID, PartitionID: partitionID, BucketID: bucket, Leader: locations[bucket],
+			TableID: tableID, PartitionID: partitionID, BucketID: bucket,
+			BucketCount: bucketCount, Leader: locations[bucket],
 		}
 	}
 	return result, nil
@@ -213,6 +240,53 @@ func (b clientBatchScanBackend) limitScan(
 	return scanned.GetIsLogTable(), append([]byte(nil), scanned.GetRecords()...), nil
 }
 
+func (b clientBatchScanBackend) scanKV(
+	ctx context.Context,
+	bucket TableBucket,
+	limit int64,
+	batchSize int32,
+	scannerID []byte,
+	sequence int32,
+	closeScanner bool,
+) (kvSessionBatch, error) {
+	request, err := fmsg.NewRequest(fmsg.APIKeyScanKv, 0)
+	if err != nil {
+		return kvSessionBatch{}, err
+	}
+	message := request.Message().(*fmsg.ScanKvRequest)
+	message.CallSeqId, message.BatchSizeBytes, message.CloseScanner = proto.Int32(sequence), proto.Int32(batchSize), proto.Bool(closeScanner)
+	if len(scannerID) != 0 {
+		message.ScannerId = append([]byte(nil), scannerID...)
+	} else {
+		count := bucket.BucketCount
+		if count <= 0 {
+			return kvSessionBatch{}, fmt.Errorf("%w: KV scan bucket count must be positive", ErrMetadata)
+		}
+		message.BucketScanReq = &fmsg.PbScanReqForBucket{
+			TableId: proto.Int64(bucket.TableID), BucketId: proto.Int32(bucket.BucketID),
+			Limit: proto.Int64(limit), RoutingBucketCount: proto.Int32(count),
+		}
+		if bucket.PartitionID >= 0 {
+			message.BucketScanReq.PartitionId = proto.Int64(bucket.PartitionID)
+		}
+	}
+	response, err := b.client.RequestTo(ctx, bucket.Leader, request)
+	if err != nil {
+		return kvSessionBatch{}, err
+	}
+	scanned, ok := response.Message().(*fmsg.ScanKvResponse)
+	if !ok {
+		return kvSessionBatch{}, fmt.Errorf("fgo: scan KV: unexpected response %T", response.Message())
+	}
+	if err := responseServerError(scanned.GetErrorCode(), scanned.GetErrorMessage(), fmsg.APIKeyScanKv); err != nil {
+		return kvSessionBatch{}, err
+	}
+	return kvSessionBatch{
+		scannerID: append([]byte(nil), scanned.GetScannerId()...),
+		hasMore:   scanned.GetHasMoreResults(), records: append([]byte(nil), scanned.GetRecords()...),
+	}, nil
+}
+
 // BatchScanner reads the bounded current state or one immutable snapshot of a
 // table bucket. Poll calls are serialized; call Close to interrupt an active
 // poll and release scanner resources.
@@ -224,6 +298,8 @@ type BatchScanner struct {
 	snapshot   SnapshotBatchReader
 	projection []int
 	resolver   schemaResolver
+	scannerID  []byte
+	sequence   int32
 
 	pollMu sync.Mutex
 	mu     sync.RWMutex
@@ -296,6 +372,9 @@ func newBatchScanner(
 	if backend == nil && snapshot == nil {
 		return nil, fmt.Errorf("%w: batch scan backend is required", ErrInvalidConfig)
 	}
+	if bucket.BucketCount <= 0 && table.BucketCount > 0 {
+		bucket.BucketCount = int32(table.BucketCount)
+	}
 	scanner := &BatchScanner{
 		table: table, bucket: bucket, config: config, backend: backend,
 		snapshot: snapshot, projection: projection, resolver: resolverFor(backend, table),
@@ -321,7 +400,7 @@ func batchScannerSettings(
 			ErrInvalidConfig, bucket.TableID, table.ID,
 		)
 	}
-	config := BatchScannerConfig{Limit: 1024}
+	config := BatchScannerConfig{Limit: 1024, BatchSizeBytes: 1 << 20}
 	for _, option := range options {
 		if option == nil {
 			return BatchScannerConfig{}, nil, fmt.Errorf("%w: nil batch scanner option", ErrInvalidConfig)
@@ -376,6 +455,11 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	if s.snapshot != nil {
 		return s.pollSnapshot(pollCtx)
 	}
+	if s.table.Kind == PrimaryKeyTable {
+		if backend, ok := s.backend.(kvSessionScanBackend); ok {
+			return s.pollKVSession(pollCtx, backend)
+		}
+	}
 	isLog, encoded, err := s.backend.limitScan(pollCtx, s.bucket, int32(s.config.Limit))
 	if err != nil {
 		return BatchResult{}, err
@@ -386,6 +470,42 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	}
 	s.markDone()
 	result.Done = true
+	return result, nil
+}
+
+func (s *BatchScanner) pollKVSession(ctx context.Context, backend kvSessionScanBackend) (BatchResult, error) {
+	batch, err := backend.scanKV(
+		ctx, s.bucket, int64(s.config.Limit), s.config.BatchSizeBytes,
+		s.scannerID, s.sequence, false,
+	)
+	if err != nil {
+		return BatchResult{}, err
+	}
+	if len(batch.scannerID) == 0 {
+		// Fluss 1.0 does not register a session for an empty bucket, so its
+		// terminal open response intentionally has no scanner ID.
+		if batch.hasMore || len(batch.records) != 0 || len(s.scannerID) != 0 {
+			return BatchResult{}, fmt.Errorf("%w: KV scan response omitted scanner ID", ErrValidation)
+		}
+		s.markDone()
+		return BatchResult{Done: true}, nil
+	}
+	if len(s.scannerID) != 0 && !bytes.Equal(s.scannerID, batch.scannerID) {
+		return BatchResult{}, fmt.Errorf("%w: KV scan response changed scanner ID", ErrValidation)
+	}
+	s.scannerID = append(s.scannerID[:0], batch.scannerID...)
+	s.sequence++
+	var rows []Row
+	if len(batch.records) != 0 {
+		rows, err = decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, batch.records)
+		if err != nil {
+			return BatchResult{}, err
+		}
+	}
+	result := BatchResult{Rows: s.projectRows(rows), Done: !batch.hasMore}
+	if result.Done {
+		s.markDone()
+	}
 	return result, nil
 }
 
@@ -641,6 +761,20 @@ func (s *BatchScanner) Close() error {
 	s.mu.Unlock()
 	if reader != nil {
 		return reader.Close()
+	}
+	backend, ok := s.backend.(kvSessionScanBackend)
+	if ok {
+		s.pollMu.Lock()
+		defer s.pollMu.Unlock()
+		if len(s.scannerID) != 0 && !s.done {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := backend.scanKV(
+				ctx, s.bucket, int64(s.config.Limit), s.config.BatchSizeBytes,
+				s.scannerID, s.sequence, true,
+			)
+			return err
+		}
 	}
 	return nil
 }

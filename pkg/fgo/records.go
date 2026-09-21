@@ -50,6 +50,8 @@ type TableBucket struct {
 	PartitionID int64
 	// BucketID identifies the logical table bucket.
 	BucketID int32
+	// BucketCount is the routing bucket count used to resolve BucketID.
+	BucketCount int32
 	// Leader is the current tablet server leader.
 	Leader ServerNode
 }

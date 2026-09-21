@@ -80,6 +80,16 @@ func TestFluss100Integration(t *testing.T) {
 			t.Errorf("cleanup database: %v", err)
 		}
 	}()
+	updatedComment := "fluss-go Fluss 1.0 integration"
+	if err := admin.AlterDatabase(context.Background(), database, fadm.AlterDatabase{
+		Comment: &updatedComment,
+	}, false); err != nil {
+		t.Fatalf("AlterDatabase() = %v", err)
+	}
+	databaseInfo, err := admin.GetDatabaseInfo(context.Background(), database)
+	if err != nil || databaseInfo.Comment != updatedComment {
+		t.Fatalf("GetDatabaseInfo() after alter = %#v, %v", databaseInfo, err)
+	}
 
 	t.Run("catalog", func(t *testing.T) {
 		testCatalog(t, admin, database, logPath, kvPath)
@@ -798,6 +808,21 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 	}
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
+	}
+	partitionPath := fgo.PhysicalTablePath{TablePath: path, Partition: "kr"}
+	if err := waitForCondition(ctx, 100*time.Millisecond, func() (bool, error) {
+		_, resolveErr := client.ResolveTableBuckets(ctx, partitionPath)
+		if resolveErr == nil {
+			return true, nil
+		}
+		if errors.Is(resolveErr, fgo.ErrUnknownPartition) ||
+			errors.Is(resolveErr, fgo.ErrNoBucketLeader) ||
+			errors.Is(resolveErr, fgo.ErrMetadata) {
+			return false, nil
+		}
+		return false, resolveErr
+	}); err != nil {
+		t.Fatalf("dynamic partition did not become routable: %v", err)
 	}
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(),
@@ -1604,10 +1629,42 @@ func testAdvancedAdmin(
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	testConfigEntryAndNodes(t, ctx, admin)
+	testFluss100Admin(t, ctx, client, admin, logPath, kvPath)
 	testProducerOffsets(t, ctx, client, admin, logPath)
 	testTableStatistics(t, ctx, client, admin, kvPath)
 	testKVSnapshotLease(t, ctx, client, admin, kvPath)
 	testLakeSnapshotError(t, ctx, admin, kvPath)
+}
+
+func testFluss100Admin(
+	t *testing.T,
+	ctx context.Context,
+	client *fgo.Client,
+	admin *fadm.Client,
+	logPath, kvPath fgo.TablePath,
+) {
+	t.Helper()
+	health, err := admin.GetClusterHealth(ctx)
+	if err != nil || health.Replicas <= 0 || health.LeaderReplicas <= 0 ||
+		health.InSyncReplicas > health.Replicas || health.ActiveLeaderReplicas > health.LeaderReplicas ||
+		health.Status < fadm.ClusterHealthGreen || health.Status > fadm.ClusterHealthUnknown {
+		t.Fatalf("GetClusterHealth() = %#v, %v", health, err)
+	}
+	logTable, err := client.GetTable(ctx, logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.ListRemoteLogManifests(ctx, logTable.ID, -1); err != nil {
+		t.Fatalf("ListRemoteLogManifests() = %v", err)
+	}
+	kvTable, err := client.GetTable(ctx, kvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := admin.ListKVSnapshots(ctx, kvTable.ID, -1)
+	if err != nil || snapshots.TableID != kvTable.ID || snapshots.PartitionID != -1 {
+		t.Fatalf("ListKVSnapshots() = %#v, %v", snapshots, err)
+	}
 }
 
 func testConfigEntryAndNodes(t *testing.T, ctx context.Context, admin *fadm.Client) {

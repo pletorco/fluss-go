@@ -300,12 +300,25 @@ func TestDynamicPartitionClientBackend(t *testing.T) {
 func TestDynamicPartitionClientRefreshesRouter(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	physical := PhysicalTablePath{TablePath: path, Partition: "kr"}
+	var ready atomic.Bool
 	client := &Client{}
 	client.router = NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
 		return TableMetadata{Path: path, ID: 1, Partitions: make(map[string]PartitionMetadata)}, nil
 	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
-		return PartitionMetadata{Path: physical, ID: 2, Buckets: map[int32]ServerNode{}}, nil
+		partition := PartitionMetadata{
+			Path: physical, ID: 2, BucketCount: 1,
+			BucketDetails: map[int32]BucketMetadata{0: {ID: 0}},
+			Buckets:       map[int32]ServerNode{},
+		}
+		if ready.Load() {
+			partition.Buckets[0] = ServerNode{ID: 3, Address: "tablet:9123", ServerType: TabletServer}
+		}
+		return partition, nil
 	})
+	if err := client.checkPartition(context.Background(), physical); !errors.Is(err, ErrNoBucketLeader) {
+		t.Fatalf("leaderless checkPartition() error = %v", err)
+	}
+	ready.Store(true)
 	if err := client.checkPartition(context.Background(), physical); err != nil {
 		t.Fatal(err)
 	}

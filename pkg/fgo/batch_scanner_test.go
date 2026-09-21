@@ -27,24 +27,64 @@ func (f batchScanBackendFunc) limitScan(
 	return f(ctx, bucket, limit)
 }
 
+type kvSessionCall struct {
+	bucket       TableBucket
+	limit        int64
+	batchSize    int32
+	scannerID    []byte
+	sequence     int32
+	closeScanner bool
+}
+
+type fakeKVSessionBackend struct {
+	batches []kvSessionBatch
+	calls   []kvSessionCall
+}
+
+func (*fakeKVSessionBackend) limitScan(context.Context, TableBucket, int32) (bool, []byte, error) {
+	return false, nil, errors.New("unexpected LIMIT_SCAN")
+}
+
+func (b *fakeKVSessionBackend) scanKV(
+	_ context.Context,
+	bucket TableBucket,
+	limit int64,
+	batchSize int32,
+	scannerID []byte,
+	sequence int32,
+	closeScanner bool,
+) (kvSessionBatch, error) {
+	b.calls = append(b.calls, kvSessionCall{
+		bucket: bucket, limit: limit, batchSize: batchSize,
+		scannerID: append([]byte(nil), scannerID...), sequence: sequence, closeScanner: closeScanner,
+	})
+	if closeScanner {
+		return kvSessionBatch{scannerID: append([]byte(nil), scannerID...)}, nil
+	}
+	batch := b.batches[0]
+	b.batches = b.batches[1:]
+	return batch, nil
+}
+
 func testTableBucket(table Table) TableBucket {
 	return TableBucket{
-		TableID: table.ID, PartitionID: -1, BucketID: 0,
+		TableID: table.ID, PartitionID: -1, BucketID: 0, BucketCount: int32(table.BucketCount),
 		Leader: ServerNode{ID: 1, Address: "tablet:9123", ServerType: TabletServer},
 	}
 }
 
 func TestResolvedTableBucketsAreOrdered(t *testing.T) {
-	buckets, err := resolvedTableBuckets(10, 20, map[int32]ServerNode{
+	buckets, err := resolvedTableBuckets(10, 20, 3, map[int32]ServerNode{
 		2: {ID: 12, Address: "two:9123", ServerType: TabletServer},
 		0: {ID: 10, Address: "zero:9123", ServerType: TabletServer},
 	})
 	if err != nil || len(buckets) != 2 ||
 		buckets[0].BucketID != 0 || buckets[1].BucketID != 2 ||
-		buckets[0].TableID != 10 || buckets[0].PartitionID != 20 {
+		buckets[0].TableID != 10 || buckets[0].PartitionID != 20 ||
+		buckets[0].BucketCount != 3 || buckets[1].BucketCount != 3 {
 		t.Fatalf("resolvedTableBuckets() = %#v, %v", buckets, err)
 	}
-	if _, err := resolvedTableBuckets(1, -1, nil); !errors.Is(err, ErrMetadata) {
+	if _, err := resolvedTableBuckets(1, -1, 0, nil); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("empty buckets error = %v", err)
 	}
 }
@@ -136,9 +176,41 @@ func TestClientBatchScanBackendResponses(t *testing.T) {
 func batchBackendClient(node ServerNode, requester requesterFunc) *Client {
 	tablet := newClient(requester, nil)
 	tablet.versions[fmsg.APIKeyLimitScan] = 0
+	tablet.versions[fmsg.APIKeyScanKv] = 0
 	manager := newConnectionManager(config{})
 	manager.clients[connectionKey{id: node.ID, address: node.Address, serverType: node.ServerType}] = tablet
 	return &Client{manager: manager}
+}
+
+func TestClientBatchBackendBuildsScanKVRequests(t *testing.T) {
+	table := upsertWriterTable()
+	bucket := testTableBucket(table)
+	bucket.BucketCount = 4
+	var got *fmsg.ScanKvRequest
+	client := batchBackendClient(bucket.Leader, requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		got = request.(*fmsg.MessageRequest).Message().(*fmsg.ScanKvRequest)
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		message := response.Message().(*fmsg.ScanKvResponse)
+		message.ScannerId, message.HasMoreResults = []byte("scan"), proto.Bool(true)
+		return response, nil
+	}))
+	result, err := (clientBatchScanBackend{client: client}).scanKV(
+		context.Background(), bucket, 25, 4096, nil, 0, false,
+	)
+	if err != nil || string(result.scannerID) != "scan" || !result.hasMore {
+		t.Fatalf("scanKV() = %#v, %v", result, err)
+	}
+	if got.GetBucketScanReq().GetTableId() != table.ID || got.GetBucketScanReq().GetBucketId() != bucket.BucketID ||
+		got.GetBucketScanReq().GetRoutingBucketCount() != 4 || got.GetBucketScanReq().GetLimit() != 25 ||
+		got.GetBatchSizeBytes() != 4096 || got.GetCallSeqId() != 0 {
+		t.Fatalf("ScanKv request = %#v", got)
+	}
+	bucket.BucketCount = 0
+	if _, err := (clientBatchScanBackend{client: client}).scanKV(
+		context.Background(), bucket, 25, 4096, nil, 0, false,
+	); !errors.Is(err, ErrMetadata) {
+		t.Fatalf("scanKV() missing bucket count error = %v", err)
+	}
 }
 
 func TestBatchScannerReadsCurrentKVStateOnce(t *testing.T) {
@@ -202,6 +274,113 @@ func encodedValueBatch(t *testing.T, table Table, rows ...Row) []byte {
 	}
 	binary.LittleEndian.PutUint32(encoded, uint32(len(encoded)-4))
 	return encoded
+}
+
+func TestBatchScannerUsesFluss100KVSession(t *testing.T) {
+	table := upsertWriterTable()
+	bucket := testTableBucket(table)
+	bucket.BucketCount = 3
+	backend := &fakeKVSessionBackend{batches: []kvSessionBatch{
+		{scannerID: []byte("scanner"), hasMore: true, records: encodedValueBatch(t, table, Row{int32(1), "one", int64(10)})},
+		{scannerID: []byte("scanner"), records: encodedValueBatch(t, table, Row{int32(2), "two", int64(20)})},
+	}}
+	scanner, err := newBatchScanner(
+		context.Background(), backend, nil, table, bucket,
+		WithBatchLimit(2), WithBatchSizeBytes(4096),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := scanner.Poll(context.Background())
+	if err != nil || first.Done || len(first.Rows) != 1 {
+		t.Fatalf("first Poll() = %#v, %v", first, err)
+	}
+	second, err := scanner.Poll(context.Background())
+	if err != nil || !second.Done || len(second.Rows) != 1 {
+		t.Fatalf("second Poll() = %#v, %v", second, err)
+	}
+	if len(backend.calls) != 2 || backend.calls[0].limit != 2 || backend.calls[0].batchSize != 4096 ||
+		backend.calls[0].sequence != 0 || len(backend.calls[0].scannerID) != 0 ||
+		backend.calls[0].bucket.BucketCount != 3 || backend.calls[1].sequence != 1 ||
+		string(backend.calls[1].scannerID) != "scanner" {
+		t.Fatalf("scan calls = %#v", backend.calls)
+	}
+	if err := scanner.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	backend = &fakeKVSessionBackend{batches: []kvSessionBatch{{scannerID: []byte("open"), hasMore: true}}}
+	scanner, err = newBatchScanner(context.Background(), backend, nil, table, bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scanner.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := scanner.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.calls) != 2 || !backend.calls[1].closeScanner || backend.calls[1].sequence != 1 {
+		t.Fatalf("close calls = %#v", backend.calls)
+	}
+}
+
+func TestBatchScannerRejectsInvalidKVSessionIdentity(t *testing.T) {
+	table := upsertWriterTable()
+	bucket := testTableBucket(table)
+	for _, test := range []struct {
+		name    string
+		batches []kvSessionBatch
+		polls   int
+	}{
+		{name: "missing scanner ID", batches: []kvSessionBatch{{hasMore: true}}, polls: 1},
+		{
+			name: "changed scanner ID",
+			batches: []kvSessionBatch{
+				{scannerID: []byte("first"), hasMore: true},
+				{scannerID: []byte("second")},
+			},
+			polls: 2,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			backend := &fakeKVSessionBackend{batches: test.batches}
+			scanner, err := newBatchScanner(context.Background(), backend, nil, table, bucket)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer scanner.Close()
+			for index := 0; index < test.polls-1; index++ {
+				if _, err := scanner.Poll(context.Background()); err != nil {
+					t.Fatalf("Poll(%d) = %v", index, err)
+				}
+			}
+			if _, err := scanner.Poll(context.Background()); !errors.Is(err, ErrValidation) {
+				t.Fatalf("terminal Poll() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestBatchScannerAcceptsEmptyKVBucketWithoutSession(t *testing.T) {
+	table := upsertWriterTable()
+	backend := &fakeKVSessionBackend{batches: []kvSessionBatch{{}}}
+	scanner, err := newBatchScanner(
+		context.Background(), backend, nil, table, testTableBucket(table),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Poll(context.Background())
+	if err != nil || !result.Done || len(result.Rows) != 0 || !scanner.Done() {
+		t.Fatalf("Poll() = %#v, %v", result, err)
+	}
+	if err := scanner.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.calls) != 1 {
+		t.Fatalf("scan calls = %#v", backend.calls)
+	}
 }
 
 func TestBatchScannerReadsLatestLogRows(t *testing.T) {
