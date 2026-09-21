@@ -24,7 +24,7 @@ var (
 // DataType is the portable root type of a Fluss column.
 type DataType string
 
-// Data types supported by Apache Fluss 0.9.1 schemas.
+// Data types supported by Apache Fluss 1.0 schemas.
 const (
 	BoolType         DataType = "BOOLEAN"
 	CharType         DataType = "CHAR"
@@ -136,7 +136,7 @@ func validateSchemaKeys(columns map[string]Column, keys []string) error {
 	return nil
 }
 
-// JSON validates and encodes the Fluss 0.9.1 schema JSON representation.
+// JSON validates and encodes the Fluss 1.0 schema JSON representation.
 func (s Schema) JSON() ([]byte, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func assignLogicalFieldIDs(logicalType *LogicalType, nextID *int) {
 	}
 }
 
-// ParseSchemaJSON decodes and validates a Fluss 0.9.1 schema.
+// ParseSchemaJSON decodes and validates a Fluss 1.0 schema.
 func ParseSchemaJSON(data []byte) (Schema, error) {
 	var encoded schemaJSON
 	if err := json.Unmarshal(data, &encoded); err != nil {
@@ -474,7 +474,7 @@ func mapEntries(value any) (Map, bool) {
 // TableKind distinguishes append-only log tables from primary-key tables.
 type TableKind string
 
-// Table kinds supported by Apache Fluss 0.9.1.
+// Table kinds supported by Apache Fluss 1.0.
 const (
 	LogTable        TableKind = "LOG"
 	PrimaryKeyTable TableKind = "PRIMARY_KEY"

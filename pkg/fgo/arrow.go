@@ -6,7 +6,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
-// ArrowSchema converts a Fluss schema to the exact Arrow field layout used by Fluss 0.9.1.
+// ArrowSchema converts a Fluss schema to the exact Arrow field layout used by Fluss 1.0.
 func (s Schema) ArrowSchema() (*arrow.Schema, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err

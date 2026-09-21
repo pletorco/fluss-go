@@ -22,7 +22,7 @@ body:
     attributes:
       label: Versions
       description: Provide the fluss-go, Apache Fluss, and Go versions.
-      placeholder: fluss-go v0.1.0-beta.N; Fluss 0.9.1-incubating; Go 1.26.5
+      placeholder: fluss-go v0.2.0-beta.N; Fluss 1.0.0; Go 1.26.6
     validations:
       required: true
   - type: dropdown

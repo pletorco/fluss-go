@@ -1,6 +1,6 @@
 # Native lake-format decision
 
-This document records the Fluss `0.9.1-incubating` contract and the reviewed
+This document records the Fluss `1.0.0` client boundary and the reviewed
 no-implementation decision for native Iceberg, Lance, and Paimon reads in the
 current fluss-go beta. It does not classify remote object transport or Fluss KV
 snapshot orchestration as native lake-format support.
@@ -18,13 +18,15 @@ manifest object but cannot safely discover an Iceberg snapshot, apply Paimon
 merge semantics, or interpret a Lance dataset. `RemoteSnapshotBatchProvider`
 must not be used to recreate behavior already owned by a native format engine.
 
-## Fluss 0.9.1 contract
+## Fluss 1.0 contract
 
 `GET_LAKE_SNAPSHOT` returns a table ID, one external snapshot ID, and ordered
 bucket entries containing partition ID, partition name, bucket ID, and the
 included Fluss log offset. It does not return a catalog URI, namespace mapping,
 manifest list, data-file path, object size, filesystem configuration, or
-credentials.
+credentials. `LIST_REMOTE_LOG_MANIFESTS` adds committed remote-log manifest
+paths and end offsets, but still does not supply a native lake catalog,
+snapshot planner, delete semantics, or data-file decoder.
 
 The Java 0.9.1 Iceberg source treats the returned snapshot ID as an exact
 Iceberg snapshot ID. It loads the logical `database.table` through the selected
@@ -43,8 +45,10 @@ schema mismatches, cancellation, and close failures must retain their causes.
 
 ## Candidate review
 
-The review was performed on 2026-07-31 against the Fluss 0.9.1 source at
-`6bf969f71af8d6f9cc37383ab89ae46a58b0e227`.
+The dependency review was performed on 2026-07-31 against the Fluss 0.9.1
+source at `6bf969f71af8d6f9cc37383ab89ae46a58b0e227`. The no-implementation
+decision remains in force for the Fluss 1.0 client because the 1.0 wire
+additions do not transfer native-format ownership to fluss-go.
 
 ### Iceberg
 
@@ -62,7 +66,7 @@ It is not added in this beta for the following measured reasons:
   `go list -deps` reported 480 packages including the standard library;
 - the current project Trivy allowlist rejects transitive
   `GNU-All-permissive-Copying-License`, `ISC`, and `MPL-2.0` findings;
-- no lake-enabled Fluss 0.9.1 fixture currently proves tiered data written by
+- no lake-enabled Fluss 1.0 fixture currently proves tiered data written by
   Fluss can be planned, bucket-filtered, projected, and read end to end.
 
 An optional module would protect core consumers but would still impose this
@@ -94,7 +98,7 @@ Native support can be reconsidered when all of the following are available:
    weakening existing policy;
 3. it remains a separately versioned optional module and does not enter the
    root module graph;
-4. a reproducible lake-enabled Fluss 0.9.1 environment writes the fixture read
+4. a reproducible lake-enabled Fluss 1.0 environment writes the fixture read
    by the Go provider;
 5. golden and service tests cover exact snapshot selection, partition and
    bucket filtering, projections, reserved columns, supported Fluss types,

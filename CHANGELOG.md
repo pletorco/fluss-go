@@ -8,6 +8,50 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.2.0-beta.1] - 2026-09-21
+
+### Added
+
+- Added the Apache Fluss 1.0 protocol baseline with 67 API keys through 1066,
+  76 error codes through 74, regenerated protobuf messages, and the upstream
+  1.0 provenance record.
+- Added server-side KV scan sessions with bounded response bytes, ordered call
+  sequences, terminal and empty-bucket handling, cancellation, and explicit
+  close for unfinished scanners.
+- Added database alteration, cluster health, remote-log manifest listing,
+  active KV snapshot listing, and table bucket-count alteration APIs.
+- Added replica, ISR, leader epoch, bucket-count epoch, remote-data directory,
+  and per-partition bucket-count metadata.
+- Added Fluss 1.0 KV storage-pressure results and bounded cooperative
+  backpressure for upsert writers.
+
+### Changed
+
+- Dropped Apache Fluss 0.9.1 compatibility. Fluss 0.9.1 applications must stay
+  on fluss-go `v0.1.0-beta.11`; Fluss 1.0 applications use
+  `v0.2.0-beta.1`.
+- Updated routing requests to carry the authoritative table or partition
+  bucket count, including after rescaling, and made dynamic partition creation
+  wait for an assigned tablet leader.
+- Negotiated the Fluss 1.0 versions of existing log, KV, lookup, prefix lookup,
+  snapshot metadata, and table alteration operations. Log scans now honor
+  `filtered_end_offset`.
+- Updated the root and HDFS, OSS, OpenTelemetry, and S3 adapter release
+  requirements to `v0.2.0-beta.1`.
+- Updated Arrow-Go to 18.8.0, Goldmark to 1.8.6, the AWS SDK core to 1.47.0,
+  and the AWS S3 client to 1.113.1, with their resolved compression and SDK
+  support modules.
+
+### Compatibility
+
+- Verified plaintext, SASL PLAIN, externally terminated TLS, catalog, data,
+  schema evolution, scan-session, administration, leader failover,
+  coordinator recovery, and reliability workflows against the digest-pinned
+  Apache Fluss 1.0.0 image.
+- Arrow predicate pushdown and historical lake partition routing remain
+  explicitly unsupported. The release remains pure Go and does not wrap the
+  Fluss Rust core.
+
 ## [v0.1.0-beta.11] - 2026-09-07
 
 ### Changed
@@ -311,7 +355,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.11...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.1...HEAD
+[v0.2.0-beta.1]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.11...v0.2.0-beta.1
 [v0.1.0-beta.11]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.10...v0.1.0-beta.11
 [v0.1.0-beta.10]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.9...v0.1.0-beta.10
 [v0.1.0-beta.9]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.8...v0.1.0-beta.9

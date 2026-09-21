@@ -11,7 +11,7 @@ exports may change accidentally.
 | --- | --- |
 | `pkg/fgo` | Application data API, configuration, lifecycle, errors, extension interfaces, and Arrow integration. Review all changes for source compatibility and runtime behavior. |
 | `pkg/fadm` | Administrative API over a shared `fgo.Client`. Review names, partial results, identifiers, and server-side side effects. |
-| `pkg/fmsg` | Pinned Fluss 0.9.1 wire messages, API metadata, raw request escape hatch, and protocol errors. Generated protobuf changes follow upstream inputs and are reviewed separately from client ergonomics. |
+| `pkg/fmsg` | Pinned Fluss 1.0 wire messages, API metadata, raw request escape hatch, and protocol errors. Generated protobuf changes follow upstream inputs and are reviewed separately from client ergonomics. |
 | `adapters/*` | Separately versioned optional modules. Their API baselines, dependencies, and prefixed tags are reviewed independently. |
 | `internal/*` and `cmd/*` | Not supported as application APIs. Repository tooling commands may change with the development workflow. |
 

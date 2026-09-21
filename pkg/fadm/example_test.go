@@ -63,6 +63,50 @@ func ExampleClient_CreateDatabase() {
 	}
 }
 
+func ExampleClient_AlterDatabase() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	comment := "Fluss 1.0 analytics"
+	owner := "data-platform"
+	err = admin.AlterDatabase(ctx, "analytics", fadm.AlterDatabase{
+		Comment: &comment,
+		Config: []fadm.AlterConfig{{
+			Key: "owner", Value: &owner, Op: fadm.ConfigSet,
+		}},
+	}, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleClient_GetClusterHealth() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	health, err := admin.GetClusterHealth(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("health=%d in-sync=%d/%d", health.Status, health.InSyncReplicas, health.Replicas)
+}
+
 func ExampleClient_CreateACLs() {
 	ctx := context.Background()
 	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
@@ -278,7 +322,7 @@ func ExampleClient_WaitRebalance() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	goalIDs := []int32{1} // Goal IDs are defined by the target Fluss 0.9.1 cluster.
+	goalIDs := []int32{1} // Goal IDs are defined by the target Fluss 1.0 cluster.
 	rebalanceID, err := admin.Rebalance(ctx, goalIDs...)
 	if err != nil {
 		log.Fatal(err)
@@ -379,6 +423,56 @@ func ExampleClient_AcquireKVSnapshotLease() {
 			continue
 		}
 		exampleLogSnapshotMetadata(ctx, admin, leased)
+	}
+}
+
+func ExampleClient_ListKVSnapshots() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	table, err := client.GetTable(ctx, fgo.TablePath{Database: "production", Table: "customers"})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	snapshots, err := admin.ListKVSnapshots(ctx, table.ID, -1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, snapshot := range snapshots.Snapshots {
+		log.Printf("bucket=%d snapshot=%d offset=%d", snapshot.Bucket, snapshot.SnapshotID, snapshot.LogOffset)
+	}
+}
+
+func ExampleClient_ListRemoteLogManifests() {
+	ctx := context.Background()
+	client, err := fgo.Open(ctx, fgo.WithBootstrapServers("coordinator.example:9123"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+	admin, err := fadm.New(client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	table, err := client.GetTable(ctx, fgo.TablePath{Database: "production", Table: "events"})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	manifests, err := admin.ListRemoteLogManifests(ctx, table.ID, -1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, manifest := range manifests {
+		log.Printf("bucket=%d end=%d path=%s", manifest.Bucket, manifest.LogEndOffset, manifest.Path)
 	}
 }
 

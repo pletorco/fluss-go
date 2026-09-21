@@ -372,27 +372,15 @@ func setRoutingBucketCount(request fmsg.Request, count int32) {
 	value := proto.Int32(count)
 	switch message := typed.Message().(type) {
 	case *fmsg.ProduceLogRequest:
-		for _, bucket := range message.GetBucketsReq() {
-			bucket.RoutingBucketCount = value
-		}
+		setProduceRoutingBucketCount(message, value)
 	case *fmsg.FetchLogRequest:
-		for _, table := range message.GetTablesReq() {
-			for _, bucket := range table.GetBucketsReq() {
-				bucket.RoutingBucketCount = value
-			}
-		}
+		setFetchRoutingBucketCount(message, value)
 	case *fmsg.PutKvRequest:
-		for _, bucket := range message.GetBucketsReq() {
-			bucket.RoutingBucketCount = value
-		}
+		setPutRoutingBucketCount(message, value)
 	case *fmsg.LookupRequest:
-		for _, bucket := range message.GetBucketsReq() {
-			bucket.RoutingBucketCount = value
-		}
+		setLookupRoutingBucketCount(message, value)
 	case *fmsg.PrefixLookupRequest:
-		for _, bucket := range message.GetBucketsReq() {
-			bucket.RoutingBucketCount = value
-		}
+		setPrefixLookupRoutingBucketCount(message, value)
 	case *fmsg.LimitScanRequest:
 		message.RoutingBucketCount = value
 	case *fmsg.ScanKvRequest:
@@ -402,9 +390,45 @@ func setRoutingBucketCount(request fmsg.Request, count int32) {
 	case *fmsg.ListOffsetsRequest:
 		message.RoutingBucketCount = value
 	case *fmsg.GetTableStatsRequest:
-		for _, bucket := range message.GetBucketsReq() {
-			bucket.RoutingBucketCount = value
+		setTableStatsRoutingBucketCount(message, value)
+	}
+}
+
+func setProduceRoutingBucketCount(request *fmsg.ProduceLogRequest, count *int32) {
+	for _, bucket := range request.GetBucketsReq() {
+		bucket.RoutingBucketCount = count
+	}
+}
+
+func setFetchRoutingBucketCount(request *fmsg.FetchLogRequest, count *int32) {
+	for _, table := range request.GetTablesReq() {
+		for _, bucket := range table.GetBucketsReq() {
+			bucket.RoutingBucketCount = count
 		}
+	}
+}
+
+func setPutRoutingBucketCount(request *fmsg.PutKvRequest, count *int32) {
+	for _, bucket := range request.GetBucketsReq() {
+		bucket.RoutingBucketCount = count
+	}
+}
+
+func setLookupRoutingBucketCount(request *fmsg.LookupRequest, count *int32) {
+	for _, bucket := range request.GetBucketsReq() {
+		bucket.RoutingBucketCount = count
+	}
+}
+
+func setPrefixLookupRoutingBucketCount(request *fmsg.PrefixLookupRequest, count *int32) {
+	for _, bucket := range request.GetBucketsReq() {
+		bucket.RoutingBucketCount = count
+	}
+}
+
+func setTableStatsRoutingBucketCount(request *fmsg.GetTableStatsRequest, count *int32) {
+	for _, bucket := range request.GetBucketsReq() {
+		bucket.RoutingBucketCount = count
 	}
 }
 
@@ -580,7 +604,7 @@ func (c *Client) authenticationChallenge(ctx context.Context, auth Authenticator
 		classified := serverError(err, fmsg.APIKeyAuthenticate, c.address)
 		return nil, false, authenticationError(classified, isRetriableAuthenticationError(classified))
 	}
-	// Fluss SASL/PLAIN returns a present, empty final challenge. The Java 0.9.1
+	// Fluss SASL/PLAIN returns a present, empty final challenge. The Java
 	// client treats any server response received after local completion as success.
 	if auth.Complete() {
 		return nil, true, nil

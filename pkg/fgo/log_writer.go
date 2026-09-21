@@ -31,7 +31,7 @@ const (
 // LogFormat selects the row or Arrow encoding used for log batches.
 type LogFormat string
 
-// Log write formats supported by Apache Fluss 0.9.1.
+// Log write formats supported by Apache Fluss 1.0.
 const (
 	LogFormatAuto      LogFormat = "auto"
 	LogFormatArrow     LogFormat = "arrow"

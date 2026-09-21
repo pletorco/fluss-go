@@ -168,7 +168,7 @@ tasks:
         cmd: go -C {{.ITEM}} test ./...
 
   test:golden:
-    desc: Verify byte-level Fluss 0.9.1 compatibility fixtures
+    desc: Verify pinned Java byte-compatibility fixtures
     cmds:
       - go test ./pkg/fmsg -run '^TestProtocolGoldenBytes$'
       - >-

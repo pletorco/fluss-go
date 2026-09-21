@@ -14,7 +14,7 @@ import (
 // ACLResourceType identifies a resource category in the Fluss ACLBinding protocol.
 type ACLResourceType int32
 
-// ACLBinding resource types supported by Apache Fluss 0.9.1.
+// ACLBinding resource types supported by Apache Fluss 1.0.
 const (
 	ACLResourceAny      ACLResourceType = 1
 	ACLResourceCluster  ACLResourceType = 2
@@ -25,7 +25,7 @@ const (
 // ACLOperation identifies an operation protected by an ACL binding.
 type ACLOperation int32
 
-// ACLBinding operations supported by Apache Fluss 0.9.1.
+// ACLBinding operations supported by Apache Fluss 1.0.
 const (
 	ACLOperationAny      ACLOperation = 1
 	ACLOperationAll      ACLOperation = 2
@@ -38,10 +38,10 @@ const (
 )
 
 // ACLPermission identifies whether an operation is allowed.
-// Apache Fluss 0.9.1 does not support deny ACLs.
+// Apache Fluss 1.0 does not support deny ACLs.
 type ACLPermission int32
 
-// ACLBinding permissions supported by Apache Fluss 0.9.1.
+// ACLBinding permissions supported by Apache Fluss 1.0.
 const (
 	ACLPermissionAny   ACLPermission = 1
 	ACLPermissionAllow ACLPermission = 2
@@ -51,7 +51,7 @@ const (
 // Custom authorizers may define additional non-empty, case-sensitive values.
 type ACLPrincipalType string
 
-// Conventional principal types and wildcards used by Apache Fluss 0.9.1.
+// Conventional principal types and wildcards used by Apache Fluss 1.0.
 const (
 	ACLPrincipalUser     ACLPrincipalType = "User"
 	ACLPrincipalGroup    ACLPrincipalType = "Group"
@@ -438,7 +438,7 @@ func (c *Client) AddServerTag(ctx context.Context, serverIDs []int32, tag int32)
 	return c.changeServerTag(ctx, fmsg.APIKeyAddServerTag, serverIDs, tag)
 }
 
-// Server tags supported by Apache Fluss 0.9.1.
+// Server tags supported by Apache Fluss 1.0.
 const (
 	ServerTagPermanentOffline int32 = 0
 	ServerTagTemporaryOffline int32 = 1
@@ -479,7 +479,7 @@ func (c *Client) changeServerTag(ctx context.Context, key fmsg.APIKey, serverIDs
 type RebalanceProgress struct {
 	// ID identifies the asynchronous rebalance.
 	ID string
-	// Status is the Fluss 0.9.1 protocol status code.
+	// Status is the Fluss 1.0 protocol status code.
 	Status int32
 	// Tables contains physical-table progress.
 	Tables []RebalanceTableProgress
@@ -499,7 +499,7 @@ type RebalanceBucketProgress struct {
 	PartitionID int64
 	// Bucket identifies the logical table bucket.
 	Bucket int32
-	// Status is the Fluss 0.9.1 bucket progress code.
+	// Status is the Fluss 1.0 bucket progress code.
 	Status int32
 	// OriginalLeader is the leader before the rebalance.
 	OriginalLeader int32
@@ -639,7 +639,7 @@ type ProducerOffsets struct {
 }
 
 // RegisterProducerOffsets creates or replaces offsets for producerID. The
-// boolean result is true only when the Fluss 0.9.1 protocol result code is
+// boolean result is true only when the Fluss 1.0 protocol result code is
 // zero; callers must handle a false result even when err is nil.
 func (c *Client) RegisterProducerOffsets(
 	ctx context.Context,

@@ -17,7 +17,7 @@ const partitionValueSeparator = "$"
 // PartitionSpec maps every partition key to one value.
 type PartitionSpec map[string]string
 
-// PartitionName resolves a spec in schema partition-key order. Fluss 0.9.1 joins values with "$".
+// PartitionName resolves a spec in schema partition-key order. Fluss joins values with "$".
 func (s Schema) PartitionName(spec PartitionSpec) (string, error) {
 	if len(s.PartitionKey) == 0 {
 		return "", fmt.Errorf("%w: table is not partitioned", ErrInvalidSchema)

@@ -65,9 +65,13 @@ func alterConfigMessage(change AlterConfig) (*fmsg.PbAlterConfig, error) {
 type ClusterHealthStatus int32
 
 const (
-	ClusterHealthGreen   ClusterHealthStatus = 0
-	ClusterHealthYellow  ClusterHealthStatus = 1
-	ClusterHealthRed     ClusterHealthStatus = 2
+	// ClusterHealthGreen reports that every expected leader and replica is active and in sync.
+	ClusterHealthGreen ClusterHealthStatus = 0
+	// ClusterHealthYellow reports a degraded cluster that can still serve leaders.
+	ClusterHealthYellow ClusterHealthStatus = 1
+	// ClusterHealthRed reports missing active leaders.
+	ClusterHealthRed ClusterHealthStatus = 2
+	// ClusterHealthUnknown reports a status value the client cannot classify.
 	ClusterHealthUnknown ClusterHealthStatus = 3
 )
 

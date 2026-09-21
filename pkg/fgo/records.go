@@ -100,7 +100,7 @@ func (s Schema) ValidatePrimaryKey(key PrimaryKey) error {
 // ChangeType identifies the row-level change carried by a log record.
 type ChangeType int8
 
-// Change types encoded by Apache Fluss 0.9.1.
+// Change types encoded by Apache Fluss 1.0.
 const (
 	Append ChangeType = iota
 	Insert

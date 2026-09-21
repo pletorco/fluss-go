@@ -17,11 +17,12 @@ failure diagnostics.
 
 The suite verifies the byte-level compatibility fixtures before running live
 protocol, request-cancellation isolation, authentication, routing, catalog, log, KV,
-lookup, prefix-lookup, tablet leader-failover data correctness, and coordinator
+server-side KV scan sessions, lookup, prefix-lookup, tablet leader-failover data correctness, and coordinator
 restart recovery checks. Failover writes cover every bucket and compare
 acknowledged offsets with a bounded final scan; KV values are verified before
 and after leader movement. Typed wrappers, partial updates, merge modes,
-producer offsets, snapshot metadata and leases, safe advanced admin reads,
+producer offsets, database alteration, cluster health, remote-log manifests,
+active snapshot listing, snapshot metadata and leases, safe advanced admin reads,
 TLS-routed admin/data calls, TLS with SASL, standard certificate failures,
 protocol mismatches, and handshake cancellation are also exercised. The
 complete method matrix and deliberate environment

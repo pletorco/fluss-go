@@ -1,6 +1,6 @@
 # Schema evolution
 
-`fgo.Client` resolves the writer schema identified by each Fluss 0.9.1 record
+`fgo.Client` resolves the writer schema identified by each Fluss 1.0 record
 or batch schema ID. Resolved schemas are shared by all readers on the client,
 coalesced while a lookup is in flight, and retained in a 256-entry LRU cache.
 Canceling one reader does not cancel a fetch still observed by another reader;

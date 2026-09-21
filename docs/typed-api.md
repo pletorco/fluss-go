@@ -1,7 +1,7 @@
 # Typed data API
 
 The `fgo` typed API adds compile-time application types without changing the
-row-oriented Fluss protocol. It targets Apache Fluss `0.9.1-incubating` and
+row-oriented Fluss protocol. It targets Apache Fluss `1.0.0` and
 uses explicit codecs as its stable contract:
 
 <!-- go-source: internal/docexamples/snippets_test.go typedCodec -->

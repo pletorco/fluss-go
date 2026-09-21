@@ -290,6 +290,7 @@ func batchScan(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 		table,
 		buckets[0],
 		fgo.WithBatchLimit(1_000),
+		fgo.WithBatchSizeBytes(1<<20),
 		fgo.WithBatchProjection("id", "name"),
 	)
 	if err != nil {

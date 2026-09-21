@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly COMPOSE_FILE="$ROOT/integration/storage/compose.yml"
 readonly PROJECT="fluss-go-storage-integration"
-readonly MINIO_IMAGE="minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+readonly MINIO_IMAGE="quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
 readonly HADOOP_IMAGE="apache/hadoop@sha256:127774dadab40ce84df7ac668a7a8c99945688b3fe336f1388f4477ca33e1529"
 readonly TARGET="${1:-all}"
 

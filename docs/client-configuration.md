@@ -1,9 +1,9 @@
 # Client configuration mapping
 
 This document maps the client configuration published by Apache Fluss
-`v0.9.1-incubating` to the exported `fgo` API. The source of truth is the
-upstream [`ConfigOptions`](https://github.com/apache/fluss/blob/v0.9.1-incubating/fluss-common/src/main/java/org/apache/fluss/config/ConfigOptions.java)
-and generated [configuration reference](https://github.com/apache/fluss/blob/v0.9.1-incubating/website/docs/_configs/_partial_config.mdx).
+`v1.0.0` to the exported `fgo` API. The source of truth is the
+upstream [`ConfigOptions`](https://github.com/apache/fluss/blob/v1.0.0/fluss-common/src/main/java/org/apache/fluss/config/ConfigOptions.java)
+and generated [configuration reference](https://github.com/apache/fluss/blob/v1.0.0/website/docs/_configs/_partial_config.mdx).
 
 The mapping is semantic rather than a Java property parser. Go-specific
 interfaces use `context.Context`, `crypto/tls`, callbacks, and explicit
@@ -13,14 +13,14 @@ implement that Java client tuning control.
 
 ## Connection and security
 
-| Fluss 0.9.1 key | `fluss-go` mapping | Notes |
+| Fluss 1.0 key | `fluss-go` mapping | Notes |
 | --- | --- | --- |
 | `bootstrap.servers` | `WithBootstrapServers` | Direct semantic mapping. |
 | `client.id` | None | `WithClientSoftware` sets the API-versions software name and version; it is not the Java metrics client ID. |
 | `client.connect-timeout` | `WithConnectTimeout` | Direct semantic mapping. |
 | `client.request-timeout` | `WithAppendRequest`, `WithUpsertRequest`, `WithLookupRequestTimeout`, and call contexts | Go exposes request bounds at the resource or call boundary rather than as one global value. |
-| `client.security.protocol` | `WithAuthenticator`; absence selects plaintext | Fluss 0.9.1 provides native `PLAINTEXT` and `SASL`. `WithTLSConfig` is a Go transport extension for externally terminated TLS, not a 0.9.1 security protocol. |
-| `client.security.sasl.mechanism` | `SASLPlainAuthenticator` or a custom `AuthenticatorFactory` | `SASL/PLAIN` is the only built-in Fluss 0.9.1 mechanism. |
+| `client.security.protocol` | `WithAuthenticator`; absence selects plaintext | Fluss 1.0 provides native `PLAINTEXT` and `SASL`. `WithTLSConfig` is a Go transport extension for externally terminated TLS, not a native Fluss 1.0 security protocol. |
+| `client.security.sasl.mechanism` | `SASLPlainAuthenticator` or a custom `AuthenticatorFactory` | `SASL/PLAIN` is the only built-in Fluss 1.0 mechanism. |
 | `client.security.sasl.username`, `client.security.sasl.password` | `SASLPlainAuthenticator` arguments | Direct credential mapping without a string configuration map. |
 | `client.security.sasl.jaas.config` | None | JAAS is Java-specific. |
 | `client.metrics.enabled` | `WithMetricsObserver` | Applications choose an observer explicitly; the optional OTel adapter replaces Java's default JMX reporter. |
@@ -31,7 +31,7 @@ Both `AppendWriter` and `UpsertWriter` use the shared upstream `client.writer.*`
 concepts. Their Go options remain resource-specific so independently configured
 writers can share one client.
 
-| Fluss 0.9.1 key | `fluss-go` mapping | Notes |
+| Fluss 1.0 key | `fluss-go` mapping | Notes |
 | --- | --- | --- |
 | `client.writer.buffer.memory-size` | `WithAppendBuffer`, `WithUpsertBuffer` | Related bound, but Go limits queued records rather than Java memory bytes. |
 | `client.writer.buffer.page-size` | None | Java memory-page implementation detail. |
@@ -50,7 +50,7 @@ writers can share one client.
 
 ## Log scanner
 
-| Fluss 0.9.1 key | `fluss-go` mapping | Notes |
+| Fluss 1.0 key | `fluss-go` mapping | Notes |
 | --- | --- | --- |
 | `client.scanner.log.check-crc` | Always enabled | Go does not expose a corruption-check bypass. |
 | `client.scanner.log.max-poll-records` | None | `WithScanRowLimit` is a total completion bound, not a per-poll limit. |
@@ -63,7 +63,7 @@ writers can share one client.
 
 ## Lookup
 
-| Fluss 0.9.1 key | `fluss-go` mapping | Notes |
+| Fluss 1.0 key | `fluss-go` mapping | Notes |
 | --- | --- | --- |
 | `client.lookup.queue-size` | `WithLookupQueue` / `LookupConfig.MaxQueuedKeys` | Direct semantic mapping. |
 | `client.lookup.max-batch-size` | `WithLookupBatchLimits` / `LookupConfig.MaxBatchKeys` | Direct semantic mapping. |
@@ -71,9 +71,18 @@ writers can share one client.
 | `client.lookup.batch-timeout` | `WithLookupQueue` / `LookupConfig.BatchTimeout` | Direct semantic mapping. |
 | `client.lookup.max-retries` | `WithLookupRetryPolicy` | Go uses bounded attempts and a backoff callback. |
 
+## KV batch scanner
+
+`NewBatchScanner` uses the Fluss 1.0 `SCAN_KV` server session for primary-key
+tables. `WithBatchSizeBytes` maps to the per-response byte bound. The row
+`WithBatchLimit` is sent when the session opens and applies to the whole scan,
+while projection remains a client-side result-shaping operation. Callers must
+close an unfinished scanner so the client can send `close_scanner`; completed
+sessions have already been reclaimed by the server.
+
 ## Remote files and filesystem tokens
 
-| Fluss 0.9.1 key | `fluss-go` mapping | Notes |
+| Fluss 1.0 key | `fluss-go` mapping | Notes |
 | --- | --- | --- |
 | `client.remote-file.download-thread-num` | `RemoteFileReadConfig.MaxConcurrentReads` | Bounds concurrent object streams rather than Java download threads. |
 | `client.filesystem.security.token.renewal.backoff` | `FileSystemSecurityTokenRefreshConfig.RenewalRetryBackoff` | Go adds `MaxRenewalRetryBackoff` for capped exponential retry. |

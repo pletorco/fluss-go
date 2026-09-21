@@ -63,25 +63,33 @@ func tableMetadataFromResponse(response *fmsg.MetadataResponse, path TablePath) 
 		if err != nil {
 			return TableMetadata{}, err
 		}
-		partitions := make(map[string]PartitionMetadata)
-		for _, partition := range response.GetPartitionMetadata() {
-			if partition.GetTableId() != item.GetTableId() {
-				continue
-			}
-			partitionPath := PhysicalTablePath{TablePath: path, Partition: partition.GetPartitionName()}
-			partitionBuckets, partitionDetails, err := bucketMetadata(partition.GetBucketMetadata(), tablets)
-			if err != nil {
-				return TableMetadata{}, err
-			}
-			count := partition.GetBucketCount()
-			if partition.BucketCount == nil {
-				count = int32(len(partitionDetails))
-			}
-			partitions[physicalTableKey(partitionPath)] = PartitionMetadata{Path: partitionPath, ID: partition.GetPartitionId(), Buckets: partitionBuckets, BucketDetails: partitionDetails, BucketCount: count, coordinator: coordinator, tablets: tablets}
+		partitions, err := partitionMetadataForTable(response.GetPartitionMetadata(), item.GetTableId(), path, coordinator, tablets)
+		if err != nil {
+			return TableMetadata{}, err
 		}
 		return TableMetadata{Path: path, ID: item.GetTableId(), SchemaID: item.GetSchemaId(), Buckets: buckets, BucketDetails: details, BucketCount: int32(len(details)), BucketCountEpoch: item.GetBucketCountEpoch(), BucketCountEpochKnown: item.BucketCountEpoch != nil, RemoteDataDirectory: item.GetRemoteDataDir(), Partitions: partitions, coordinator: coordinator, tablets: tablets}, nil
 	}
 	return TableMetadata{}, fmt.Errorf("%w: %s", ErrUnknownTable, path)
+}
+
+func partitionMetadataForTable(partitions []*fmsg.PbPartitionMetadata, tableID int64, path TablePath, coordinator ServerNode, tablets map[int32]ServerNode) (map[string]PartitionMetadata, error) {
+	result := make(map[string]PartitionMetadata)
+	for _, partition := range partitions {
+		if partition.GetTableId() != tableID {
+			continue
+		}
+		partitionPath := PhysicalTablePath{TablePath: path, Partition: partition.GetPartitionName()}
+		buckets, details, err := bucketMetadata(partition.GetBucketMetadata(), tablets)
+		if err != nil {
+			return nil, err
+		}
+		count := partition.GetBucketCount()
+		if partition.BucketCount == nil {
+			count = int32(len(details))
+		}
+		result[physicalTableKey(partitionPath)] = PartitionMetadata{Path: partitionPath, ID: partition.GetPartitionId(), Buckets: buckets, BucketDetails: details, BucketCount: count, coordinator: coordinator, tablets: tablets}
+	}
+	return result, nil
 }
 
 func partitionMetadataFromResponse(response *fmsg.MetadataResponse, path PhysicalTablePath) (PartitionMetadata, error) {

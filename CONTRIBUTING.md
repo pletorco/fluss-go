@@ -19,7 +19,7 @@ the private process in [SECURITY.md](SECURITY.md), not through a public issue.
 4. Read [CODING_GUIDELINES.md](CODING_GUIDELINES.md), especially the
    build-vs-buy and test requirements.
 
-The project currently supports only Apache Fluss `0.9.1-incubating` at the
+The project currently supports only Apache Fluss `1.0.0` at the
 commit recorded in the [compatibility matrix](README.md#compatibility-matrix).
 Support for another Fluss version requires protocol inputs, fixtures,
 documentation, and live integration evidence rather than version-only claims.
@@ -93,7 +93,7 @@ Useful focused commands include:
 | Dependency or security surface | `task security` |
 | Public Fluss workflow | `task test:integration` |
 | S3 or HDFS adapter service behavior | `task test:storage` |
-| Release preparation | `task ci` and `task sonar` before opening the PR |
+| Release preparation | `task ci`, `task sonar`, `task test:integration`, and `task test:storage` before opening the PR |
 
 Integration tasks require Docker and may take longer than unit checks. If a
 required environment is unavailable, explain the missing verification in the

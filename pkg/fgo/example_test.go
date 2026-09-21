@@ -425,6 +425,7 @@ func ExampleClient_NewBatchScanner() {
 		table,
 		buckets[0],
 		fgo.WithBatchLimit(1_000),
+		fgo.WithBatchSizeBytes(1<<20),
 		fgo.WithBatchProjection("customer_id", "name"),
 	)
 	if err != nil {

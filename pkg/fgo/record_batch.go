@@ -51,7 +51,7 @@ type KVBatch struct {
 	Records []KVRecord
 }
 
-// Encode serializes the KV batch using the Apache Fluss 0.9.1 layout.
+// Encode serializes the KV batch using the Apache Fluss 1.0 layout.
 func (b KVBatch) Encode() ([]byte, error) {
 	if len(b.Records) > int(^uint32(0)>>1) {
 		return nil, fmt.Errorf("%w: too many KV records", ErrMalformedRecordBatch)
@@ -133,7 +133,7 @@ func decodeKVRecord(encoded []byte, position int) (KVRecord, int, error) {
 	return record, bodyEnd, nil
 }
 
-// LogBatch encodes compacted or indexed row records. Magic 0 and 1 use the Fluss 0.9.1 layouts.
+// LogBatch encodes compacted or indexed row records. Magic 0 and 1 use the Fluss 1.0 layouts.
 type LogBatch struct {
 	// Magic selects the Fluss v0 or v1 batch header.
 	Magic byte
