@@ -441,6 +441,7 @@ func openReliabilityResources(
 	resources := &reliabilityResources{}
 	appendWriter, err := client.NewAppendWriter(
 		ctx, logTable, fgo.WithAppendBatchTimeout(0), fgo.WithAppendConcurrency(4),
+		fgo.WithAppendRequest(2*time.Minute, -1),
 		fgo.WithAppendRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
@@ -449,6 +450,7 @@ func openReliabilityResources(
 	resources.appendWriter = appendWriter
 	upsertWriter, err := client.NewUpsertWriter(
 		ctx, kvTable, fgo.WithUpsertBatchTimeout(0), fgo.WithUpsertConcurrency(4),
+		fgo.WithUpsertRequest(2*time.Minute, -1),
 		fgo.WithUpsertRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
