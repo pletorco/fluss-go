@@ -169,6 +169,14 @@ func TestReliabilityConfigValidation(t *testing.T) {
 	}
 }
 
+func TestReliabilityWriterRetryCoversTabletRestart(t *testing.T) {
+	policy := reliabilityWriterRetry()
+	if policy.MaxAttempts != 100 || policy.Backoff(1) != 100*time.Millisecond ||
+		policy.Backoff(10) != time.Second || policy.Backoff(100) != time.Second {
+		t.Fatalf("reliability writer retry policy = %#v", policy)
+	}
+}
+
 func loadReliabilityConfig() (reliabilityConfig, error) {
 	profile := env("FLUSS_RELIABILITY_PROFILE", "smoke")
 	defaults := map[string]struct {
@@ -557,7 +565,12 @@ func seedReliabilityData(
 }
 
 func reliabilityWriterRetry() fgo.WriterRetryPolicy {
-	return fgo.WriterRetryPolicy{MaxAttempts: 5, Backoff: reliabilityBackoff}
+	return fgo.WriterRetryPolicy{MaxAttempts: 100, Backoff: reliabilityWriterBackoff}
+}
+
+func reliabilityWriterBackoff(attempt int) time.Duration {
+	delay := time.Duration(attempt) * 100 * time.Millisecond
+	return min(delay, time.Second)
 }
 
 func reliabilityBackoff(attempt int) time.Duration {
