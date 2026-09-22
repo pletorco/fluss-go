@@ -636,6 +636,22 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 	}); !errors.Is(err, ErrStorage) {
 		t.Fatalf("PutKv server error = %v", err)
 	}
+	tablet.requester = requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		response.Message().(*fmsg.PutKvResponse).BucketsResp = []*fmsg.PbPutKvRespForBucket{{
+			BucketId: proto.Int32(0), ErrorCode: proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower)),
+		}}
+		return response, nil
+	})
+	physicalPath := PhysicalTablePath{TablePath: path}
+	if _, err := backend.put(context.Background(), kvPutRequest{
+		path: physicalPath, tableID: 11, partitionID: -1, timeout: time.Second, acks: 1,
+	}); !errors.Is(err, ErrMetadata) {
+		t.Fatalf("PutKv metadata error = %v", err)
+	}
+	if node, _, err := client.router.lookupPhysical(physicalPath, 0); err != nil || node != (ServerNode{}) {
+		t.Fatalf("metadata error retained route %#v, %v", node, err)
+	}
 
 	for _, test := range []struct {
 		name      string

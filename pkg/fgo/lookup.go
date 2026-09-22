@@ -205,6 +205,7 @@ func (b clientLookupBackend) lookup(
 	}
 	result := lookup.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyLookup); err != nil {
+		b.client.invalidatePhysicalOnMetadataError(input.path, err)
 		return nil, err
 	}
 	if len(result.GetValues()) != len(input.keys) {
@@ -254,6 +255,7 @@ func (b clientLookupBackend) prefixLookup(
 	}
 	result := lookup.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyPrefixLookup); err != nil {
+		b.client.invalidatePhysicalOnMetadataError(path, err)
 		return nil, err
 	}
 	if len(result.GetValueLists()) != len(keys) {

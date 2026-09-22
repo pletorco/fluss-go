@@ -754,6 +754,9 @@ func TestClientAppendWriterBackendResponseErrors(t *testing.T) {
 	}); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("server error = %v", err)
 	}
+	if node, _, err := client.router.lookupPhysical(path, 0); err != nil || node != (ServerNode{}) {
+		t.Fatalf("metadata error retained route %#v, %v", node, err)
+	}
 	if _, err := backend.produce(context.Background(), logProduceRequest{
 		path: path, tableID: 9, partitionID: -1,
 		timeout: time.Duration(int64(^uint32(0))) * time.Millisecond, acks: 1,
