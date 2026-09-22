@@ -840,11 +840,7 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 								bucket = 1
 							}
 							result := &fmsg.PbLookupRespForBucket{BucketId: proto.Int32(bucket)}
-							if test.mode == "server" {
-								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
-							} else if test.mode == "metadata" {
-								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
-							}
+							result.ErrorCode = lookupBackendErrorCode(test.mode)
 							message.BucketsResp = []*fmsg.PbLookupRespForBucket{result}
 						}
 					case *fmsg.PrefixLookupResponse:
@@ -854,11 +850,7 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 								bucket = 1
 							}
 							result := &fmsg.PbPrefixLookupRespForBucket{BucketId: proto.Int32(bucket)}
-							if test.mode == "server" {
-								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
-							} else if test.mode == "metadata" {
-								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
-							}
+							result.ErrorCode = lookupBackendErrorCode(test.mode)
 							message.BucketsResp = []*fmsg.PbPrefixLookupRespForBucket{result}
 						}
 					}
@@ -887,6 +879,17 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func lookupBackendErrorCode(mode string) *int32 {
+	switch mode {
+	case "server":
+		return proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
+	case "metadata":
+		return proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
+	default:
+		return nil
 	}
 }
 

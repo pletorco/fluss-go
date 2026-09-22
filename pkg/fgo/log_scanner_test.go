@@ -1314,9 +1314,7 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 							bucket = 1
 						}
 						result := &fmsg.PbListOffsetsRespForBucket{BucketId: proto.Int32(bucket)}
-						if test.mode == "metadata" {
-							result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
-						}
+						result.ErrorCode = logScannerBackendErrorCode(test.mode)
 						message.BucketsResp = []*fmsg.PbListOffsetsRespForBucket{result}
 					}
 				case *fmsg.FetchLogResponse:
@@ -1332,9 +1330,7 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 								bucket = 1
 							}
 							result := &fmsg.PbFetchLogRespForBucket{BucketId: proto.Int32(bucket)}
-							if test.mode == "metadata" {
-								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
-							}
+							result.ErrorCode = logScannerBackendErrorCode(test.mode)
 							table.BucketsResp = []*fmsg.PbFetchLogRespForBucket{result}
 						}
 						message.TablesResp = []*fmsg.PbFetchLogRespForTable{table}
@@ -1362,4 +1358,11 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func logScannerBackendErrorCode(mode string) *int32 {
+	if mode != "metadata" {
+		return nil
+	}
+	return proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
 }
