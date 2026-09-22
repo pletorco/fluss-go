@@ -361,6 +361,12 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 	return c.RequestTo(ctx, node, request)
 }
 
+func (c *Client) invalidatePhysicalOnMetadataError(path PhysicalTablePath, err error) {
+	if c != nil && c.router != nil && errors.Is(err, ErrMetadata) {
+		c.router.InvalidatePhysical(path)
+	}
+}
+
 func setRoutingBucketCount(request fmsg.Request, count int32) {
 	if request == nil || count <= 0 {
 		return

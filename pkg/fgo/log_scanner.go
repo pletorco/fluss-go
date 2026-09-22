@@ -313,6 +313,7 @@ func (b clientLogScannerBackend) listOffset(
 	}
 	result := offsets.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyListOffsets); err != nil {
+		b.client.invalidatePhysicalOnMetadataError(path, err)
 		return 0, err
 	}
 	return result.GetOffset(), nil
@@ -357,6 +358,7 @@ func (b clientLogScannerBackend) fetch(
 	}
 	result := fetched.GetTablesResp()[0].GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyFetchLog); err != nil {
+		b.client.invalidatePhysicalOnMetadataError(input.path, err)
 		return scannerFetch{}, err
 	}
 	records := append([]byte(nil), result.GetRecords()...)

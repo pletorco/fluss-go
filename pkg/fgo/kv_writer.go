@@ -246,6 +246,7 @@ func (b clientUpsertWriterBackend) put(
 	}
 	result := put.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyPutKv); err != nil {
+		b.client.invalidatePhysicalOnMetadataError(input.path, err)
 		return kvPutResult{}, err
 	}
 	pressure := result.GetPressure()

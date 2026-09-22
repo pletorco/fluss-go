@@ -804,12 +804,14 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 		{name: "lookup omitted bucket", mode: "omitted", target: ErrValidation},
 		{name: "lookup mismatched bucket", mode: "mismatched", target: ErrValidation},
 		{name: "lookup server error", mode: "server", target: ErrAuthorization},
+		{name: "lookup metadata error", mode: "metadata", target: ErrMetadata},
 		{name: "lookup value count", mode: "count", target: ErrValidation},
 		{name: "prefix request", prefix: true, mode: "request", target: context.Canceled},
 		{name: "prefix response type", prefix: true, mode: "unexpected", contains: "prefix lookup: unexpected response"},
 		{name: "prefix omitted bucket", prefix: true, mode: "omitted", target: ErrValidation},
 		{name: "prefix mismatched bucket", prefix: true, mode: "mismatched", target: ErrValidation},
 		{name: "prefix server error", prefix: true, mode: "server", target: ErrAuthorization},
+		{name: "prefix metadata error", prefix: true, mode: "metadata", target: ErrMetadata},
 		{name: "prefix value count", prefix: true, mode: "count", target: ErrValidation},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -838,9 +840,7 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 								bucket = 1
 							}
 							result := &fmsg.PbLookupRespForBucket{BucketId: proto.Int32(bucket)}
-							if test.mode == "server" {
-								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
-							}
+							result.ErrorCode = lookupBackendErrorCode(test.mode)
 							message.BucketsResp = []*fmsg.PbLookupRespForBucket{result}
 						}
 					case *fmsg.PrefixLookupResponse:
@@ -850,9 +850,7 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 								bucket = 1
 							}
 							result := &fmsg.PbPrefixLookupRespForBucket{BucketId: proto.Int32(bucket)}
-							if test.mode == "server" {
-								result.ErrorCode = proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
-							}
+							result.ErrorCode = lookupBackendErrorCode(test.mode)
 							message.BucketsResp = []*fmsg.PbPrefixLookupRespForBucket{result}
 						}
 					}
@@ -875,7 +873,21 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 				(test.contains != "" && !strings.Contains(err.Error(), test.contains)) {
 				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
 			}
+			if test.mode == "metadata" {
+				requirePhysicalRouteInvalidated(t, client, path)
+			}
 		})
+	}
+}
+
+func lookupBackendErrorCode(mode string) *int32 {
+	switch mode {
+	case "server":
+		return proto.Int32(int32(fmsg.ErrorCodeAuthorizationException))
+	case "metadata":
+		return proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
+	default:
+		return nil
 	}
 }
 

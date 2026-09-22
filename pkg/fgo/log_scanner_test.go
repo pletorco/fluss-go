@@ -1238,11 +1238,7 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
 	client := routedWriterClient(t,
-		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
-			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-			*response.Message().(*fmsg.MetadataResponse) = *metadataResponse(path.TablePath)
-			return response, nil
-		},
+		metadataRequester(path.TablePath),
 		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
 			switch message := response.Message().(type) {
@@ -1287,12 +1283,14 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 		{name: "list response type", mode: "unexpected", contains: "list offsets: unexpected response"},
 		{name: "list omitted bucket", mode: "omitted", target: ErrValidation},
 		{name: "list mismatched bucket", mode: "mismatched", target: ErrValidation},
+		{name: "list metadata error", mode: "metadata", target: ErrMetadata},
 		{name: "fetch transport", fetch: true, mode: "transport", target: context.Canceled},
 		{name: "fetch response type", fetch: true, mode: "unexpected", contains: "fetch log: unexpected response"},
 		{name: "fetch omitted table", fetch: true, mode: "omitted", target: ErrValidation},
 		{name: "fetch mismatched table", fetch: true, mode: "table", target: ErrValidation},
 		{name: "fetch omitted bucket", fetch: true, mode: "bucket omitted", target: ErrValidation},
 		{name: "fetch mismatched bucket", fetch: true, mode: "bucket mismatched", target: ErrValidation},
+		{name: "fetch metadata error", fetch: true, mode: "metadata", target: ErrMetadata},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			tablet.requester = requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
@@ -1311,7 +1309,9 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 						if test.mode == "mismatched" {
 							bucket = 1
 						}
-						message.BucketsResp = []*fmsg.PbListOffsetsRespForBucket{{BucketId: proto.Int32(bucket)}}
+						result := &fmsg.PbListOffsetsRespForBucket{BucketId: proto.Int32(bucket)}
+						result.ErrorCode = logScannerBackendErrorCode(test.mode)
+						message.BucketsResp = []*fmsg.PbListOffsetsRespForBucket{result}
 					}
 				case *fmsg.FetchLogResponse:
 					if test.mode != "omitted" {
@@ -1325,7 +1325,9 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 							if test.mode == "bucket mismatched" {
 								bucket = 1
 							}
-							table.BucketsResp = []*fmsg.PbFetchLogRespForBucket{{BucketId: proto.Int32(bucket)}}
+							result := &fmsg.PbFetchLogRespForBucket{BucketId: proto.Int32(bucket)}
+							result.ErrorCode = logScannerBackendErrorCode(test.mode)
+							table.BucketsResp = []*fmsg.PbFetchLogRespForBucket{result}
 						}
 						message.TablesResp = []*fmsg.PbFetchLogRespForTable{table}
 					}
@@ -1345,6 +1347,16 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 				(test.contains != "" && !strings.Contains(err.Error(), test.contains)) {
 				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
 			}
+			if test.mode == "metadata" {
+				requirePhysicalRouteInvalidated(t, client, path)
+			}
 		})
 	}
+}
+
+func logScannerBackendErrorCode(mode string) *int32 {
+	if mode != "metadata" {
+		return nil
+	}
+	return proto.Int32(int32(fmsg.ErrorCodeNotLeaderOrFollower))
 }

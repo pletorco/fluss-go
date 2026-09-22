@@ -343,6 +343,7 @@ func (b clientAppendWriterBackend) produce(
 	}
 	result := produced.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyProduceLog); err != nil {
+		b.client.invalidatePhysicalOnMetadataError(input.path, err)
 		return 0, err
 	}
 	return result.GetBaseOffset(), nil

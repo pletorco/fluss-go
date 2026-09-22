@@ -729,11 +729,7 @@ func TestClientAppendWriterBackendUsesFluss100Messages(t *testing.T) {
 func TestClientAppendWriterBackendResponseErrors(t *testing.T) {
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
 	client := routedWriterClient(t,
-		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
-			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-			*response.Message().(*fmsg.MetadataResponse) = *metadataResponse(path.TablePath)
-			return response, nil
-		},
+		metadataRequester(path.TablePath),
 		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
 			switch message := response.Message().(type) {
@@ -754,6 +750,7 @@ func TestClientAppendWriterBackendResponseErrors(t *testing.T) {
 	}); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("server error = %v", err)
 	}
+	requirePhysicalRouteInvalidated(t, client, path)
 	if _, err := backend.produce(context.Background(), logProduceRequest{
 		path: path, tableID: 9, partitionID: -1,
 		timeout: time.Duration(int64(^uint32(0))) * time.Millisecond, acks: 1,
@@ -823,4 +820,19 @@ func routedWriterClient(
 	client.router = NewRouter(coordinatorNode, client.fetchTableMetadata).
 		WithPhysicalMetadataFetcher(client.fetchPartitionMetadata)
 	return client
+}
+
+func metadataRequester(path TablePath) requesterFunc {
+	return func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		*response.Message().(*fmsg.MetadataResponse) = *metadataResponse(path)
+		return response, nil
+	}
+}
+
+func requirePhysicalRouteInvalidated(t *testing.T, client *Client, path PhysicalTablePath) {
+	t.Helper()
+	if node, _, err := client.router.lookupPhysical(path, 0); err != nil || node != (ServerNode{}) {
+		t.Fatalf("metadata error retained route %#v, %v", node, err)
+	}
 }
