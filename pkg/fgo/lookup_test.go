@@ -874,9 +874,7 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
 			}
 			if test.mode == "metadata" {
-				if node, _, routeErr := client.router.lookupPhysical(path, 0); routeErr != nil || node != (ServerNode{}) {
-					t.Fatalf("metadata error retained route %#v, %v", node, routeErr)
-				}
+				requirePhysicalRouteInvalidated(t, client, path)
 			}
 		})
 	}

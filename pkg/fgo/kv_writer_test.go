@@ -649,9 +649,7 @@ func TestClientUpsertWriterBackendMessagesAndErrors(t *testing.T) {
 	}); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("PutKv metadata error = %v", err)
 	}
-	if node, _, err := client.router.lookupPhysical(physicalPath, 0); err != nil || node != (ServerNode{}) {
-		t.Fatalf("metadata error retained route %#v, %v", node, err)
-	}
+	requirePhysicalRouteInvalidated(t, client, physicalPath)
 
 	for _, test := range []struct {
 		name      string

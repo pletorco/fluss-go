@@ -1238,11 +1238,7 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}}
 	client := routedWriterClient(t,
-		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
-			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-			*response.Message().(*fmsg.MetadataResponse) = *metadataResponse(path.TablePath)
-			return response, nil
-		},
+		metadataRequester(path.TablePath),
 		func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 			response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
 			switch message := response.Message().(type) {
@@ -1352,9 +1348,7 @@ func TestClientLogScannerBackendResponseErrors(t *testing.T) {
 				t.Fatalf("backend error = %v, want target %v containing %q", err, test.target, test.contains)
 			}
 			if test.mode == "metadata" {
-				if node, _, routeErr := client.router.lookupPhysical(path, 0); routeErr != nil || node != (ServerNode{}) {
-					t.Fatalf("metadata error retained route %#v, %v", node, routeErr)
-				}
+				requirePhysicalRouteInvalidated(t, client, path)
 			}
 		})
 	}
