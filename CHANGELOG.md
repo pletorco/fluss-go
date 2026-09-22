@@ -8,7 +8,7 @@ breaking changes.
 
 ## [Unreleased]
 
-## [v0.2.0-beta.1] - 2026-09-21
+## [v0.2.0-beta.1] - 2026-09-22
 
 ### Added
 
