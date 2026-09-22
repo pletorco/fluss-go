@@ -172,7 +172,8 @@ func TestReliabilityConfigValidation(t *testing.T) {
 func TestReliabilityWriterRetryCoversTabletRestart(t *testing.T) {
 	policy := reliabilityWriterRetry()
 	if policy.MaxAttempts != 100 || policy.Backoff(1) != 100*time.Millisecond ||
-		policy.Backoff(10) != time.Second || policy.Backoff(100) != time.Second {
+		policy.Backoff(10) != time.Second || policy.Backoff(20) != 2*time.Second ||
+		policy.Backoff(100) != 2*time.Second {
 		t.Fatalf("reliability writer retry policy = %#v", policy)
 	}
 }
@@ -441,7 +442,7 @@ func openReliabilityResources(
 	resources := &reliabilityResources{}
 	appendWriter, err := client.NewAppendWriter(
 		ctx, logTable, fgo.WithAppendBatchTimeout(0), fgo.WithAppendConcurrency(4),
-		fgo.WithAppendRequest(2*time.Minute, -1),
+		fgo.WithAppendRequest(4*time.Minute, -1),
 		fgo.WithAppendRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
@@ -450,7 +451,7 @@ func openReliabilityResources(
 	resources.appendWriter = appendWriter
 	upsertWriter, err := client.NewUpsertWriter(
 		ctx, kvTable, fgo.WithUpsertBatchTimeout(0), fgo.WithUpsertConcurrency(4),
-		fgo.WithUpsertRequest(2*time.Minute, -1),
+		fgo.WithUpsertRequest(4*time.Minute, -1),
 		fgo.WithUpsertRetryPolicy(reliabilityWriterRetry()),
 	)
 	if err != nil {
@@ -572,7 +573,7 @@ func reliabilityWriterRetry() fgo.WriterRetryPolicy {
 
 func reliabilityWriterBackoff(attempt int) time.Duration {
 	delay := time.Duration(attempt) * 100 * time.Millisecond
-	return min(delay, time.Second)
+	return min(delay, 2*time.Second)
 }
 
 func reliabilityBackoff(attempt int) time.Duration {
