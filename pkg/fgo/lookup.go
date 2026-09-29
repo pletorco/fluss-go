@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -382,8 +383,8 @@ func validateLookupInsertSchema(schema Schema, config LookupConfig) error {
 		return nil
 	}
 	for _, column := range schema.Columns {
-		if !column.Nullable && !contains(schema.PrimaryKey, column.Name) &&
-			!contains(schema.AutoIncrement, column.Name) {
+		if !column.Nullable && !slices.Contains(schema.PrimaryKey, column.Name) &&
+			!slices.Contains(schema.AutoIncrement, column.Name) {
 			return fmt.Errorf(
 				"%w: insert-if-not-exists cannot fill required column %q",
 				ErrInvalidSchema, column.Name,

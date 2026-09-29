@@ -1,6 +1,7 @@
 package fgo
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -543,8 +544,8 @@ func planRemoteLogSegments(
 	if len(segments) > config.MaxFiles {
 		return nil, 0, fmt.Errorf("%w: remote log exceeds file-count limit", ErrValidation)
 	}
-	sort.Slice(segments, func(i, j int) bool {
-		return segments[i].StartOffset < segments[j].StartOffset
+	slices.SortFunc(segments, func(a, b RemoteLogSegment) int {
+		return cmp.Compare(a.StartOffset, b.StartOffset)
 	})
 	var previousEnd int64 = -1
 	var outputBytes int64

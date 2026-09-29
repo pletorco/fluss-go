@@ -1,8 +1,9 @@
 package fgo
 
 import (
+	"cmp"
 	"math"
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -80,7 +81,7 @@ func orderedScanSegments(rows []ScanRecord, arrows []ScanArrowBatch) []scanSegme
 	for index := range arrows {
 		segments = append(segments, scanSegment{offset: arrows[index].Batch.BaseOffset, row: -1, arrow: index})
 	}
-	sort.SliceStable(segments, func(i, j int) bool { return segments[i].offset < segments[j].offset })
+	slices.SortStableFunc(segments, func(a, b scanSegment) int { return cmp.Compare(a.offset, b.offset) })
 	return segments
 }
 

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -460,7 +460,7 @@ func mapEntries(value any) (Map, bool) {
 		for key := range value {
 			keys = append(keys, key)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		entries := make(Map, len(keys))
 		for i, key := range keys {
 			entries[i] = MapEntry{Key: key, Value: value[key]}
