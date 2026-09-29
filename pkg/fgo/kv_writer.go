@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ type UpsertWriter struct {
 	commands    chan upsertWriterCommand
 	slots       chan struct{}
 	done        chan struct{}
+	closing     chan struct{}
 	appendMu    sync.Mutex
 	closed      bool
 	closeErr    error
@@ -134,7 +136,7 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, writerID: writerID, buckets: buckets,
 		commands: make(chan upsertWriterCommand, config.MaxBuffered),
-		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
+		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), closing: make(chan struct{}),
 	}
 	if path.Partition != "" {
 		writer.partitionID = physicalID
@@ -345,8 +347,8 @@ func (w *UpsertWriter) validatePartialSelection(selected map[string]bool) error 
 		}
 	}
 	for _, column := range w.table.Schema.Columns {
-		if !selected[column.Name] && !column.Nullable && !contains(w.table.Schema.PrimaryKey, column.Name) &&
-			!contains(w.table.Schema.AutoIncrement, column.Name) {
+		if !selected[column.Name] && !column.Nullable && !slices.Contains(w.table.Schema.PrimaryKey, column.Name) &&
+			!slices.Contains(w.table.Schema.AutoIncrement, column.Name) {
 			return fmt.Errorf("%w: omitted column %q is not nullable", ErrInvalidRow, column.Name)
 		}
 	}
@@ -362,15 +364,6 @@ func rowValues(schema Schema, row Row, columns []string) map[string]any {
 		values[name] = row[index]
 	}
 	return values
-}
-
-func contains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func (w *UpsertWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
@@ -489,6 +482,7 @@ func (l *upsertWriterLoop) run() {
 			case command.flush != nil:
 				command.flush <- l.flushAll()
 			case command.close != nil:
+				close(l.writer.closing)
 				err := l.flushAll()
 				l.writer.appendMu.Lock()
 				l.writer.closeErr = err
@@ -609,8 +603,14 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 	started := metricStart(l.writer.observer)
 	if err == nil {
 		if throttle > 0 {
+			// Closing skips the pressure delay so Close is not held for it.
+			// The delay only paces requests; sending early keeps sequences valid.
 			timer := time.NewTimer(throttle)
-			<-timer.C
+			select {
+			case <-timer.C:
+			case <-l.writer.closing:
+				timer.Stop()
+			}
 		}
 		result = executeWriterRequest(
 			l.writer.config.RequestTimeout, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
