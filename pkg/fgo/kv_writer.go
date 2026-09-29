@@ -612,9 +612,8 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 			timer := time.NewTimer(throttle)
 			<-timer.C
 		}
-		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.RequestTimeout)
-		result = executeWriterAttempts(
-			requestCtx, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
+		result = executeWriterRequest(
+			l.writer.config.RequestTimeout, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
 			func(ctx context.Context) (int64, bool, error) {
 				put, err := l.writer.backend.put(ctx, kvPutRequest{
 					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
@@ -627,10 +626,6 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 				return put.logEnd, err == nil, err
 			},
 		)
-		if result.err != nil && requestCtx.Err() != nil {
-			result.err = requestCtx.Err()
-		}
-		cancel()
 	} else {
 		result.err = err
 	}

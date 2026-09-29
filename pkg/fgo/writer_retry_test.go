@@ -126,3 +126,16 @@ func TestExecuteWriterAttemptsObservesRetryAndBackoffCancellation(t *testing.T) 
 		t.Fatalf("retry metric = %#v, %t", event, ok)
 	}
 }
+
+func TestExecuteWriterRequestReportsDeadline(t *testing.T) {
+	result := executeWriterRequest(
+		time.Millisecond, WriterRetryPolicy{MaxAttempts: 1}, nil, MetricOperationLogWrite,
+		func(ctx context.Context) (int64, bool, error) {
+			<-ctx.Done()
+			return 0, false, errors.New("attempt failed")
+		},
+	)
+	if !errors.Is(result.err, context.DeadlineExceeded) {
+		t.Fatalf("executeWriterRequest() error = %v, want deadline exceeded", result.err)
+	}
+}

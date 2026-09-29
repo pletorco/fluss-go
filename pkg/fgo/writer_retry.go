@@ -109,3 +109,23 @@ func executeWriterAttempts(
 		err: fmt.Errorf("%w: writer retry attempts must be at least 1", ErrInvalidConfig),
 	}
 }
+
+// executeWriterRequest runs the retry loop under a fresh request deadline.
+// The deadline is detached from any caller context because a batch may carry
+// records from several callers and must reach a terminal result. When the
+// deadline expires the context error replaces the last attempt error.
+func executeWriterRequest(
+	timeout time.Duration,
+	policy WriterRetryPolicy,
+	observer MetricsObserver,
+	operation MetricOperation,
+	call func(context.Context) (int64, bool, error),
+) writerAttemptResult {
+	requestCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	result := executeWriterAttempts(requestCtx, policy, observer, operation, call)
+	if result.err != nil && requestCtx.Err() != nil {
+		result.err = requestCtx.Err()
+	}
+	return result
+}

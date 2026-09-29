@@ -552,9 +552,8 @@ func (l *appendWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequen
 	var result writerAttemptResult
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		requestCtx, cancel := context.WithTimeout(context.Background(), l.writer.config.RequestTimeout)
-		result = executeWriterAttempts(
-			requestCtx, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationLogWrite,
+		result = executeWriterRequest(
+			l.writer.config.RequestTimeout, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationLogWrite,
 			func(ctx context.Context) (int64, bool, error) {
 				offset, err := l.writer.backend.produce(ctx, logProduceRequest{
 					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
@@ -563,10 +562,6 @@ func (l *appendWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequen
 				return offset, err == nil, err
 			},
 		)
-		if result.err != nil && requestCtx.Err() != nil {
-			result.err = requestCtx.Err()
-		}
-		cancel()
 	} else {
 		result.err = err
 	}
