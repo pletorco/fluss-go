@@ -29,6 +29,7 @@ golden coverage remains required even when live evidence exists.
 | --- | --- | --- |
 | Append writer, row and Arrow append, log scanner | Covered | Appends, explicit formats, bounded scans, schema evolution, acknowledged offsets, and post-leader-failure order are checked. |
 | upsert writer, delete, partial upsert, merge modes | Covered | Full upsert/delete, full-schema partial-update payloads, preserved nullable fields, `FIRST_ROW`, overwrite bypass, and post-failure updates are checked. |
+| Log scan predicate filters | Covered | A live Arrow-format table scan with `WithScanFilter` must still return the matching row; extra non-matching rows are permitted because Fluss filters whole batches. Predicate wire encoding is unit-tested against the Fluss 1.0 literal layout. |
 | Point and prefix lookup | Covered | Found, missing, deleted, insert-if-missing, concurrent, typed, and post-failure results are checked. |
 | Current-state batch scanner | Covered | Row and typed scanners cover every resolved bucket and projections through Fluss 1.0 `SCAN_KV` sessions, including empty-bucket terminal responses. Sequence, changed/missing scanner ID, explicit close, and byte bounds have deterministic unit coverage. |
 | Typed log and upsert writers, log scanner, lookup, batch scanner | Covered | Explicit codecs round-trip application structs through the real row protocol. |
@@ -57,10 +58,11 @@ golden coverage remains required even when live evidence exists.
 
 ## Explicitly deferred Fluss 1.0 capabilities
 
-Arrow predicate pushdown is not exposed in this release; callers must apply
-all predicates to returned data. Historical physical-partition routing for
-lake workflows is also not exposed. Neither capability receives a hidden
-fallback or a feature-parity claim.
+Historical physical-partition routing for lake workflows is not exposed and
+receives no hidden fallback or feature-parity claim. Scan predicates are
+pushed to Fluss only as a batch-level optimization for log scanners; results
+are a superset of the matching rows and callers must still apply predicates to
+returned data.
 | Per-bucket table statistics | Covered | Input order, bucket identity, non-negative row counts, and every partial error slot are checked. |
 
 ## Review rule

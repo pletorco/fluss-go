@@ -36,9 +36,11 @@ go mod tidy
 - Log scans honor Fluss 1.0 `filtered_end_offset`, and existing data APIs use
   their Fluss 1.0 negotiated versions.
 
-Arrow predicate pushdown and historical physical-partition routing for lake
-workflows are not supported in this beta. Continue applying predicates in the
-application and use only current table or partition routing metadata.
+Historical physical-partition routing for lake workflows is not supported in
+this beta; use only current table or partition routing metadata. Log scanners
+can push predicates to Fluss with `fgo.WithScanFilter`, but the server returns
+a superset of matching rows, so keep applying predicates in the application.
+See [data-operations.md](data-operations.md#server-side-scan-filters).
 
 ## Runtime and packaging
 

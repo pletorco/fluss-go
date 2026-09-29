@@ -25,6 +25,8 @@ type LogScannerConfig struct {
 	RowLimit int64
 	// StoppingOffsets maps every initial bucket to an exclusive end offset.
 	StoppingOffsets map[int32]int64
+	// Filter is an optional server-side predicate; nil disables filtering.
+	Filter *Predicate
 }
 
 // LogScannerOption configures a [LogScanner].
@@ -37,6 +39,21 @@ func WithScanProjection(columns ...string) LogScannerOption {
 			return fmt.Errorf("%w: projection is empty", ErrInvalidConfig)
 		}
 		config.Projection = append([]string(nil), columns...)
+		return nil
+	}
+}
+
+// WithScanFilter asks Fluss to skip log batches that cannot match predicate.
+//
+// The filter is evaluated by the server against the full table schema before
+// projection and only when the table uses the Arrow log format. It reduces the
+// data fetched but may return non-matching rows, so callers must apply the
+// predicate to the returned rows when exact results are required. Remote log
+// segments are always read unfiltered.
+func WithScanFilter(predicate Predicate) LogScannerOption {
+	return func(config *LogScannerConfig) error {
+		filter := predicate
+		config.Filter = &filter
 		return nil
 	}
 }

@@ -8,6 +8,13 @@ breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Added server-side predicate pushdown for log scanners: `fgo.Col`,
+  `fgo.And`, `fgo.Or`, and `fgo.WithScanFilter` build a Fluss 1.0 predicate
+  that skips non-matching Arrow log batches. Results are a superset of the
+  matching rows, so callers must still apply the predicate.
+
 ### Changed
 
 - Closing an upsert writer no longer waits for a pending KV backpressure

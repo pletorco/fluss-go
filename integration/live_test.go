@@ -583,7 +583,37 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 		t.Fatalf("scanned rows = %#v", found)
 	}
 	testBoundedLogScan(t, ctx, client, table)
+	testLogScanFilter(t, ctx, client, table)
 	testExplicitOffsetInsideBatch(t, ctx, client, table)
+}
+
+// testLogScanFilter verifies that a server-side filter never drops a matching
+// row. Fluss may return non-matching rows, so only the matching row is asserted.
+func testLogScanFilter(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {
+	t.Helper()
+	scanner, err := client.NewLogScanner(
+		ctx, table, fgo.Earliest(),
+		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
+		fgo.WithScanFilter(fgo.And(fgo.Col("id").Eq(2), fgo.Col("message").StartsWith("sec"))),
+	)
+	if err != nil {
+		t.Fatalf("NewLogScanner(filter) = %v", err)
+	}
+	defer scanner.Close()
+	for ctx.Err() == nil {
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			t.Fatalf("filtered Poll() = %v", err)
+		}
+		for _, record := range result.Records {
+			if record.Record.Value[0].(int32) == 2 && record.Record.Value[1].(string) == "second" {
+				result.Release()
+				return
+			}
+		}
+		result.Release()
+	}
+	t.Fatal("filtered scan did not return the matching row")
 }
 
 func testExplicitOffsetInsideBatch(

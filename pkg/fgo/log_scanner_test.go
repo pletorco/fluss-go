@@ -21,6 +21,7 @@ type scannerFetchCall struct {
 	tableID     int64
 	partitionID int64
 	projection  []int32
+	filter      *scanFilter
 	config      LogScannerConfig
 }
 
@@ -71,7 +72,7 @@ func (b *fakeLogScannerBackend) fetch(
 	b.mu.Lock()
 	b.calls = append(b.calls, scannerFetchCall{
 		bucket: input.bucket, offset: input.offset, tableID: input.tableID, partitionID: input.partitionID,
-		projection: append([]int32(nil), input.projection...), config: input.config,
+		projection: append([]int32(nil), input.projection...), filter: input.filter, config: input.config,
 	})
 	b.mu.Unlock()
 	if b.entered != nil {
