@@ -12,7 +12,7 @@ latest beta line rather than backported to every earlier prerelease.
 
 | Version | Security updates |
 | --- | --- |
-| `v0.2.0-beta.1` | Supported |
+| `v0.2.0-beta.2` | Supported |
 | `v0.1.0-beta.11` | Not supported; use only with Apache Fluss 0.9.1 |
 | Earlier prereleases | Not supported; upgrade to the latest beta |
 | Untagged branches and commits | Not supported |
