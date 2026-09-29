@@ -8,6 +8,8 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.2.0-beta.2] - 2026-09-29
+
 ### Added
 
 - Added server-side predicate pushdown for log scanners: `fgo.Col`,
@@ -23,6 +25,11 @@ breaking changes.
   established connection, joined to the original error.
 - Writer retry execution returns an error instead of panicking when it is
   called with an unvalidated retry policy.
+- Updated the AWS S3 client to 1.113.2 and all optional adapter modules to
+  require and install with the beta.2 release.
+- Updated the pinned Trivy release used by the security gates to v0.74.0. CI now
+  runs the full verification suite on Go 1.26 and build, unit, and race
+  compatibility checks on Go 1.25.
 
 ## [v0.2.0-beta.1] - 2026-09-22
 
@@ -371,7 +378,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.1...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.2...HEAD
+[v0.2.0-beta.2]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [v0.2.0-beta.1]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.11...v0.2.0-beta.1
 [v0.1.0-beta.11]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.10...v0.1.0-beta.11
 [v0.1.0-beta.10]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.9...v0.1.0-beta.10

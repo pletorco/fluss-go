@@ -1,23 +1,39 @@
-# Upgrade to v0.2.0-beta.1
+# Upgrade to v0.2.0-beta.2
 
-`v0.2.0-beta.1` is the first fluss-go line for Apache Fluss 1.0. It deliberately
-drops Apache Fluss 0.9.1 compatibility instead of maintaining a mixed protocol
-baseline.
+The fluss-go v0.2 line, introduced by `v0.2.0-beta.1`, targets Apache Fluss 1.0.
+It deliberately drops Apache Fluss 0.9.1 compatibility instead of maintaining a
+mixed protocol baseline. `v0.2.0-beta.2` is the current release of that line.
 
 | Apache Fluss cluster | fluss-go version |
 | --- | --- |
 | `0.9.1-incubating` | Pin `v0.1.0-beta.11` |
-| `1.0.0` | Use `v0.2.0-beta.1` |
+| `1.0.0` | Use `v0.2.0-beta.2` |
 
 Upgrade the cluster to Fluss 1.0 before deploying an application built with
 fluss-go v0.2. No runtime switch or compatibility mode selects the old
 protocol. Root and adapter modules should use the same fluss-go version.
 
 ```sh
-go get github.com/pletorco/fluss-go@v0.2.0-beta.1
-go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.1
+go get github.com/pletorco/fluss-go@v0.2.0-beta.2
+go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.2
 go mod tidy
 ```
+
+## Upgrading from v0.2.0-beta.1
+
+`v0.2.0-beta.2` removes no exported API. Review these changes:
+
+- `fgo.WithScanFilter`, `fgo.Col`, `fgo.And`, and `fgo.Or` are new. They let a
+  log scanner push a predicate to Fluss, but the server returns a superset of
+  the matching rows, so keep applying predicates in the application. See
+  [data-operations.md](data-operations.md#server-side-scan-filters).
+- `UpsertWriter.Close` no longer waits for a pending KV backpressure delay
+  before sending its final batches.
+- A connection that fails TLS or transport setup now reports a failure to close
+  the partial connection joined to the original error. `errors.Is` and
+  `errors.As` still match the original error.
+- Writer retry execution returns `ErrInvalidConfig` instead of panicking when
+  it is called with an unvalidated retry policy.
 
 ## Behavior to review
 

@@ -283,55 +283,94 @@ func encodeLiteral(value any, code int32, kind DataType, logical LogicalType) (*
 	if value == nil {
 		return literal, nil
 	}
+	var err error
+	switch kind {
+	case DecimalType:
+		err = encodeDecimalLiteral(literal, value, logical)
+	case DateType, TimeType, TimestampType, TimestampLTZType:
+		err = encodeTemporalLiteral(literal, value, kind, logical)
+	default:
+		err = encodeScalarLiteral(literal, value, kind)
+	}
+	return literal, err
+}
+
+// encodeScalarLiteral fills the value field that matches a non-temporal,
+// non-decimal column type.
+func encodeScalarLiteral(literal *fmsg.PbLiteralValue, value any, kind DataType) error {
 	switch kind {
 	case BoolType:
-		v, ok := value.(bool)
-		if !ok {
-			return nil, literalTypeError(value, kind)
-		}
-		literal.BooleanValue = proto.Bool(v)
-	case TinyIntType, SmallIntType, IntType:
-		v, err := integerLiteral(value, kind)
-		if err != nil {
-			return nil, err
-		}
-		literal.IntValue = proto.Int32(int32(v))
-	case BigIntType:
-		v, err := integerLiteral(value, kind)
-		if err != nil {
-			return nil, err
-		}
-		literal.BigintValue = proto.Int64(v)
+		return setBoolLiteral(literal, value, kind)
+	case TinyIntType, SmallIntType, IntType, BigIntType:
+		return setIntegerLiteral(literal, value, kind)
 	case FloatType:
-		v, err := floatLiteral(value, 24)
-		if err != nil {
-			return nil, err
-		}
-		literal.FloatValue = proto.Float32(float32(v))
+		return setFloatLiteral(literal, value)
 	case DoubleType:
-		v, err := floatLiteral(value, 53)
-		if err != nil {
-			return nil, err
-		}
-		literal.DoubleValue = proto.Float64(v)
+		return setDoubleLiteral(literal, value)
 	case StringType, CharType:
-		v, ok := value.(string)
-		if !ok {
-			return nil, literalTypeError(value, kind)
-		}
-		literal.StringValue = proto.String(v)
+		return setStringLiteral(literal, value, kind)
 	case BinaryType, BytesType:
-		v, ok := value.([]byte)
-		if !ok {
-			return nil, literalTypeError(value, kind)
-		}
-		literal.BinaryValue = append([]byte(nil), v...)
-	case DecimalType:
-		return literal, encodeDecimalLiteral(literal, value, logical)
-	case DateType, TimeType, TimestampType, TimestampLTZType:
-		return literal, encodeTemporalLiteral(literal, value, kind, logical)
+		return setBinaryLiteral(literal, value, kind)
 	}
-	return literal, nil
+	return nil
+}
+
+func setBoolLiteral(literal *fmsg.PbLiteralValue, value any, kind DataType) error {
+	v, ok := value.(bool)
+	if !ok {
+		return literalTypeError(value, kind)
+	}
+	literal.BooleanValue = proto.Bool(v)
+	return nil
+}
+
+func setIntegerLiteral(literal *fmsg.PbLiteralValue, value any, kind DataType) error {
+	v, err := integerLiteral(value, kind)
+	if err != nil {
+		return err
+	}
+	if kind == BigIntType {
+		literal.BigintValue = proto.Int64(v)
+	} else {
+		literal.IntValue = proto.Int32(int32(v))
+	}
+	return nil
+}
+
+func setFloatLiteral(literal *fmsg.PbLiteralValue, value any) error {
+	v, err := floatLiteral(value, 24)
+	if err != nil {
+		return err
+	}
+	literal.FloatValue = proto.Float32(float32(v))
+	return nil
+}
+
+func setDoubleLiteral(literal *fmsg.PbLiteralValue, value any) error {
+	v, err := floatLiteral(value, 53)
+	if err != nil {
+		return err
+	}
+	literal.DoubleValue = proto.Float64(v)
+	return nil
+}
+
+func setStringLiteral(literal *fmsg.PbLiteralValue, value any, kind DataType) error {
+	v, ok := value.(string)
+	if !ok {
+		return literalTypeError(value, kind)
+	}
+	literal.StringValue = proto.String(v)
+	return nil
+}
+
+func setBinaryLiteral(literal *fmsg.PbLiteralValue, value any, kind DataType) error {
+	v, ok := value.([]byte)
+	if !ok {
+		return literalTypeError(value, kind)
+	}
+	literal.BinaryValue = append([]byte(nil), v...)
+	return nil
 }
 
 func literalTypeError(value any, kind DataType) error {
@@ -445,36 +484,60 @@ func encodeTemporalLiteral(literal *fmsg.PbLiteralValue, value any, kind DataTyp
 	}
 	switch kind {
 	case DateType:
-		hour, minute, second := v.Clock()
-		if hour != 0 || minute != 0 || second != 0 || v.Nanosecond() != 0 {
-			return errors.New("DATE literal must be at midnight")
-		}
-		literal.BigintValue = proto.Int64(int64(temporalInt(DateType, v)))
+		return setDateLiteral(literal, v)
 	case TimeType:
-		if v.Nanosecond()%int(time.Millisecond) != 0 {
-			return errors.New("TIME literal has sub-millisecond precision")
-		}
-		literal.IntValue = proto.Int32(temporalInt(TimeType, v))
+		return setTimeLiteral(literal, v)
 	default:
-		precision := logical.Precision
-		if precision < 0 || precision > 9 {
-			return fmt.Errorf("invalid %s precision %d", kind, precision)
-		}
-		granularity := int(time.Millisecond)
-		if precision > 3 {
-			granularity = 1
-			for range 9 - precision {
-				granularity *= 10
-			}
-		}
-		if v.Nanosecond()%int(time.Millisecond)%granularity != 0 {
-			return fmt.Errorf("%s literal exceeds column precision %d", kind, precision)
-		}
-		millis, nanos := timestampParts(kind, v)
-		literal.TimestampMillisValue = proto.Int64(millis)
-		literal.TimestampNanoOfMillisValue = proto.Int32(nanos)
+		return setTimestampLiteral(literal, v, kind, logical.Precision)
 	}
+}
+
+func setDateLiteral(literal *fmsg.PbLiteralValue, v time.Time) error {
+	hour, minute, second := v.Clock()
+	if hour != 0 || minute != 0 || second != 0 || v.Nanosecond() != 0 {
+		return errors.New("DATE literal must be at midnight")
+	}
+	literal.BigintValue = proto.Int64(int64(temporalInt(DateType, v)))
 	return nil
+}
+
+func setTimeLiteral(literal *fmsg.PbLiteralValue, v time.Time) error {
+	if v.Nanosecond()%int(time.Millisecond) != 0 {
+		return errors.New("TIME literal has sub-millisecond precision")
+	}
+	literal.IntValue = proto.Int32(temporalInt(TimeType, v))
+	return nil
+}
+
+func setTimestampLiteral(literal *fmsg.PbLiteralValue, v time.Time, kind DataType, precision int) error {
+	granularity, err := timestampGranularity(kind, precision)
+	if err != nil {
+		return err
+	}
+	if v.Nanosecond()%int(time.Millisecond)%granularity != 0 {
+		return fmt.Errorf("%s literal exceeds column precision %d", kind, precision)
+	}
+	millis, nanos := timestampParts(kind, v)
+	literal.TimestampMillisValue = proto.Int64(millis)
+	literal.TimestampNanoOfMillisValue = proto.Int32(nanos)
+	return nil
+}
+
+// timestampGranularity returns the finest sub-millisecond step, in
+// nanoseconds, that a timestamp column of the given precision can represent.
+// Columns with millisecond precision or coarser accept no sub-millisecond part.
+func timestampGranularity(kind DataType, precision int) (int, error) {
+	if precision < 0 || precision > 9 {
+		return 0, fmt.Errorf("invalid %s precision %d", kind, precision)
+	}
+	if precision <= 3 {
+		return int(time.Millisecond), nil
+	}
+	granularity := 1
+	for range 9 - precision {
+		granularity *= 10
+	}
+	return granularity, nil
 }
 
 // scanFilter is a compiled predicate and the schema it was compiled against.

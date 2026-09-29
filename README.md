@@ -7,7 +7,7 @@ Public beta Go client for Apache Fluss 1.0.
 Development and review follow the project
 [coding guidelines](CODING_GUIDELINES.md).
 
-The current prepared release is `v0.2.0-beta.1`. It is suitable for compatibility
+The current prepared release is `v0.2.0-beta.2`. It is suitable for compatibility
 testing and application evaluation against the pinned Fluss 1.0 target, but
 it does not yet provide a stable v1 API or a production support commitment.
 
@@ -21,7 +21,7 @@ remaining centered on the Apache Fluss table model:
 ## Install
 
 ```sh
-go get github.com/pletorco/fluss-go@v0.2.0-beta.1
+go get github.com/pletorco/fluss-go@v0.2.0-beta.2
 ```
 
 The API is experimental before v1. Pin a release in production rather than
@@ -33,7 +33,7 @@ OpenTelemetry SDKs to the root module graph. Install an adapter at the same
 release version when it is needed, for example:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.1
+go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.2
 ```
 
 ## Quick Start
@@ -99,7 +99,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 | Core `fadm` catalog client | Supported | `pkg/fadm` shares the `fgo` connection pool and implements database, table, schema, alter, partition, and per-bucket offset operations. |
 | Fluss 1.0 administration | Supported | Database alteration, cluster health, remote-log manifest listing, active KV snapshot listing, table bucket-count alteration, and the existing ACL, rebalance, lease, token, offset, and statistics APIs are exposed. |
 | Historical lake partition routing | Not supported | Current table and partition routing is supported; selecting historical physical partitions for a lake workflow is deferred until its public ownership and consistency contract is complete. |
-| Rust core wrapper | Not used | `v0.2.0-beta.1` remains a pure-Go client. Adopting the Fluss Rust core requires a separately reviewed stable C ABI, packaging, cross-compilation, ownership, and cancellation design. |
+| Rust core wrapper | Not used | `v0.2.0-beta.2` remains a pure-Go client. Adopting the Fluss Rust core requires a separately reviewed stable C ABI, packaging, cross-compilation, ownership, and cancellation design. |
 | Live Fluss 1.0 compatibility | Verified | `task test:integration` runs golden fixtures and live plaintext, SASL PLAIN, TLS-terminated, multi-tablet, catalog, log, KV, scan-session, new administration, schema-evolution, and failover checks against the digest-pinned 1.0 image. |
 
 ## Documentation
