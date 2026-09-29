@@ -8,6 +8,15 @@ breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Closing an upsert writer no longer waits for a pending KV backpressure
+  delay of up to one minute before sending its final batches.
+- Connection setup failures now also report a failure to close the partially
+  established connection, joined to the original error.
+- Writer retry execution returns an error instead of panicking when it is
+  called with an unvalidated retry policy.
+
 ## [v0.2.0-beta.1] - 2026-09-22
 
 ### Added

@@ -46,16 +46,15 @@ func TestDefaultWriterRetryBackoffAndTransportClassification(t *testing.T) {
 	}
 }
 
-func TestExecuteWriterAttemptsRequiresValidatedPolicy(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("zero-attempt policy did not panic")
-		}
-	}()
-	executeWriterAttempts(
+func TestExecuteWriterAttemptsRejectsUnvalidatedPolicy(t *testing.T) {
+	called := false
+	result := executeWriterAttempts(
 		context.Background(), WriterRetryPolicy{}, nil, MetricOperationLogWrite,
-		func(context.Context) (int64, bool, error) { return 0, false, nil },
+		func(context.Context) (int64, bool, error) { called = true; return 0, false, nil },
 	)
+	if called || !errors.Is(result.err, ErrInvalidConfig) {
+		t.Fatalf("zero-attempt policy: called=%v err=%v", called, result.err)
+	}
 }
 
 func TestExecuteWriterAttemptsRecoversDuplicateSequence(t *testing.T) {
@@ -125,5 +124,18 @@ func TestExecuteWriterAttemptsObservesRetryAndBackoffCancellation(t *testing.T) 
 	event, ok := observer.find(MetricRetry, MetricOperationKVWrite)
 	if !ok || event.Attempt != 2 || !event.Failed {
 		t.Fatalf("retry metric = %#v, %t", event, ok)
+	}
+}
+
+func TestExecuteWriterRequestReportsDeadline(t *testing.T) {
+	result := executeWriterRequest(
+		time.Millisecond, WriterRetryPolicy{MaxAttempts: 1}, nil, MetricOperationLogWrite,
+		func(ctx context.Context) (int64, bool, error) {
+			<-ctx.Done()
+			return 0, false, errors.New("attempt failed")
+		},
+	)
+	if !errors.Is(result.err, context.DeadlineExceeded) {
+		t.Fatalf("executeWriterRequest() error = %v, want deadline exceeded", result.err)
 	}
 }

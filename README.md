@@ -135,7 +135,7 @@ updated here. Protocol-message coverage is not end-user feature parity.
 - [Release process](docs/releasing.md)
 - [Write scheduling decision](docs/write-scheduling.md)
 - [Lookup scheduling decision](docs/lookup-scheduling.md)
-- [Initial 0.9.1 delivery record](docs/roadmap-v0.1.md)
+- [Initial 0.9.1 delivery record (historical)](docs/roadmap-v0.1.md)
 - [Security exception policy](docs/security-exceptions.md)
 - [Dependency license policy](docs/dependency-license-policy.md)
 

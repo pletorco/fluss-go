@@ -210,6 +210,37 @@ func TestUpsertWriterAppliesKVPressureThrottle(t *testing.T) {
 	}
 }
 
+func TestUpsertWriterCloseSkipsPressureThrottle(t *testing.T) {
+	backend := kvBackend(0)
+	backend.putResults = []kvPutResult{
+		{logEnd: 1, pressure: 1, pressureKnown: true},
+		{logEnd: 2},
+	}
+	writer, err := newUpsertWriter(
+		context.Background(), backend, upsertWriterTable(),
+		WithUpsertBatchLimits(1<<20, 1), WithUpsertBackpressureMaxThrottle(time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first := writer.Upsert(context.Background(), Row{int32(1), "a", int64(1)}).Await(context.Background()); first.Err != nil {
+		t.Fatalf("first result = %#v", first)
+	}
+	second := writer.Upsert(context.Background(), Row{int32(2), "b", int64(2)})
+	closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	started := time.Now()
+	if err := writer.Close(closeCtx); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("Close() took %s, want it not to wait for the pressure throttle", elapsed)
+	}
+	if result := second.Await(context.Background()); result.Err != nil {
+		t.Fatalf("second result = %#v", result)
+	}
+}
+
 func TestUpsertWriterMergeModes(t *testing.T) {
 	table := upsertWriterTable()
 	table.Properties = map[string]string{"table.merge-engine": "aggregation"}

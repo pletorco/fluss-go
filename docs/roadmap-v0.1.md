@@ -1,6 +1,12 @@
 # Initial Apache Fluss 0.9.1 roadmap
 
-Status: completed on 2026-07-30.
+Status: completed on 2026-07-30 and superseded.
+
+> This is a historical delivery record for the v0.1 series. Apache Fluss 0.9.1
+> compatibility was dropped in v0.2.0-beta.1, which targets Apache Fluss 1.0.
+> See [migration-v0.2.md](migration-v0.2.md) and the [CHANGELOG](../CHANGELOG.md)
+> for the current baseline. Commands and versions below describe the v0.1
+> series, not the current tree.
 
 The initial fluss-go milestone targets only Apache Fluss
 `v0.9.1-incubating` at commit

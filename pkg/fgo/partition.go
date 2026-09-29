@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -81,7 +81,7 @@ func (s Schema) PartitionNames(specs ...PartitionSpec) ([]string, error) {
 	for name := range unique {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }
 
@@ -257,7 +257,7 @@ func partitionSpecProto(spec PartitionSpec) *fmsg.PbPartitionSpec {
 	for key := range spec {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	result := &fmsg.PbPartitionSpec{}
 	for _, key := range keys {
 		result.PartitionKeyValues = append(result.PartitionKeyValues, &fmsg.PbKeyValue{

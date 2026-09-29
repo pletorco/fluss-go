@@ -1006,3 +1006,19 @@ func writeTransportError(t *testing.T, conn net.Conn, id int32, body []byte) {
 		t.Error(err)
 	}
 }
+
+type failingCloser struct{ err error }
+
+func (c failingCloser) Close() error { return c.err }
+
+func TestCloseAfterErrorJoinsCloseFailure(t *testing.T) {
+	cause := errors.New("handshake failed")
+	if got := closeAfterError(failingCloser{}, cause); got != cause {
+		t.Fatalf("closeAfterError() = %v, want the original error", got)
+	}
+	closeFailure := errors.New("close failed")
+	got := closeAfterError(failingCloser{err: closeFailure}, cause)
+	if !errors.Is(got, cause) || !errors.Is(got, closeFailure) {
+		t.Fatalf("closeAfterError() = %v, want both errors", got)
+	}
+}

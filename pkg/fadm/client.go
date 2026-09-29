@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -509,7 +509,7 @@ func (p PartitionSpec) proto() *fmsg.PbPartitionSpec {
 	for key := range p {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	spec := &fmsg.PbPartitionSpec{}
 	for _, key := range keys {
 		spec.PartitionKeyValues = append(spec.PartitionKeyValues, &fmsg.PbKeyValue{

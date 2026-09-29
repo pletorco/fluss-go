@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/bits"
-	"sort"
+	"slices"
 )
 
 func sortedBuckets(buckets map[int32]ServerNode) ([]int32, error) {
@@ -18,7 +18,7 @@ func sortedBuckets(buckets map[int32]ServerNode) ([]int32, error) {
 		}
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	return ids, nil
 }
 

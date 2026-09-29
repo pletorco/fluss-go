@@ -1,9 +1,10 @@
 package fadm
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/pletorco/fluss-go/pkg/fgo"
 	"github.com/pletorco/fluss-go/pkg/fmsg"
@@ -49,14 +50,12 @@ func (c *Client) GetServerNodes(ctx context.Context) ([]ServerNode, error) {
 			return nil, err
 		}
 	}
-	sort.Slice(tablets, func(left, right int) bool {
-		if tablets[left].ID != tablets[right].ID {
-			return tablets[left].ID < tablets[right].ID
-		}
-		if tablets[left].Host != tablets[right].Host {
-			return tablets[left].Host < tablets[right].Host
-		}
-		return tablets[left].Port < tablets[right].Port
+	slices.SortFunc(tablets, func(a, b ServerNode) int {
+		return cmp.Or(
+			cmp.Compare(a.ID, b.ID),
+			cmp.Compare(a.Host, b.Host),
+			cmp.Compare(a.Port, b.Port),
+		)
 	})
 	return append([]ServerNode{coordinator}, tablets...), nil
 }
