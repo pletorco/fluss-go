@@ -200,7 +200,7 @@ tasks:
       - coverage:generate
     cmds:
       - cmd: >-
-          awk 'NR > 1 && $1 !~ /FlussApi\.pb\.go|api_keys_gen\.go/ { split($1, path, ":"); total[path[1]] += $2; if ($3 > 0) covered[path[1]] += $2 } END { failed = 0; for (file in total) { percent = 100 * covered[file] / total[file]; printf "%s: %.1f%% (%d/%d statements)\n", file, percent, covered[file], total[file]; if (percent < 80) failed = 1 } exit failed }' coverage.out
+          awk 'NR > 1 && $1 !~ /FlussApi\.pb\.go|api_keys_gen\.go/ { split($1, path, ":"); total[path[1]] += $2; if ($3 > 0) covered[path[1]] += $2 } END { failed = 0; for (file in total) { percent = 100 * covered[file] / total[file]; checked++; if (percent < 80) { printf "%s: %.1f%% (%d/%d statements) is below 80%%\n", file, percent, covered[file], total[file] > "/dev/stderr"; failed++ } } printf "coverage: %d hand-written files checked, %d below 80%%\n", checked, failed; exit failed > 0 }' coverage.out
 
   coverage:generate:
     desc: Generate one coverage profile across the root and adapter modules
@@ -413,3 +413,10 @@ tasks:
     desc: Run the CI verification suite
     deps:
       - verify
+
+  ci:compat:
+    desc: Verify build, vet, and tests on an older supported Go release
+    deps:
+      - vet
+      - test
+      - test:race
