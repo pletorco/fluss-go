@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -140,15 +141,13 @@ func (m *connectionManager) open(ctx context.Context, address string, expectedSe
 	if m.cfg.tlsConfig != nil {
 		tlsConn := tls.Client(conn, m.cfg.tlsConfig.Clone())
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("TLS handshake: %w", err)
+			return nil, closeAfterError(conn, fmt.Errorf("TLS handshake: %w", err))
 		}
 		conn = tlsConn
 	}
 	requester, err := transport.New(conn, m.cfg.limits)
 	if err != nil {
-		_ = conn.Close()
-		return nil, err
+		return nil, closeAfterError(conn, err)
 	}
 	client := newPhysicalClient(requester, requester.Close)
 	client.observer = m.cfg.observer
@@ -294,4 +293,13 @@ func (r ServerType) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// closeAfterError closes conn after err and joins a close failure to err.
+// It returns err unchanged when the close succeeds.
+func closeAfterError(conn io.Closer, err error) error {
+	if closeErr := conn.Close(); closeErr != nil {
+		return errors.Join(err, fmt.Errorf("close connection: %w", closeErr))
+	}
+	return err
 }
