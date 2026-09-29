@@ -105,5 +105,7 @@ func executeWriterAttempts(
 			return writerAttemptResult{attempts: attempt, err: err}
 		}
 	}
-	panic("unreachable writer retry loop")
+	return writerAttemptResult{
+		err: fmt.Errorf("%w: writer retry attempts must be at least 1", ErrInvalidConfig),
+	}
 }

@@ -907,15 +907,6 @@ func completePrefixLookupBatch(tasks []*lookupTask, values [][][]byte, err error
 	}
 }
 
-func decodeLookupValue(table Table, value []byte) (Row, error) {
-	return decodeLookupValueWithResolver(
-		context.Background(),
-		fixedSchemaResolver{path: table.Path, schemaID: table.SchemaID, schema: table.Schema},
-		table,
-		value,
-	)
-}
-
 func decodeLookupValueWithResolver(
 	ctx context.Context,
 	resolver schemaResolver,

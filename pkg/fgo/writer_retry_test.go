@@ -46,16 +46,15 @@ func TestDefaultWriterRetryBackoffAndTransportClassification(t *testing.T) {
 	}
 }
 
-func TestExecuteWriterAttemptsRequiresValidatedPolicy(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("zero-attempt policy did not panic")
-		}
-	}()
-	executeWriterAttempts(
+func TestExecuteWriterAttemptsRejectsUnvalidatedPolicy(t *testing.T) {
+	called := false
+	result := executeWriterAttempts(
 		context.Background(), WriterRetryPolicy{}, nil, MetricOperationLogWrite,
-		func(context.Context) (int64, bool, error) { return 0, false, nil },
+		func(context.Context) (int64, bool, error) { called = true; return 0, false, nil },
 	)
+	if called || !errors.Is(result.err, ErrInvalidConfig) {
+		t.Fatalf("zero-attempt policy: called=%v err=%v", called, result.err)
+	}
 }
 
 func TestExecuteWriterAttemptsRecoversDuplicateSequence(t *testing.T) {
