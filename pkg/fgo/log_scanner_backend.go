@@ -39,6 +39,7 @@ type logFetchRequest struct {
 	partitionID int64
 	offset      int64
 	projection  []int32
+	filter      *scanFilter
 	config      LogScannerConfig
 }
 
@@ -124,6 +125,11 @@ func (b clientLogScannerBackend) fetch(
 		TableId: proto.Int64(input.tableID), ProjectionPushdownEnabled: proto.Bool(len(input.projection) != 0),
 		ProjectedFields: input.projection, BucketsReq: []*fmsg.PbFetchLogReqForBucket{bucketRequest},
 	}}
+	if input.filter != nil {
+		// Fluss requires the predicate and its schema ID to be set together.
+		message.TablesReq[0].FilterPredicate = input.filter.predicate
+		message.TablesReq[0].FilterSchemaId = proto.Int32(input.filter.schemaID)
+	}
 	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
 	if err != nil {
 		return scannerFetch{}, err

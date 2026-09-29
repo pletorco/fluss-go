@@ -97,6 +97,54 @@ if err != nil {
 defer scanner.Close()
 ```
 
+### Server-side scan filters
+
+`fgo.WithScanFilter` pushes a predicate to Fluss so that log batches that cannot
+match are skipped before they are sent. Build predicates with `fgo.Col`
+(`Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, `IsNull`, `IsNotNull`, `In`, `NotIn`,
+`StartsWith`, `EndsWith`, `Contains`) and combine them with `fgo.And` and
+`fgo.Or`.
+
+<!-- go-source: internal/docexamples/snippets_test.go scanFilter -->
+```go
+scanner, err := client.NewLogScanner(
+	ctx,
+	table,
+	fgo.Earliest(),
+	fgo.WithScanFilter(fgo.And(
+		fgo.Col("amount").Ge(100),
+		fgo.Or(
+			fgo.Col("region").In("eu", "us"),
+			fgo.Col("name").StartsWith("vip-"),
+		),
+	)),
+)
+if err != nil {
+	return err
+}
+defer scanner.Close()
+```
+
+A filter is an optimization, not a guarantee:
+
+- The server drops whole batches using batch statistics, so the scan still
+  returns a superset of the matching rows. Apply the same predicate to the
+  returned rows when exact results are required.
+- Filters require a table that uses the Arrow log format and are rejected at
+  scanner creation for other formats. Remote log segments are read unfiltered.
+- The predicate refers to the full table schema and is evaluated before
+  projection, so it may name columns that `WithScanProjection` omits. It is
+  bound to the table's current schema ID when the scanner is created.
+- Literals must match the column exactly. Integer literals convert to any
+  wider or equal integer, floating-point, or decimal column when the value is
+  exact; `*big.Rat` is used for decimals, `time.Time` for date, time, and
+  timestamp columns, and `[]byte` for binary columns. Overflow, inexact
+  conversions, unknown columns, nested (array, map, row) columns, and string
+  matching on non-string columns are reported as `fgo.ErrInvalidConfig` when
+  the scanner is created.
+- `nil` is accepted only inside `In` and `NotIn`; use `IsNull` to match nulls.
+- Batch and snapshot scanners do not accept filters.
+
 `Wakeup` interrupts an active poll, or the next poll when none is active. The
 poll returns `fgo.ErrWakeup`; the scanner remains usable. Row and Arrow results
 preserve per-bucket failures rather than replacing a partial result with a

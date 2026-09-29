@@ -126,6 +126,7 @@ type LogScanner struct {
 	path        PhysicalTablePath
 	backend     logScannerBackend
 	config      LogScannerConfig
+	filter      *scanFilter
 	tableID     int64
 	partitionID int64
 	buckets     []int32
@@ -177,6 +178,10 @@ func newLogScanner(
 	if err != nil {
 		return nil, err
 	}
+	filter, err := scannerFilter(table, config)
+	if err != nil {
+		return nil, err
+	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	physicalID, locations, err := backend.metadata(ctx, path)
 	if err != nil {
@@ -192,7 +197,7 @@ func newLogScanner(
 	scanner := &LogScanner{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, buckets: buckets, schema: table.Schema, offset: make(map[int32]int64, len(buckets)),
-		compacted: true, resolver: resolverFor(backend, table),
+		compacted: true, resolver: resolverFor(backend, table), filter: filter,
 	}
 	_, scanner.dynamic = backend.(schemaResolverProvider)
 	if provider, ok := backend.(schemaResolverProvider); ok && provider.schemaResolver() == nil {
@@ -216,6 +221,20 @@ func newLogScanner(
 	}
 	scanner.updateDone()
 	return scanner, nil
+}
+
+func scannerFilter(table Table, config LogScannerConfig) (*scanFilter, error) {
+	if config.Filter == nil {
+		return nil, nil
+	}
+	if err := validateFilterLogFormat(table); err != nil {
+		return nil, err
+	}
+	predicate, err := compilePredicate(*config.Filter, table.Schema)
+	if err != nil {
+		return nil, err
+	}
+	return &scanFilter{predicate: predicate, schemaID: table.SchemaID}, nil
 }
 
 func scannerConfig(options []LogScannerOption) (LogScannerConfig, error) {
@@ -387,7 +406,7 @@ func (s *LogScanner) pollBucket(
 	}
 	fetched, err := s.backend.fetch(requestCtx, logFetchRequest{
 		path: s.path, bucket: bucket, tableID: s.tableID, partitionID: s.partitionID,
-		offset: offset, projection: projection, config: s.config,
+		offset: offset, projection: projection, filter: s.filter, config: s.config,
 	})
 	fetchDuration := metricDuration(started)
 	if err != nil {

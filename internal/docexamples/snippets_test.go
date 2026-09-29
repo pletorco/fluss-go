@@ -231,6 +231,28 @@ func boundedScan(ctx context.Context, client *fgo.Client, table fgo.Table) error
 	return nil
 }
 
+func scanFilter(ctx context.Context, client *fgo.Client, table fgo.Table) error {
+	// doc:snippet scanFilter
+	scanner, err := client.NewLogScanner(
+		ctx,
+		table,
+		fgo.Earliest(),
+		fgo.WithScanFilter(fgo.And(
+			fgo.Col("amount").Ge(100),
+			fgo.Or(
+				fgo.Col("region").In("eu", "us"),
+				fgo.Col("name").StartsWith("vip-"),
+			),
+		)),
+	)
+	if err != nil {
+		return err
+	}
+	defer scanner.Close()
+	// doc:snippet-end scanFilter
+	return nil
+}
+
 func kvMerge(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	// doc:snippet kvMerge
 	writer, err := client.NewUpsertWriter(
