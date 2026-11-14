@@ -167,17 +167,16 @@ their Markdown fences.
 Protocol generation requires protoc v3.21.12. Local security scans require
 Trivy v0.74.0. Integration and reliability tests require Docker, Docker
 Compose, and OpenSSL; the tasks create and remove isolated clusters. The
-module recommends Go
-1.26.6 so the Go command can automatically avoid known standard-library
-vulnerabilities; set `GOTOOLCHAIN=local` only when intentionally testing
-another supported, patched Go release.
+module recommends Go 1.26.11 so the Go command can automatically avoid known
+standard-library vulnerabilities; set `GOTOOLCHAIN=local` only when
+intentionally testing another supported, patched Go release.
 
 ## Compatibility Matrix
 
 | Component | Supported versions |
 | --- | --- |
 | Apache Fluss | `1.0.0` at commit `5c07f88e50a8ff41b0ebc214a0458e5dba60be37` only; image digest `sha256:ff461b45438033da4fd1c2556d3f978f3603bb3632fe075c2bd57388339a58cb` |
-| Go | `1.25.13` or newer in the 1.25 series; `1.26.6` or newer in the 1.26 series; module language baseline `1.25.0` |
+| Go | `1.26.10` or newer in the 1.26 series; recommended toolchain `1.26.11`; module language and compatibility-test baseline `1.25.0` |
 | Task | `3.51.1` |
 | protoc | `3.21.12` |
 | Trivy | `0.74.0` |

@@ -11,7 +11,7 @@
 
 | 목적 | 표준 도구 | 규칙 |
 | --- | --- | --- |
-| 언어와 빌드 | Go 1.25 이상 | 최소 버전은 `go.mod`에 명시하고 CI는 최신 Go 1.25 및 1.26 patch release를 사용한다. |
+| 언어와 빌드 | 언어 기준 Go 1.25, 지원 런타임 Go 1.26.10 이상 | 최소 언어 버전은 `go.mod`에 명시하고 CI는 Go 1.25 호환성과 패치된 Go 1.26을 검사한다. 권장 toolchain은 Go 1.26.11이다. |
 | 작업 실행 | [Task](https://taskfile.dev/) (`go-task`) v3.51.1 | 반복 가능한 로컬·CI 작업의 단일 진입점으로 사용한다. |
 | 코드 포맷 | `gofmt` | 모든 Go 소스에 적용한다. |
 | 정적 분석 | `go vet` | 추가 linter는 도입 전에 필요성과 의존성을 검토한다. |
@@ -304,8 +304,8 @@ gate로 취급하지 않는다.
 - `task security:repo`는 Trivy filesystem scan을 실행한다.
 - `govulncheck`는 v1.6.0으로 고정하고 Go 공식 vulnerability database를 사용한다.
 - Trivy는 v0.74.0으로 고정하고 release checksum을 검증하여 설치한다.
-- 지원하는 최신 Go 1.25 및 1.26 patch release에서 검사하여 표준 라이브러리 취약점도
-  확인한다.
+- Go 1.25 언어 호환성과 지원하는 최신 Go 1.26 patch release를 검사한다. 보안 검사는
+  Go 1.26.10 이상의 표준 라이브러리에서 실행한다.
 - 도달 가능한 알려진 취약점을 발견하면 severity와 관계없이 CI를 실패시킨다.
 - Trivy는 Go module과 repository의 `HIGH`, `CRITICAL` 취약점 및 misconfiguration을
   차단하고 `MEDIUM` 이하는 report에 표시한다.

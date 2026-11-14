@@ -8,6 +8,20 @@ breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the recommended Go toolchain to 1.26.11 and the supported runtime
+  minimum to Go 1.26.10. Go 1.25 remains the module language and compatibility
+  test baseline, but is no longer a supported runtime because it has no release
+  containing the required standard-library fixes.
+
+### Security
+
+- Updated `github.com/klauspost/compress` to 1.20.2 in the root and all adapter
+  modules to fix `CVE-2026-116591` (`GO-2026-6865`).
+- Required patched Go standard libraries for `CVE-2026-111943`
+  (`GO-2026-6809`) and `CVE-2026-97031` (`GO-2026-6607`).
+
 ## [v0.2.0-beta.2] - 2026-09-29
 
 ### Added
