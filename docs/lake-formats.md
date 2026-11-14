@@ -61,7 +61,6 @@ metadata, Avro manifests, Parquet files, or cloud credentials itself.
 
 It is not added in this beta for the following measured reasons:
 
-- its module requires Go 1.25.5 while fluss-go currently declares Go 1.25.0;
 - a minimal program importing only `table` resolved 299 modules, and
   `go list -deps` reported 480 packages including the standard library;
 - the current project Trivy allowlist rejects transitive

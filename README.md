@@ -176,7 +176,7 @@ intentionally testing another supported, patched Go release.
 | Component | Supported versions |
 | --- | --- |
 | Apache Fluss | `1.0.0` at commit `5c07f88e50a8ff41b0ebc214a0458e5dba60be37` only; image digest `sha256:ff461b45438033da4fd1c2556d3f978f3603bb3632fe075c2bd57388339a58cb` |
-| Go | `1.26.10` or newer in the 1.26 series; recommended toolchain `1.26.11`; module language and compatibility-test baseline `1.25.0` |
+| Go | Module, toolchain, and compatibility-test baseline `1.26.11`; CI also verifies the latest Go 1.26 patch release |
 | Task | `3.51.1` |
 | protoc | `3.21.12` |
 | Trivy | `0.74.0` |

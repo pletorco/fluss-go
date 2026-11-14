@@ -415,7 +415,7 @@ tasks:
       - verify
 
   ci:compat:
-    desc: Verify build, vet, and tests on an older supported Go release
+    desc: Verify build, vet, and tests on the exact Go baseline
     deps:
       - vet
       - test

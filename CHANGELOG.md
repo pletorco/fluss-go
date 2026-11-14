@@ -10,10 +10,8 @@ breaking changes.
 
 ### Changed
 
-- Raised the recommended Go toolchain to 1.26.11 and the supported runtime
-  minimum to Go 1.26.10. Go 1.25 remains the module language and compatibility
-  test baseline, but is no longer a supported runtime because it has no release
-  containing the required standard-library fixes.
+- Raised the module, workspace, recommended toolchain, and compatibility-test
+  baseline to Go 1.26.11. Go 1.25 is no longer supported.
 
 ### Security
 

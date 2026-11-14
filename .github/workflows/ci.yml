@@ -56,10 +56,10 @@ jobs:
           --color=false
           ci
 
-  # Proves that the oldest supported Go release still builds and passes the
-  # unit and race tests. It intentionally skips the Go-independent gates.
+  # Proves that the exact module baseline still builds and passes the unit and
+  # race tests. It intentionally skips the Go-independent gates.
   compat:
-    name: Compat (Go 1.25)
+    name: Baseline (Go 1.26.11)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -68,8 +68,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.25.x
-          check-latest: true
+          go-version: 1.26.11
+          check-latest: false
           cache-dependency-path: '**/go.sum'
       - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
