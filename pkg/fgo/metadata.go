@@ -475,14 +475,14 @@ func cloneBucketDetails(details map[int32]BucketMetadata) map[int32]BucketMetada
 	}
 	next := make(map[int32]BucketMetadata, len(details))
 	for id, detail := range details {
-		copy := detail
-		copy.Replicas = append([]int32(nil), detail.Replicas...)
-		copy.ISR = append([]int32(nil), detail.ISR...)
+		cloned := detail
+		cloned.Replicas = append([]int32(nil), detail.Replicas...)
+		cloned.ISR = append([]int32(nil), detail.ISR...)
 		if detail.Leader != nil {
 			leader := *detail.Leader
-			copy.Leader = &leader
+			cloned.Leader = &leader
 		}
-		next[id] = copy
+		next[id] = cloned
 	}
 	return next
 }

@@ -129,8 +129,8 @@ func loadAPIs(inputs string) ([]api, error) {
 	var apis []api
 	for _, match := range apiPattern.FindAllStringSubmatch(string(keySource), -1) {
 		key, _ := strconv.Atoi(match[2])
-		min, _ := strconv.Atoi(match[3])
-		max, _ := strconv.Atoi(match[4])
+		minVersion, _ := strconv.Atoi(match[3])
+		maxVersion, _ := strconv.Atoi(match[4])
 		base := messageBase(match[1])
 		request := base + "Request"
 		response := base + "Response"
@@ -143,8 +143,8 @@ func loadAPIs(inputs string) ([]api, error) {
 		apis = append(apis, api{
 			enumName: match[1],
 			key:      key,
-			min:      min,
-			max:      max,
+			min:      minVersion,
+			max:      maxVersion,
 			public:   match[5] == "PUBLIC",
 			request:  request,
 			response: response,

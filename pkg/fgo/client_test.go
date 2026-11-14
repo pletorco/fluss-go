@@ -651,11 +651,11 @@ func TestNegotiationAndAuthenticationErrors(t *testing.T) {
 	if err := client.authenticate(context.Background(), &testAuthenticator{protocol: "test", initial: true, authenticateErr: errors.New("authentication failure")}); err == nil {
 		t.Fatal("authenticate callback error = nil")
 	}
-	if min(2, 1) != 1 {
-		t.Fatal("min() returned the wrong right value")
+	if lowerInt32(2, 1) != 1 {
+		t.Fatal("lowerInt32() returned the wrong right value")
 	}
-	if min(1, 2) != 1 {
-		t.Fatal("min() returned the wrong left value")
+	if lowerInt32(1, 2) != 1 {
+		t.Fatal("lowerInt32() returned the wrong left value")
 	}
 }
 
@@ -683,13 +683,13 @@ func TestCloseAllPreservesFirstFailureAndRunsEveryCloser(t *testing.T) {
 	first := errors.New("first close")
 	second := errors.New("second close")
 	calls := 0
-	close := closeAll(
+	closeFn := closeAll(
 		nil,
 		func() error { calls++; return first },
 		func() error { calls++; return second },
 		func() error { calls++; return nil },
 	)
-	if err := close(); !errors.Is(err, first) {
+	if err := closeFn(); !errors.Is(err, first) {
 		t.Fatalf("closeAll() error = %v, want first error", err)
 	}
 	if calls != 3 {
