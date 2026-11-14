@@ -1,8 +1,6 @@
 module github.com/pletorco/fluss-go/adapters/s3
 
-go 1.25.0
-
-toolchain go1.26.6
+go 1.26.11
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.5
@@ -23,7 +21,7 @@ require (
 	github.com/aws/smithy-go v1.28.7 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
