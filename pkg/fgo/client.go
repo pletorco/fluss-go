@@ -94,14 +94,14 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 	return client, nil
 }
 
-func newClient(requester fmsg.Requester, close func() error) *Client {
-	client := newPhysicalClient(requester, close)
+func newClient(requester fmsg.Requester, closeFn func() error) *Client {
+	client := newPhysicalClient(requester, closeFn)
 	client.schemas = newSchemaCache(defaultSchemaCacheEntries, client.fetchSchema)
 	return client
 }
 
-func newPhysicalClient(requester fmsg.Requester, close func() error) *Client {
-	return &Client{requester: requester, close: close, versions: make(map[fmsg.APIKey]int16)}
+func newPhysicalClient(requester fmsg.Requester, closeFn func() error) *Client {
+	return &Client{requester: requester, close: closeFn, versions: make(map[fmsg.APIKey]int16)}
 }
 
 // Requester exposes the low-level protocol requester implemented by the client.
@@ -289,8 +289,8 @@ func (c *Client) negotiate(ctx context.Context, name, version string) error {
 		if !known || server.GetMaxVersion() < int32(api.MinVersion) || server.GetMinVersion() > int32(api.MaxVersion) {
 			continue
 		}
-		max := min(int32(api.MaxVersion), server.GetMaxVersion())
-		negotiated[api.Key] = int16(max)
+		negotiatedVersion := lowerInt32(int32(api.MaxVersion), server.GetMaxVersion())
+		negotiated[api.Key] = int16(negotiatedVersion)
 	}
 	if _, ok := negotiated[fmsg.APIKeyApiVersions]; !ok {
 		return fmt.Errorf("%w: API_VERSIONS", ErrUnsupportedAPI)
@@ -305,11 +305,11 @@ func (c *Client) negotiate(ctx context.Context, name, version string) error {
 func closeAll(closers ...func() error) func() error {
 	return func() error {
 		var result error
-		for _, close := range closers {
-			if close == nil {
+		for _, closeFn := range closers {
+			if closeFn == nil {
 				continue
 			}
-			if err := close(); err != nil && result == nil {
+			if err := closeFn(); err != nil && result == nil {
 				result = err
 			}
 		}
@@ -317,7 +317,7 @@ func closeAll(closers ...func() error) func() error {
 	}
 }
 
-func min(left, right int32) int32 {
+func lowerInt32(left, right int32) int32 {
 	if left < right {
 		return left
 	}
