@@ -4,8 +4,8 @@ go 1.26.11
 
 require (
 	github.com/pletorco/fluss-go v0.2.0-beta.2
-	go.opentelemetry.io/otel v1.46.0
-	go.opentelemetry.io/otel/metric v1.46.0
+	go.opentelemetry.io/otel v1.47.0
+	go.opentelemetry.io/otel/metric v1.47.0
 )
 
 require (
