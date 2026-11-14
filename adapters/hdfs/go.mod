@@ -2,7 +2,7 @@ module github.com/pletorco/fluss-go/adapters/hdfs
 
 go 1.26.11
 
-require github.com/pletorco/fluss-go v0.2.0-beta.2
+require github.com/pletorco/fluss-go v0.2.0-beta.3
 
 require (
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect

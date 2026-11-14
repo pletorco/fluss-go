@@ -5,7 +5,7 @@ go 1.26.11
 require (
 	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
-	github.com/pletorco/fluss-go v0.2.0-beta.2
+	github.com/pletorco/fluss-go v0.2.0-beta.3
 )
 
 require (

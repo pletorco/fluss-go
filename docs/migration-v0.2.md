@@ -1,23 +1,44 @@
-# Upgrade to v0.2.0-beta.2
+# Upgrade to v0.2.0-beta.3
 
 The fluss-go v0.2 line, introduced by `v0.2.0-beta.1`, targets Apache Fluss 1.0.
 It deliberately drops Apache Fluss 0.9.1 compatibility instead of maintaining a
-mixed protocol baseline. `v0.2.0-beta.2` is the current release of that line.
+mixed protocol baseline. `v0.2.0-beta.3` is the current release of that line.
 
 | Apache Fluss cluster | fluss-go version |
 | --- | --- |
 | `0.9.1-incubating` | Pin `v0.1.0-beta.11` |
-| `1.0.0` | Use `v0.2.0-beta.2` |
+| `1.0.0` | Use `v0.2.0-beta.3` |
 
 Upgrade the cluster to Fluss 1.0 before deploying an application built with
 fluss-go v0.2. No runtime switch or compatibility mode selects the old
 protocol. Root and adapter modules should use the same fluss-go version.
 
 ```sh
-go get github.com/pletorco/fluss-go@v0.2.0-beta.2
-go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.2
+go get github.com/pletorco/fluss-go@v0.2.0-beta.3
+go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.3
 go mod tidy
 ```
+
+## Upgrading from v0.2.0-beta.2
+
+`v0.2.0-beta.3` removes no exported API and does not change Fluss wire
+behavior. Review these maintenance requirements:
+
+- Go 1.26.11 is now the module, workspace, and compatibility-test baseline.
+  Go 1.25 is no longer supported.
+- `github.com/klauspost/compress` 1.20.2 fixes `CVE-2026-116591`
+  (`GO-2026-6865`), and Go 1.26.11 contains the required standard-library
+  fixes for `CVE-2026-111943` and `CVE-2026-97031`.
+- Goldmark is updated to 1.8.7. The optional adapters use Alibaba Cloud OSS
+  SDK 1.6.1, OpenTelemetry 1.47.0, AWS SDK core 1.48.0, and AWS S3 1.114.10.
+- Root and adapter modules must all use `v0.2.0-beta.3`; mixing beta.2 adapter
+  requirements with the beta.3 root module is not a supported release set.
+
+The [native lake-format decision](lake-formats.md) only removes an obsolete Go
+version mismatch from its Iceberg evaluation; the no-implementation decision
+and application-owned planning boundary are unchanged. README, adapter manuals,
+build-vs-buy records, and release instructions otherwise only align supported
+versions and maintainer procedures, with no additional application migration.
 
 ## Upgrading from v0.2.0-beta.1
 

@@ -8,10 +8,20 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.2.0-beta.3] - 2026-11-14
+
 ### Changed
 
 - Raised the module, workspace, recommended toolchain, and compatibility-test
   baseline to Go 1.26.11. Go 1.25 is no longer supported.
+- Updated Goldmark to 1.8.7, the Alibaba Cloud OSS SDK to 1.6.1,
+  OpenTelemetry APIs to 1.47.0, the AWS SDK core to 1.48.0, and the AWS S3
+  client to 1.114.10.
+- Updated all optional adapter modules to require and install with the beta.3
+  release.
+- Consolidated Dependabot updates at the Go workspace root and grouped related
+  AWS SDK and OpenTelemetry modules to avoid duplicate adapter update pull
+  requests.
 
 ### Security
 

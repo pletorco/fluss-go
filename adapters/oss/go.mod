@@ -4,7 +4,7 @@ go 1.26.11
 
 require (
 	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.1
-	github.com/pletorco/fluss-go v0.2.0-beta.2
+	github.com/pletorco/fluss-go v0.2.0-beta.3
 )
 
 require (
