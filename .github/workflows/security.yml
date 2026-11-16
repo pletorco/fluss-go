@@ -30,39 +30,95 @@ jobs:
           version: v0.76.2
       - run: task security
 
+  trivy_version:
+    name: Latest Trivy release
+    runs-on: ubuntu-latest
+    outputs:
+      pinned: ${{ steps.check.outputs.pinned }}
+      latest: ${{ steps.check.outputs.latest }}
+      release_url: ${{ steps.check.outputs.release_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare the pinned and latest stable releases
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned="$(awk '$1 == "TRIVY_VERSION:" { print $2; exit }' Taskfile.yml)"
+          latest_tag="$(gh api repos/aquasecurity/trivy/releases/latest --jq '.tag_name')"
+          latest="${latest_tag#v}"
+          release_url="https://github.com/aquasecurity/trivy/releases/tag/$latest_tag"
+          test -n "$pinned"
+          test -n "$latest"
+          {
+            echo "pinned=$pinned"
+            echo "latest=$latest"
+            echo "release_url=$release_url"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo '## Trivy version check'
+            echo
+            echo '| Pinned | Latest stable | Status |'
+            echo '| --- | --- | --- |'
+            if test "$pinned" = "$latest"; then
+              echo "| $pinned | $latest | Current |"
+            else
+              echo "| $pinned | [$latest]($release_url) | Update required |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if test "$pinned" != "$latest"; then
+            echo "::error title=Trivy update required::Pinned $pinned; latest stable $latest ($release_url)"
+            exit 1
+          fi
+
   notify:
-    name: Report scheduled scan status
+    name: Report scheduled security status
     if: always() && github.event_name == 'schedule'
-    needs: scan
+    needs: [scan, trivy_version]
     runs-on: ubuntu-latest
     permissions:
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      SECURITY_ISSUE_TITLE: Daily security scan failed
+      SECURITY_ISSUE_TITLE: Daily security maintenance required
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SCAN_RESULT: ${{ needs.scan.result }}
+      TRIVY_VERSION_RESULT: ${{ needs.trivy_version.result }}
+      PINNED_TRIVY: ${{ needs.trivy_version.outputs.pinned }}
+      LATEST_TRIVY: ${{ needs.trivy_version.outputs.latest }}
+      TRIVY_RELEASE_URL: ${{ needs.trivy_version.outputs.release_url }}
     steps:
       - name: Open or update the failure issue
-        if: needs.scan.result == 'failure'
+        if: needs.scan.result != 'success' || needs.trivy_version.result != 'success'
         run: |
           issue_number="$(
             gh issue list --state open --limit 100 --json number,title \
-              --jq '.[] | select(.title == "Daily security scan failed") | .number' \
+              --jq '.[] | select(.title == "Daily security maintenance required") | .number' \
               | head -n 1
           )"
-          body="The scheduled CVE and repository security scan failed. Inspect the failed run and remediate every finding: $RUN_URL"
+          printf -v body '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            'The scheduled security maintenance workflow requires attention.' \
+            '| Check | Result |' \
+            '| --- | --- |' \
+            "| CVE and repository scan | $SCAN_RESULT |" \
+            "| Trivy release check | $TRIVY_VERSION_RESULT |" \
+            "| Pinned Trivy | ${PINNED_TRIVY:-unavailable} |" \
+            "| Latest stable Trivy | [${LATEST_TRIVY:-unavailable}](${TRIVY_RELEASE_URL:-$RUN_URL}) |"
+          body="$body
+
+          Inspect the [failed workflow run]($RUN_URL). If a Trivy update is available, update the Taskfile and workflow pins, review the release notes, and run the full security gate."
           if test -n "$issue_number"; then
             gh issue comment "$issue_number" --body "$body"
           else
             gh issue create --title "$SECURITY_ISSUE_TITLE" --body "$body"
           fi
       - name: Close the recovered failure issue
-        if: needs.scan.result == 'success'
+        if: needs.scan.result == 'success' && needs.trivy_version.result == 'success'
         run: |
           issue_number="$(
             gh issue list --state open --limit 100 --json number,title \
-              --jq '.[] | select(.title == "Daily security scan failed") | .number' \
+              --jq '.[] | select(.title == "Daily security maintenance required") | .number' \
               | head -n 1
           )"
           if test -n "$issue_number"; then

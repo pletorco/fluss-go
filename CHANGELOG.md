@@ -15,6 +15,9 @@ breaking changes.
 - Changed the scheduled CVE scan from weekly to daily. A failed scheduled scan
   now opens or updates a deduplicated GitHub issue, and a later successful scan
   closes the recovered alert.
+- Added a daily latest-stable Trivy release gate. Version drift fails the
+  workflow and includes the pinned version, latest version, release link, and
+  security-scan result in the alert issue so the tool update can be actioned.
 
 ## [v0.2.0-beta.3] - 2026-11-14
 
