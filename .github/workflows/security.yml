@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '17 3 * * 1'
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   scan:
+    name: Daily CVE scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,3 +29,43 @@ jobs:
         with:
           version: v0.76.2
       - run: task security
+
+  notify:
+    name: Report scheduled scan status
+    if: always() && github.event_name == 'schedule'
+    needs: scan
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SECURITY_ISSUE_TITLE: Daily security scan failed
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update the failure issue
+        if: needs.scan.result == 'failure'
+        run: |
+          issue_number="$(
+            gh issue list --state open --limit 100 --json number,title \
+              --jq '.[] | select(.title == "Daily security scan failed") | .number' \
+              | head -n 1
+          )"
+          body="The scheduled CVE and repository security scan failed. Inspect the failed run and remediate every finding: $RUN_URL"
+          if test -n "$issue_number"; then
+            gh issue comment "$issue_number" --body "$body"
+          else
+            gh issue create --title "$SECURITY_ISSUE_TITLE" --body "$body"
+          fi
+      - name: Close the recovered failure issue
+        if: needs.scan.result == 'success'
+        run: |
+          issue_number="$(
+            gh issue list --state open --limit 100 --json number,title \
+              --jq '.[] | select(.title == "Daily security scan failed") | .number' \
+              | head -n 1
+          )"
+          if test -n "$issue_number"; then
+            gh issue close "$issue_number" \
+              --comment "The scheduled security scan recovered: $RUN_URL"
+          fi

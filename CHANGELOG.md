@@ -12,6 +12,9 @@ breaking changes.
 
 - Updated the pinned Trivy release used by the repository security and
   dependency-license gates to v0.76.2.
+- Changed the scheduled CVE scan from weekly to daily. A failed scheduled scan
+  now opens or updates a deduplicated GitHub issue, and a later successful scan
+  closes the recovered alert.
 
 ## [v0.2.0-beta.3] - 2026-11-14
 

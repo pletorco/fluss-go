@@ -320,8 +320,10 @@ gate로 취급하지 않는다.
 - runtime, development와 unknown scope의 의존성을 모두 검사한다. 개발 도구도 code
   generation과 release artifact를 변경할 수 있으므로 검사에서 제외하지 않는다.
 - dependency graph와 Dependabot alert를 활성화하고 의존성 갱신을 정기적으로 확인한다.
-- vulnerability database가 변경된 뒤에도 발견할 수 있도록 `main`에 대해 최소 주 1회
-  scheduled security scan을 실행한다.
+- vulnerability database가 변경된 뒤에도 발견할 수 있도록 `main`에 대해 매일
+  scheduled security scan을 실행한다. 발견 또는 검사 오류는 workflow를 실패시키고,
+  중복 방지된 GitHub issue를 생성하거나 갱신하여 Actions 및 issue 구독 알림 대상으로
+  만든다. 다음 scheduled scan이 성공하면 해당 issue를 자동으로 닫는다.
 - GitHub Actions와 보안 도구의 version을 고정한다. GitHub Actions는 가능한 경우
   immutable commit SHA로 고정하고 제한된 권한으로 실행한다.
 - CVE 또는 GHSA를 근거 없이 ignore하거나 검사 task를 건너뛰지 않는다.
