@@ -41,15 +41,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Compare the pinned and latest stable releases
         id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           pinned="$(awk '$1 == "TRIVY_VERSION:" { print $2; exit }' Taskfile.yml)"
-          latest_tag="$(gh api repos/aquasecurity/trivy/releases/latest --jq '.tag_name')"
+          release_url="$(
+            curl --fail --location --retry 3 --silent --show-error \
+              --output /dev/null --write-out '%{url_effective}' \
+              https://github.com/aquasecurity/trivy/releases/latest
+          )"
+          latest_tag="${release_url##*/}"
           latest="${latest_tag#v}"
-          release_url="https://github.com/aquasecurity/trivy/releases/tag/$latest_tag"
           test -n "$pinned"
           test -n "$latest"
+          case "$latest_tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "::error title=Invalid Trivy release::Unexpected latest release URL: $release_url"
+              exit 1
+              ;;
+          esac
           {
             echo "pinned=$pinned"
             echo "latest=$latest"
