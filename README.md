@@ -165,7 +165,7 @@ sources under `internal/docexamples` and run `task docs:snippets:sync` to update
 their Markdown fences.
 
 Protocol generation requires protoc v3.21.12. Local security scans require
-Trivy v0.74.0. Integration and reliability tests require Docker, Docker
+Trivy v0.76.2. Integration and reliability tests require Docker, Docker
 Compose, and OpenSSL; the tasks create and remove isolated clusters. The
 module recommends Go 1.26.11 so the Go command can automatically avoid known
 standard-library vulnerabilities; set `GOTOOLCHAIN=local` only when
@@ -179,7 +179,7 @@ intentionally testing another supported, patched Go release.
 | Go | Module, toolchain, and compatibility-test baseline `1.26.11`; CI also verifies the latest Go 1.26 patch release |
 | Task | `3.51.1` |
 | protoc | `3.21.12` |
-| Trivy | `0.74.0` |
+| Trivy | `0.76.2` |
 
 Apache Fluss 0.9.1 is not supported by this release line. Applications that
 remain on 0.9.1 must pin fluss-go `v0.1.0-beta.11`. Other Fluss versions are

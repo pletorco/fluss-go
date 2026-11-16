@@ -8,6 +8,11 @@ breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the pinned Trivy release used by the repository security and
+  dependency-license gates to v0.76.2.
+
 ## [v0.2.0-beta.3] - 2026-11-14
 
 ### Changed
