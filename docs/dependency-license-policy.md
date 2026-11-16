@@ -15,7 +15,7 @@ The reviewed allowlist is deliberately small:
 - `MIT`
 
 `Copyright` is also ignored as a scanner token, not as an approved license.
-Trivy 0.72.0 emits it for the words "copyright ownership" in Arrow-Go's
+Trivy 0.76.2 emits it for the words "copyright ownership" in Arrow-Go's
 Apache-2.0 `go.mod` header. It is not an SPDX identifier. Unknown or newly
 detected license names still fail the gate.
 

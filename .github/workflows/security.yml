@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '17 3 * * 1'
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   scan:
+    name: Daily CVE scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,5 +27,111 @@ jobs:
           version: 3.51.1
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
-          version: v0.74.0
+          version: v0.76.2
       - run: task security
+
+  trivy_version:
+    name: Latest Trivy release
+    runs-on: ubuntu-latest
+    outputs:
+      pinned: ${{ steps.check.outputs.pinned }}
+      latest: ${{ steps.check.outputs.latest }}
+      release_url: ${{ steps.check.outputs.release_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare the pinned and latest stable releases
+        id: check
+        run: |
+          pinned="$(awk '$1 == "TRIVY_VERSION:" { print $2; exit }' Taskfile.yml)"
+          release_url="$(
+            curl --fail --location --retry 3 --silent --show-error \
+              --proto '=https' --proto-redir '=https' \
+              --output /dev/null --write-out '%{url_effective}' \
+              https://github.com/aquasecurity/trivy/releases/latest
+          )"
+          latest_tag="${release_url##*/}"
+          latest="${latest_tag#v}"
+          test -n "$pinned"
+          test -n "$latest"
+          case "$latest_tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "::error title=Invalid Trivy release::Unexpected latest release URL: $release_url"
+              exit 1
+              ;;
+          esac
+          {
+            echo "pinned=$pinned"
+            echo "latest=$latest"
+            echo "release_url=$release_url"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo '## Trivy version check'
+            echo
+            echo '| Pinned | Latest stable | Status |'
+            echo '| --- | --- | --- |'
+            if test "$pinned" = "$latest"; then
+              echo "| $pinned | $latest | Current |"
+            else
+              echo "| $pinned | [$latest]($release_url) | Update required |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if test "$pinned" != "$latest"; then
+            echo "::error title=Trivy update required::Pinned $pinned; latest stable $latest ($release_url)"
+            exit 1
+          fi
+
+  notify:
+    name: Report scheduled security status
+    if: always() && github.event_name == 'schedule'
+    needs: [scan, trivy_version]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SECURITY_ISSUE_TITLE: Daily security maintenance required
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SCAN_RESULT: ${{ needs.scan.result }}
+      TRIVY_VERSION_RESULT: ${{ needs.trivy_version.result }}
+      PINNED_TRIVY: ${{ needs.trivy_version.outputs.pinned }}
+      LATEST_TRIVY: ${{ needs.trivy_version.outputs.latest }}
+      TRIVY_RELEASE_URL: ${{ needs.trivy_version.outputs.release_url }}
+    steps:
+      - name: Open or update the failure issue
+        if: needs.scan.result != 'success' || needs.trivy_version.result != 'success'
+        run: |
+          issue_number="$(
+            gh issue list --state open --limit 100 --json number,title \
+              --jq '.[] | select(.title == "Daily security maintenance required") | .number' \
+              | head -n 1
+          )"
+          printf -v body '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            'The scheduled security maintenance workflow requires attention.' \
+            '| Check | Result |' \
+            '| --- | --- |' \
+            "| CVE and repository scan | $SCAN_RESULT |" \
+            "| Trivy release check | $TRIVY_VERSION_RESULT |" \
+            "| Pinned Trivy | ${PINNED_TRIVY:-unavailable} |" \
+            "| Latest stable Trivy | [${LATEST_TRIVY:-unavailable}](${TRIVY_RELEASE_URL:-$RUN_URL}) |"
+          body="$body
+
+          Inspect the [failed workflow run]($RUN_URL). If a Trivy update is available, update the Taskfile and workflow pins, review the release notes, and run the full security gate."
+          if test -n "$issue_number"; then
+            gh issue comment "$issue_number" --body "$body"
+          else
+            gh issue create --title "$SECURITY_ISSUE_TITLE" --body "$body"
+          fi
+      - name: Close the recovered failure issue
+        if: needs.scan.result == 'success' && needs.trivy_version.result == 'success'
+        run: |
+          issue_number="$(
+            gh issue list --state open --limit 100 --json number,title \
+              --jq '.[] | select(.title == "Daily security maintenance required") | .number' \
+              | head -n 1
+          )"
+          if test -n "$issue_number"; then
+            gh issue close "$issue_number" \
+              --comment "The scheduled security scan recovered: $RUN_URL"
+          fi

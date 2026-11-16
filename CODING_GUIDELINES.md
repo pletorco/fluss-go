@@ -16,7 +16,7 @@
 | 코드 포맷 | `gofmt` | 모든 Go 소스에 적용한다. |
 | 정적 분석 | `go vet` | 추가 linter는 도입 전에 필요성과 의존성을 검토한다. |
 | 취약점 검사 | `govulncheck` v1.6.0 | 표준 라이브러리와 Go module의 도달 가능한 알려진 취약점을 검사한다. |
-| 저장소 보안 검사 | [Trivy](https://trivy.dev/) v0.74.0 | 의존성 취약점, secret, misconfiguration과 license를 검사한다. |
+| 저장소 보안 검사 | [Trivy](https://trivy.dev/) v0.76.2 | 의존성 취약점, secret, misconfiguration과 license를 검사한다. |
 | 의존성 검토 | GitHub Dependency Review | PR에서 새로 도입되는 취약한 의존성을 차단한다. |
 | 테스트 | `go test` | unit, race, fuzz와 integration 검증을 목적별 task로 제공한다. |
 | 공개 API 문서 | `pkg.go.dev`, `go doc` | package manual, exported API comment와 실행 가능한 example을 검증한다. |
@@ -303,7 +303,7 @@ gate로 취급하지 않는다.
 - `task security:go`는 `govulncheck ./...`를 실행한다.
 - `task security:repo`는 Trivy filesystem scan을 실행한다.
 - `govulncheck`는 v1.6.0으로 고정하고 Go 공식 vulnerability database를 사용한다.
-- Trivy는 v0.74.0으로 고정하고 release checksum을 검증하여 설치한다.
+- Trivy는 v0.76.2로 고정하고 release checksum을 검증하여 설치한다.
 - Go 1.26.11 기준선과 지원하는 최신 Go 1.26 patch release를 검사하여 표준
   라이브러리 취약점도 확인한다.
 - 도달 가능한 알려진 취약점을 발견하면 severity와 관계없이 CI를 실패시킨다.
@@ -320,8 +320,13 @@ gate로 취급하지 않는다.
 - runtime, development와 unknown scope의 의존성을 모두 검사한다. 개발 도구도 code
   generation과 release artifact를 변경할 수 있으므로 검사에서 제외하지 않는다.
 - dependency graph와 Dependabot alert를 활성화하고 의존성 갱신을 정기적으로 확인한다.
-- vulnerability database가 변경된 뒤에도 발견할 수 있도록 `main`에 대해 최소 주 1회
-  scheduled security scan을 실행한다.
+- vulnerability database가 변경된 뒤에도 발견할 수 있도록 `main`에 대해 매일
+  scheduled security scan을 실행한다. 이 작업은 Trivy의 최신 stable release도 확인하며,
+  고정 버전보다 새 버전이 있으면 update가 필요하다는 의미로 workflow를 실패시킨다.
+  취약점 발견, 검사 오류 또는 Trivy update는 현재·최신 버전과 release link를 포함하는
+  중복 방지된 GitHub issue를 생성하거나 갱신하여 Actions 및 issue 구독 알림 대상으로
+  만든다. 다음 scheduled scan과 version check가 모두 성공하면 해당 issue를 자동으로
+  닫는다.
 - GitHub Actions와 보안 도구의 version을 고정한다. GitHub Actions는 가능한 경우
   immutable commit SHA로 고정하고 제한된 권한으로 실행한다.
 - CVE 또는 GHSA를 근거 없이 ignore하거나 검사 task를 건너뛰지 않는다.
