@@ -45,6 +45,7 @@ jobs:
           pinned="$(awk '$1 == "TRIVY_VERSION:" { print $2; exit }' Taskfile.yml)"
           release_url="$(
             curl --fail --location --retry 3 --silent --show-error \
+              --proto '=https' --proto-redir '=https' \
               --output /dev/null --write-out '%{url_effective}' \
               https://github.com/aquasecurity/trivy/releases/latest
           )"
