@@ -28,6 +28,11 @@ breaking changes.
 
 ### Changed
 
+- Reduced append admission allocations by snapshotting schema metadata once
+  per writer, validating row values without rebuilding schema lookups, and
+  reusing precomputed bucket-key positions. Standalone codecs still validate
+  caller schemas on every call; writer input ownership and batch limits remain
+  unchanged.
 - Updated the pinned Trivy release used by the repository security and
   dependency-license gates to v0.76.2.
 - Changed the scheduled CVE scan from weekly to daily. A failed scheduled scan

@@ -33,9 +33,11 @@ func testAppendWriterOwnsMutableInput(t *testing.T, format LogFormat, bucketKey 
 	defer cancel()
 	wantBucket, sequence := int32(1), int32(0)
 	if bucketKey != "" {
-		values, err := writer.bucketKeyValues(row)
-		if err != nil {
-			t.Fatal(err)
+		var values PrimaryKey
+		for index, column := range table.Schema.Columns {
+			if column.Name == bucketKey {
+				values = PrimaryKey{row[index]}
+			}
 		}
 		key, err := encodeKeyColumns(table.Schema, table.Schema.BucketKey, values)
 		if err != nil {

@@ -291,7 +291,9 @@ func (s Schema) ValidateRow(row Row, columns []string) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	columns = s.selectedColumns(columns)
+	if len(columns) == 0 {
+		return validateRowValues(s.Columns, row)
+	}
 	if len(row) != len(columns) {
 		return fmt.Errorf("%w: got %d values for %d columns", ErrInvalidRow, len(row), len(columns))
 	}
@@ -302,6 +304,20 @@ func (s Schema) ValidateRow(row Row, columns []string) error {
 			return fmt.Errorf("%w: unknown column %q", ErrInvalidRow, name)
 		}
 		if err := validateColumnValue(column, row[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRowValues checks untrusted values against already validated ordered
+// columns. Only owners of immutable validated schema metadata may skip Validate.
+func validateRowValues(columns []Column, row Row) error {
+	if len(row) != len(columns) {
+		return fmt.Errorf("%w: got %d values for %d columns", ErrInvalidRow, len(row), len(columns))
+	}
+	for index, column := range columns {
+		if err := validateColumnValue(column, row[index]); err != nil {
 			return err
 		}
 	}

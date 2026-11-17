@@ -40,23 +40,24 @@ const (
 // AppendWriter batches append operations for a log table.
 // It owns one background scheduler and must be closed after use.
 type AppendWriter struct {
-	table       Table
-	path        PhysicalTablePath
-	backend     appendWriterBackend
-	config      AppendWriterConfig
-	tableID     int64
-	partitionID int64
-	writerID    int64
-	buckets     []int32
-	commands    chan writerCommand
-	slots       chan struct{}
-	done        chan struct{}
-	appendMu    sync.Mutex
-	closed      bool
-	closeErr    error
-	roundRobin  int
-	stickyIndex int
-	observer    MetricsObserver
+	table              Table
+	bucketKeyPositions []int
+	path               PhysicalTablePath
+	backend            appendWriterBackend
+	config             AppendWriterConfig
+	tableID            int64
+	partitionID        int64
+	writerID           int64
+	buckets            []int32
+	commands           chan writerCommand
+	slots              chan struct{}
+	done               chan struct{}
+	appendMu           sync.Mutex
+	closed             bool
+	closeErr           error
+	roundRobin         int
+	stickyIndex        int
+	observer           MetricsObserver
 }
 
 type writerCommand struct {
@@ -106,7 +107,8 @@ type logBatchCompletion struct {
 	err         error
 }
 
-// NewAppendWriter creates an append writer for a log table.
+// NewAppendWriter creates an append writer for a log table. It snapshots table
+// schema metadata; later changes to the caller's table do not affect this writer.
 func (c *Client) NewAppendWriter(ctx context.Context, table Table, options ...AppendWriterOption) (*AppendWriter, error) {
 	if err := c.ensureOpen(); err != nil {
 		return nil, err
@@ -122,6 +124,7 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	if err := validateAppendWriterTable(table); err != nil {
 		return nil, err
 	}
+	table = snapshotAppendTable(table)
 	config, err := appendWriterConfig(options)
 	if err != nil {
 		return nil, err
@@ -153,7 +156,8 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	}
 	writer := &AppendWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID, partitionID: -1,
-		writerID: writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
+		bucketKeyPositions: appendBucketKeyPositions(table.Schema),
+		writerID:           writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
 		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), stickyIndex: -1,
 	}
 	if path.Partition != "" {
@@ -244,7 +248,7 @@ func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 		})
 		return future
 	}
-	if err := w.table.Schema.ValidateRow(row, nil); err != nil {
+	if err := validateRowValues(w.table.Schema.Columns, row); err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
@@ -252,7 +256,7 @@ func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 	if w.config.Format == LogFormatIndexed {
 		encoding = indexedEncoding
 	}
-	encoded, err := encodeRow(w.table.Schema, row, encoding)
+	encoded, err := encodeValidatedRow(w.table.Schema, row, encoding)
 	if err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
@@ -732,27 +736,22 @@ func (w *AppendWriter) encodeBucketKey(row Row) ([]byte, error) {
 	if len(w.table.Schema.BucketKey) == 0 {
 		return nil, nil
 	}
-	values, err := w.bucketKeyValues(row)
-	if err != nil {
-		return nil, err
-	}
-	return encodeKeyColumns(w.table.Schema, w.table.Schema.BucketKey, values)
-}
-
-func (w *AppendWriter) bucketKeyValues(row Row) (PrimaryKey, error) {
-	values := make(PrimaryKey, len(w.table.Schema.BucketKey))
-	positions := make(map[string]int, len(w.table.Schema.Columns))
-	for index, column := range w.table.Schema.Columns {
-		positions[column.Name] = index
-	}
-	for index, name := range w.table.Schema.BucketKey {
-		position, found := positions[name]
-		if !found || row[position] == nil {
-			return nil, fmt.Errorf("%w: invalid bucket key column %q", ErrInvalidRow, name)
+	encoded := make([]byte, 0, 32)
+	for _, position := range w.bucketKeyPositions {
+		column := w.table.Schema.Columns[position]
+		if row[position] == nil {
+			return nil, fmt.Errorf("%w: invalid bucket key column %q", ErrInvalidRow, column.Name)
 		}
-		values[index] = row[position]
+		var err error
+		encoded, err = appendKeyColumn(encoded, column, row[position])
+		if err != nil {
+			return nil, err
+		}
 	}
-	return values, nil
+	if len(encoded) > maxRowBytes {
+		return nil, fmt.Errorf("%w: key exceeds %d bytes", ErrMalformedRow, maxRowBytes)
+	}
+	return encoded, nil
 }
 
 func (w *AppendWriter) advanceSticky() {

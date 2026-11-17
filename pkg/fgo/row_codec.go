@@ -119,13 +119,10 @@ func encodeKeyColumns(schema Schema, names []string, values PrimaryKey) ([]byte,
 	encoded := make([]byte, 0, 32)
 	for i, name := range names {
 		column := byName[name]
-		if values[i] == nil {
-			return nil, fmt.Errorf("%w: key column %q is null", ErrInvalidRow, name)
-		}
 		var err error
-		encoded, err = appendCompactedValue(encoded, logicalTypeForColumn(column), values[i])
+		encoded, err = appendKeyColumn(encoded, column, values[i])
 		if err != nil {
-			return nil, fmt.Errorf("fgo: key column %q: %w", name, err)
+			return nil, err
 		}
 	}
 	if len(encoded) > maxRowBytes {
@@ -134,10 +131,27 @@ func encodeKeyColumns(schema Schema, names []string, values PrimaryKey) ([]byte,
 	return encoded, nil
 }
 
+func appendKeyColumn(encoded []byte, column Column, value any) ([]byte, error) {
+	if value == nil {
+		return nil, fmt.Errorf("%w: key column %q is null", ErrInvalidRow, column.Name)
+	}
+	encoded, err := appendCompactedValue(encoded, logicalTypeForColumn(column), value)
+	if err != nil {
+		return nil, fmt.Errorf("fgo: key column %q: %w", column.Name, err)
+	}
+	return encoded, nil
+}
+
 func encodeRow(schema Schema, row Row, encoding rowEncoding) ([]byte, error) {
 	if err := schema.ValidateRow(row, nil); err != nil {
 		return nil, err
 	}
+	return encodeValidatedRow(schema, row, encoding)
+}
+
+// encodeValidatedRow is shared framing, not an unchecked public codec. The
+// caller must own validated schema metadata and validate the complete row first.
+func encodeValidatedRow(schema Schema, row Row, encoding rowEncoding) ([]byte, error) {
 	// Both layouts start with one null bit per column, rounded up to whole bytes.
 	// Compacted values follow the bitmap directly. Indexed rows reserve a uint32
 	// length slot for every variable-width column; non-null lengths are packed

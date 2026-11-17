@@ -101,6 +101,13 @@ and retained Arrow buffers separately. Applications should set `MaxBuffered` and
 for retained and encoded storage separately and demonstrate a lower peak heap
 on a representative workload before replacing these bounds.
 
+Append admission reuses writer-owned, validated schema metadata and bucket-key
+positions. It validates untrusted row values once at the top level and shares
+the existing codec framing, without a global mutable-schema cache or a new
+serializer. Standalone codecs retain full schema validation, and nested codecs
+retain their existing validation. The [append schema measurements](append-performance.md)
+record the reviewed scope, before/after matrix, profiles, and memory limits.
+
 ## Reproduce measurements
 
 ```sh

@@ -48,6 +48,10 @@ slot is available.
 
 `WithAppendBuffer` and `WithUpsertBuffer` bound every accepted record that has not
 reached a terminal result, including queued, batched, and in-flight records.
+Append writers snapshot table schema metadata (including nested types, key
+lists, and properties) at construction. Later changes to the caller's table
+do not change an existing writer; create a new writer for a changed schema.
+Admission still validates every row's shape, nullability, and value types.
 `Append` snapshots the row and its bucket key before returning, including mutable
 byte slices, nested arrays/maps/rows, and decimal values. Inputs may be reused
 after that return. `AppendArrow` instead requires the caller to retain and keep
