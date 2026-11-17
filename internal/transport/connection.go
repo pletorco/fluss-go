@@ -50,13 +50,13 @@ type Connection struct {
 	maxFrame int
 	sem      chan struct{}
 
-	writeMu  sync.Mutex
-	mu       sync.Mutex
-	nextID   int32
-	pending  map[int32]chan result
-	closed   bool
-	closeErr error
-	done     chan struct{}
+	writeGate chan struct{}
+	mu        sync.Mutex
+	nextID    int32
+	pending   map[int32]chan result
+	closed    bool
+	closeErr  error
+	done      chan struct{}
 }
 
 type result struct {
@@ -77,7 +77,10 @@ func New(conn net.Conn, cfg Config) (*Connection, error) {
 	if cfg.MaxFrameSize < responseHeaderSize || cfg.MaxInFlight < 1 {
 		return nil, fmt.Errorf("%w: invalid transport limits", fmsg.ErrInvalidArgument)
 	}
-	c := &Connection{conn: conn, maxFrame: cfg.MaxFrameSize, sem: make(chan struct{}, cfg.MaxInFlight), pending: make(map[int32]chan result), done: make(chan struct{})}
+	c := &Connection{
+		conn: conn, maxFrame: cfg.MaxFrameSize, sem: make(chan struct{}, cfg.MaxInFlight),
+		writeGate: make(chan struct{}, 1), pending: make(map[int32]chan result), done: make(chan struct{}),
+	}
 	go c.readLoop()
 	return c, nil
 }
@@ -190,17 +193,31 @@ func (c *Connection) writeRequest(
 	request fmsg.Request,
 	body []byte,
 ) (bool, error) {
+	// Admit only one complete frame at a time, without making a queued caller
+	// wait for the active socket write's deadline. Waiters never touch that deadline.
+	select {
+	case c.writeGate <- struct{}{}:
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-c.done:
+		return false, c.err()
+	}
+	defer func() { <-c.writeGate }()
+	// Admission can race with cancellation or shutdown when the gate is free.
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	select {
+	case <-c.done:
+		return false, c.err()
+	default:
+	}
 	frame := make([]byte, 4+requestHeaderSize+len(body))
 	binary.BigEndian.PutUint32(frame, uint32(requestHeaderSize+len(body)))
 	binary.BigEndian.PutUint16(frame[4:], uint16(request.APIKey()))
 	binary.BigEndian.PutUint16(frame[6:], uint16(request.Version()))
 	binary.BigEndian.PutUint32(frame[8:], uint32(id))
 	copy(frame[12:], body)
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
 	finish, err := c.prepareWrite(ctx)
 	if err != nil {
 		return true, err
