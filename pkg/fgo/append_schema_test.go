@@ -44,17 +44,7 @@ func TestAppendWriterOwnsSchemaMetadata(t *testing.T) {
 			go func() {
 				defer changed.Done()
 				for range 100 {
-					schema.Columns[0].Name = "changed"
-					schema.Columns[0].Type = StringType
-					schema.Columns[2].LogicalType.Precision = 1
-					schema.Columns[3].LogicalType.Element.Fields[0].Type.Root = "STRING"
-					schema.Columns[4].LogicalType.Key.Root = "STRING"
-					schema.Columns[4].LogicalType.Value.Element.Root = "STRING"
-					schema.Columns[5].LogicalType.Value.Root = "STRING"
-					schema.Columns[6].LogicalType.Fields[0].Name = "changed"
-					for _, names := range [][]string{schema.PrimaryKey, schema.BucketKey, schema.PartitionKey, schema.AutoIncrement} {
-						names[0] = "changed"
-					}
+					mutateOwnedSchema(schema)
 					table.Properties["table.log.format"] = "ARROW"
 				}
 			}()

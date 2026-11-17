@@ -538,6 +538,8 @@ func (t Table) RequirePrimaryKey() error {
 }
 
 // GetTable loads authoritative table metadata and schema from the coordinator.
+// Each result owns its schema metadata; changing it does not modify the client's
+// schema cache or other GetTable results. It does not alter the server schema.
 func (c *Client) GetTable(ctx context.Context, path TablePath) (Table, error) {
 	if err := c.ensureOpen(); err != nil {
 		return Table{}, err
@@ -591,6 +593,7 @@ func (c *Client) GetTable(ctx context.Context, path TablePath) (Table, error) {
 	if c.schemas != nil {
 		c.schemas.store(path, table.SchemaID, schema)
 	}
+	table.Schema = snapshotSchema(schema)
 	return table, nil
 }
 

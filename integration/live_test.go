@@ -739,6 +739,9 @@ func testSchemaEvolution(
 	if len(rows[1]) != 3 || rows[1][2] != nil || rows[2][2] != int64(9) {
 		t.Fatalf("schema-evolved rows = %#v", rows)
 	}
+	t.Run("returned metadata ownership", func(t *testing.T) {
+		testSchemaMetadataOwnership(t, ctx, client, path)
+	})
 }
 
 func appendSchemaEvolutionRow(

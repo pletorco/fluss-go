@@ -6,6 +6,15 @@ coalesced while a lookup is in flight, and retained in a 256-entry LRU cache.
 Canceling one reader does not cancel a fetch still observed by another reader;
 the fetch is canceled when no waiter remains or the client closes.
 
+Cached schemas are client-owned read-only snapshots. Cache insertion detaches
+input metadata, and each `GetTable` result owns a separate schema tree, including
+column slices, nested logical types, and key definitions. Changing one returned
+schema does not change the cache or another metadata result, and does not alter
+the server table. Ordinary Go copies of the same returned `Table` still share
+that result's slices and pointers; keep metadata passed to active readers stable.
+Internal cache hits borrow the immutable snapshot rather than cloning it for
+each decoded record.
+
 The following read paths decode historical schema IDs:
 
 - point and prefix lookup values;
@@ -45,6 +54,9 @@ different ID, and incompatible changes are explicit errors. Schema fetches use
 with `APIKeyGetTableSchema`.
 
 The unit suite includes Java 0.9.1 schema JSON fixtures and mixed-schema lookup,
-KV batch, and log batch regressions. `task test:integration` also writes a log
+KV batch, and log batch regressions, plus cache-input, returned-metadata,
+coalesced-fetch, concurrent-reader, and zero-allocation cache-hit ownership checks.
+`task test:integration` also writes a log
 record, adds a nullable column through `ALTER_TABLE`, writes the new shape, and
-reads both schema IDs through one scanner.
+reads both schema IDs through one scanner, including after another returned
+metadata result has been modified locally.
