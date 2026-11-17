@@ -130,6 +130,14 @@ original key, prefix, ACL, or bucket identity in application diagnostics.
 
 ## Cancellation and shutdown
 
+Requests waiting to write a transport frame honor their own context or
+connection shutdown independently of the active socket write. Cancellation
+before write admission sends no bytes, does not change the active request's
+socket deadline, and leaves the connection usable. An interrupted partial
+frame still discards the connection because its stream can no longer be
+safely reused. Complete frames remain serialized; no FIFO admission order
+between concurrent callers is promised.
+
 Contexts bound waiting and request work; they do not provide a distributed
 transaction rollback. If cancellation races with a mutation, classify the
 outcome as uncertain until the API or application state proves otherwise.

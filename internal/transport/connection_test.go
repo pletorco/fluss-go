@@ -10,6 +10,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
@@ -134,7 +135,8 @@ func TestRequestRoundTrip(t *testing.T) {
 func TestRequestRejectsInvalidInputBeforeWriting(t *testing.T) {
 	connection := &Connection{
 		maxFrame: requestHeaderSize, sem: make(chan struct{}, 1),
-		pending: make(map[int32]chan result), done: make(chan struct{}),
+		writeGate: make(chan struct{}, 1),
+		pending:   make(map[int32]chan result), done: make(chan struct{}),
 	}
 	if _, err := connection.Request(context.Background(), nil); !errors.Is(err, fmsg.ErrInvalidArgument) {
 		t.Fatalf("nil Request() error = %v", err)
@@ -153,7 +155,8 @@ func TestRequestRejectsInvalidInputBeforeWriting(t *testing.T) {
 func TestRequestStopsWhileWaitingForCapacity(t *testing.T) {
 	connection := &Connection{
 		maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
-		pending: make(map[int32]chan result), done: make(chan struct{}),
+		writeGate: make(chan struct{}, 1),
+		pending:   make(map[int32]chan result), done: make(chan struct{}),
 	}
 	connection.sem <- struct{}{}
 	request := &testRequest{newResponse: func() fmsg.Response { return &testResponse{} }}
@@ -203,7 +206,8 @@ func TestRequestReportsWriteAndResponseFailures(t *testing.T) {
 		connection := &Connection{
 			conn:     writeConn{write: func([]byte) (int, error) { return 0, nil }},
 			maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
-			pending: make(map[int32]chan result), done: make(chan struct{}),
+			writeGate: make(chan struct{}, 1),
+			pending:   make(map[int32]chan result), done: make(chan struct{}),
 		}
 		request := &testRequest{newResponse: func() fmsg.Response { return &testResponse{} }}
 		if _, err := connection.Request(context.Background(), request); !errors.Is(err, io.ErrShortWrite) {
@@ -263,41 +267,46 @@ func TestRequestCancellationInterruptsBlockedWrite(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			conn := &partialBlockingWriteConn{
-				partial: make(chan struct{}), interrupted: make(chan struct{}),
-				writePartial: true,
-			}
-			connection := &Connection{
-				conn: conn, maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
-				pending: make(map[int32]chan result), done: make(chan struct{}),
-			}
-			ctx, cancel := test.context()
-			defer cancel()
-			completed := make(chan error, 1)
-			go func() {
-				_, err := connection.Request(ctx, apiVersionsRequest(t))
-				completed <- err
-			}()
-			<-conn.partial
-			if errors.Is(test.want, context.Canceled) {
-				cancel()
-			}
-			select {
-			case err := <-completed:
-				if !errors.Is(err, test.want) {
-					t.Fatalf("Request() error = %v, want %v", err, test.want)
+			// Virtual time prevents a loaded machine from expiring the deadline
+			// before the request goroutine reaches the partial-write handshake.
+			synctest.Test(t, func(t *testing.T) {
+				conn := &partialBlockingWriteConn{
+					partial: make(chan struct{}), interrupted: make(chan struct{}),
+					writePartial: true,
 				}
-				if !errors.Is(err, ErrClosed) {
-					t.Fatalf("Request() error = %v, want terminal ErrClosed", err)
+				connection := &Connection{
+					conn: conn, maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
+					writeGate: make(chan struct{}, 1),
+					pending:   make(map[int32]chan result), done: make(chan struct{}),
 				}
-			case <-time.After(time.Second):
-				t.Fatal("Request did not stop after context completion")
-			}
-			if _, err := connection.Request(
-				context.Background(), apiVersionsRequest(t),
-			); !errors.Is(err, ErrClosed) || errors.Is(err, test.want) {
-				t.Fatalf("request after interrupted frame error = %v, want only ErrClosed", err)
-			}
+				ctx, cancel := test.context()
+				defer cancel()
+				completed := make(chan error, 1)
+				go func() {
+					_, err := connection.Request(ctx, apiVersionsRequest(t))
+					completed <- err
+				}()
+				<-conn.partial
+				if errors.Is(test.want, context.Canceled) {
+					cancel()
+				}
+				select {
+				case err := <-completed:
+					if !errors.Is(err, test.want) {
+						t.Fatalf("Request() error = %v, want %v", err, test.want)
+					}
+					if !errors.Is(err, ErrClosed) {
+						t.Fatalf("Request() error = %v, want terminal ErrClosed", err)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("Request did not stop after context completion")
+				}
+				if _, err := connection.Request(
+					context.Background(), apiVersionsRequest(t),
+				); !errors.Is(err, ErrClosed) || errors.Is(err, test.want) {
+					t.Fatalf("request after interrupted frame error = %v, want only ErrClosed", err)
+				}
+			})
 		})
 	}
 }
@@ -308,7 +317,8 @@ func TestZeroByteInterruptedWriteKeepsConnectionOpen(t *testing.T) {
 	}
 	connection := &Connection{
 		conn: conn, maxFrame: defaultMaxFrame, sem: make(chan struct{}, 1),
-		pending: make(map[int32]chan result), done: make(chan struct{}),
+		writeGate: make(chan struct{}, 1),
+		pending:   make(map[int32]chan result), done: make(chan struct{}),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	completed := make(chan error, 1)

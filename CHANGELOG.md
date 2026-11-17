@@ -10,6 +10,10 @@ breaking changes.
 
 ### Fixed
 
+- Made transport frame-write admission cancelable, so a queued request can
+  return at its own deadline or on connection close without waiting for a
+  blocked earlier write or changing that write's socket deadline. Outgoing
+  frame allocation now happens only after write admission.
 - Preserved background batch failures in log and upsert writer `Flush` and
   `Close`, including failures completed before the barrier. Repeated flushes
   retain original causes, and poisoned-bucket errors now preserve those causes
