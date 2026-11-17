@@ -76,9 +76,12 @@ writers can share one client.
 `NewBatchScanner` uses the Fluss 1.0 `SCAN_KV` server session for primary-key
 tables. `WithBatchSizeBytes` maps to the per-response byte bound. The row
 `WithBatchLimit` is sent when the session opens and applies to the whole scan,
-while projection remains a client-side result-shaping operation. Callers must
-close an unfinished scanner so the client can send `close_scanner`; completed
-sessions have already been reclaimed by the server.
+while projection remains a client-side result-shaping operation. A failed
+decode retains at most one received page for a later `Poll`, without replaying
+the server request. Callers must close an unfinished scanner to release that
+page and send `close_scanner` if the server session is still active; terminal
+responses have already reclaimed the server session, even when their rows
+have not yet been delivered.
 
 ## Remote files and filesystem tokens
 

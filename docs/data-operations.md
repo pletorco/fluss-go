@@ -277,9 +277,14 @@ defer result.Release()
 ```
 
 Primary-key current-state scans use the Fluss 1.0 `SCAN_KV` session API. Each
-poll advances the server-validated call sequence; `WithBatchSizeBytes` bounds a
-response and `Close` explicitly releases an unfinished session. An empty bucket
-may complete without allocating a scanner ID. Log-table current-state scans
+new page advances the server-validated call sequence; `WithBatchSizeBytes`
+bounds a response. If decoding or historical-schema lookup fails, `Poll`
+returns no rows and retains that one page. A later poll retries its decoding
+without fetching another page, even if the server already ended the session.
+Permanent decoding errors require closing the scanner rather than skipping
+the failed page. `Close` releases any retained page and explicitly closes an
+unfinished server session. An empty bucket may complete without allocating a
+scanner ID. Log-table current-state scans
 continue to use one bounded `LIMIT_SCAN` request. Snapshot scans use
 `NewSnapshotBatchScanner` and require a `SnapshotBatchProvider` configured when
 the client is opened. A snapshot provider may return its final rows and

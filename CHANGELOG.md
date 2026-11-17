@@ -10,6 +10,9 @@ breaking changes.
 
 ### Fixed
 
+- Preserved undelivered KV scan pages when decoding or historical-schema
+  lookup fails or is canceled. Retrying `Poll` now decodes the retained page
+  before requesting another, including after a terminal server response.
 - Made transport frame-write admission cancelable, so a queued request can
   return at its own deadline or on connection close without waiting for a
   blocked earlier write or changing that write's socket deadline. Outgoing
