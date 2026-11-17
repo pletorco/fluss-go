@@ -157,6 +157,23 @@ type LogBatch struct {
 
 // EncodeRows serializes row records using compacted or indexed encoding.
 func (b LogBatch) EncodeRows(schema Schema, compacted bool) ([]byte, error) {
+	return b.encodeRowRecords(len(b.Records), func(index int) ([]byte, ChangeType, error) {
+		record := b.Records[index]
+		if err := record.Change.Validate(); err != nil {
+			return nil, record.Change, err
+		}
+		encoding := compactedEncoding
+		if !compacted {
+			encoding = indexedEncoding
+		}
+		row, err := encodeRow(schema, record.Value, encoding)
+		return row, record.Change, err
+	})
+}
+
+// encodeRowRecords shares the batch framing between public row encoding and
+// append writers that already own validated, encoded row snapshots.
+func (b LogBatch) encodeRowRecords(count int, recordAt func(int) ([]byte, ChangeType, error)) ([]byte, error) {
 	if b.Magic != 0 && b.Magic != 1 {
 		return nil, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, b.Magic)
 	}
@@ -181,30 +198,21 @@ func (b LogBatch) EncodeRows(schema Schema, compacted bool) ([]byte, error) {
 	// sequence, and record count. schemaOffset moves by four bytes in v1, so
 	// every later boundary remains relative to it.
 	lastOffset := schemaOffset + 3
-	if len(b.Records) > 0 {
-		binary.LittleEndian.PutUint32(encoded[lastOffset:], uint32(len(b.Records)-1))
+	if count > 0 {
+		binary.LittleEndian.PutUint32(encoded[lastOffset:], uint32(count-1))
 	}
 	binary.LittleEndian.PutUint64(encoded[lastOffset+4:], uint64(b.WriterID))
 	binary.LittleEndian.PutUint32(encoded[lastOffset+12:], uint32(b.BatchSequence))
-	binary.LittleEndian.PutUint32(encoded[lastOffset+16:], uint32(len(b.Records)))
-	for _, record := range b.Records {
-		if err := record.Change.Validate(); err != nil {
-			return nil, err
-		}
-		var row []byte
-		var err error
-		if compacted {
-			row, err = EncodeCompactedRow(schema, record.Value)
-		} else {
-			row, err = EncodeIndexedRow(schema, record.Value)
-		}
+	binary.LittleEndian.PutUint32(encoded[lastOffset+16:], uint32(count))
+	for index := range count {
+		row, change, err := recordAt(index)
 		if err != nil {
 			return nil, err
 		}
 		var length [4]byte
 		binary.LittleEndian.PutUint32(length[:], uint32(1+len(row)))
 		encoded = append(encoded, length[:]...)
-		encoded = append(encoded, byte(record.Change))
+		encoded = append(encoded, byte(change))
 		encoded = append(encoded, row...)
 	}
 	binary.LittleEndian.PutUint32(encoded[8:], uint32(len(encoded)-12))

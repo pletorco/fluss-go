@@ -10,6 +10,10 @@ breaking changes.
 
 ### Fixed
 
+- Snapshotted append rows and bucket keys before returning from `Append`, so
+  caller reuse of byte slices, nested containers, and decimals cannot change
+  queued payloads or routing. Indexed batching now counts the encoded indexed
+  row bytes instead of compacted row sizes.
 - Prevented canceled or interrupted multi-bucket log polls from skipping records
   that were fetched but never returned. Offsets and row-limit accounting now
   commit with the successful result while preserving subscription changes.

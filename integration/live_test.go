@@ -115,6 +115,10 @@ func TestFluss100Integration(t *testing.T) {
 		testLogFormats(t, client, admin, database)
 	})
 
+	t.Run("append input ownership", func(t *testing.T) {
+		testAppendInputOwnership(t, client, admin, database)
+	})
+
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})

@@ -48,6 +48,10 @@ slot is available.
 
 `WithAppendBuffer` and `WithUpsertBuffer` bound every accepted record that has not
 reached a terminal result, including queued, batched, and in-flight records.
+`Append` snapshots the row and its bucket key before returning, including mutable
+byte slices, nested arrays/maps/rows, and decimal values. Inputs may be reused
+after that return. `AppendArrow` instead requires the caller to retain and keep
+the record batch unchanged until its future completes.
 `WithAppendRequest` and `WithUpsertRequest` set one timeout for both the server
 operation and its client-side network call. The timeout is therefore also the
 upper bound for an accepted request when the backend stays responsive at the

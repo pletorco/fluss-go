@@ -66,20 +66,20 @@ type writerCommand struct {
 }
 
 type pendingWrite struct {
-	ctx      context.Context
-	row      Row
-	arrow    arrow.RecordBatch
-	changes  []ChangeType
-	bucket   *int32
-	size     int
-	queuedAt time.Time
-	future   *WriteFuture
+	ctx       context.Context
+	encoded   []byte
+	bucketKey []byte
+	arrow     arrow.RecordBatch
+	changes   []ChangeType
+	bucket    *int32
+	size      int
+	queuedAt  time.Time
+	future    *WriteFuture
 }
 
 type bucketBatch struct {
-	items   []*pendingWrite
-	records []Record
-	bytes   int
+	items []*pendingWrite
+	bytes int
 }
 
 type appendWriterLoop struct {
@@ -230,7 +230,8 @@ func appendWriterConfig(options []AppendWriterOption) (AppendWriterConfig, error
 }
 
 // Append queues one row. The returned future completes exactly once after acknowledgment or
-// failure. The writer copies row bytes while encoding, so the caller may reuse the row afterward.
+// failure. Before Append returns, the writer encodes its own snapshot of the row
+// and bucket key, so the caller may reuse the row and its mutable nested values.
 func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil {
@@ -247,13 +248,22 @@ func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
-	encoded, err := EncodeCompactedRow(w.table.Schema, row)
+	encoding := compactedEncoding
+	if w.config.Format == LogFormatIndexed {
+		encoding = indexedEncoding
+	}
+	encoded, err := encodeRow(w.table.Schema, row, encoding)
+	if err != nil {
+		future.complete(WriteResult{Err: err})
+		return future
+	}
+	key, err := w.encodeBucketKey(row)
 	if err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
 	item := &pendingWrite{
-		ctx: ctx, row: append(Row(nil), row...), size: len(encoded) + 5, future: future,
+		ctx: ctx, encoded: encoded, bucketKey: key, size: len(encoded) + 5, future: future,
 	}
 	if w.observer != nil {
 		item.queuedAt = time.Now()
@@ -459,7 +469,6 @@ func (l *appendWriterLoop) add(item *pendingWrite) {
 		return
 	}
 	batch.items = append(batch.items, item)
-	batch.records = append(batch.records, Record{Value: item.row, Change: Append, Offset: -1})
 	batch.bytes += item.size
 	if l.batchFull(batch) || l.writer.config.BatchTimeout == 0 {
 		_ = l.flushBucket(bucket)
@@ -650,9 +659,11 @@ func (w *AppendWriter) encodeBatch(batch *bucketBatch, sequence int32) ([]byte, 
 	}
 	encoded, err := (LogBatch{
 		Magic: 0, BaseOffset: -1, SchemaID: int16(w.table.SchemaID), AppendOnly: true,
-		WriterID: w.writerID, BatchSequence: sequence, Records: batch.records,
-	}).EncodeRows(w.table.Schema, w.config.Format != LogFormatIndexed)
-	return encoded, len(batch.records), err
+		WriterID: w.writerID, BatchSequence: sequence,
+	}).encodeRowRecords(len(batch.items), func(index int) ([]byte, ChangeType, error) {
+		return batch.items[index].encoded, Append, nil
+	})
+	return encoded, len(batch.items), err
 }
 
 func (w *AppendWriter) completeBatch(
@@ -693,15 +704,7 @@ func (w *AppendWriter) assignBucket(item *pendingWrite) (int32, error) {
 		return *item.bucket, nil
 	}
 	if len(w.table.Schema.BucketKey) != 0 {
-		values, err := w.bucketKeyValues(item.row)
-		if err != nil {
-			return 0, err
-		}
-		key, err := encodeKeyColumns(w.table.Schema, w.table.Schema.BucketKey, values)
-		if err != nil {
-			return 0, err
-		}
-		bucket, err := flussBucket(key, len(w.buckets))
+		bucket, err := flussBucket(item.bucketKey, len(w.buckets))
 		if err != nil {
 			return 0, err
 		}
@@ -716,6 +719,17 @@ func (w *AppendWriter) assignBucket(item *pendingWrite) (int32, error) {
 		w.stickyIndex = 0
 	}
 	return w.buckets[w.stickyIndex], nil
+}
+
+func (w *AppendWriter) encodeBucketKey(row Row) ([]byte, error) {
+	if len(w.table.Schema.BucketKey) == 0 {
+		return nil, nil
+	}
+	values, err := w.bucketKeyValues(row)
+	if err != nil {
+		return nil, err
+	}
+	return encodeKeyColumns(w.table.Schema, w.table.Schema.BucketKey, values)
 }
 
 func (w *AppendWriter) bucketKeyValues(row Row) (PrimaryKey, error) {
