@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -82,68 +83,79 @@ func startAdmissionRequest(t *testing.T, c *Connection, ctx context.Context) <-c
 func TestQueuedWriteCancellationKeepsActiveRequestUsable(t *testing.T) {
 	for _, mode := range []string{"cancel", "deadline"} {
 		t.Run(mode, func(t *testing.T) {
-			client, server := net.Pipe()
-			t.Cleanup(func() { _ = server.Close() })
-			probe := &admissionProbeConn{Conn: client, entered: make(chan struct{})}
-			connection, err := New(probe, Config{MaxInFlight: 2})
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = connection.Close() })
-			active := startAdmissionRequest(t, connection, context.Background())
-			<-probe.entered
-			ctx, cancel := context.WithCancel(context.Background())
-			want := context.Canceled
-			if mode == "deadline" {
-				cancel()
-				ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
-				want = context.DeadlineExceeded
-			}
-			defer cancel()
-			queued := startAdmissionRequest(t, connection, ctx)
-			// Registration proves this request passed in-flight admission while the
-			// first write still owns the socket. No peer read or sleep is needed.
-			waitForPendingRequests(t, connection, 2)
-			if mode == "cancel" {
-				cancel()
-			}
-			if err := awaitAdmissionResult(t, queued); !errors.Is(err, want) || errors.Is(err, ErrClosed) {
-				t.Fatalf("queued request = %v, want only %v", err, want)
-			}
-			waitForPendingRequests(t, connection, 1)
-			if len(connection.sem) != 1 {
-				t.Fatalf("in-flight slots = %d, want only active request", len(connection.sem))
-			}
-			if probe.writes.Load() != 1 || probe.deadlines.Load() != 0 {
-				t.Fatalf("queued cancellation touched active socket: writes=%d deadlines=%d",
-					probe.writes.Load(), probe.deadlines.Load())
-			}
-			select {
-			case err := <-active:
-				t.Fatalf("queued cancellation interrupted active request: %v", err)
-			default:
-			}
-			served := make(chan struct{})
-			go func() {
-				defer close(served)
-				for range 2 {
-					id := readRequestID(t, server)
-					// ApiVersionsResponse has an empty valid protobuf body.
-					writeResponse(t, server, 0, id, nil)
+			// Keep the deadline from expiring before the queued request reaches
+			// write admission, even when the runner is heavily contended.
+			synctest.Test(t, func(t *testing.T) {
+				client, server := net.Pipe()
+				t.Cleanup(func() { _ = server.Close() })
+				probe := &admissionProbeConn{Conn: client, entered: make(chan struct{})}
+				connection, err := New(probe, Config{MaxInFlight: 2})
+				if err != nil {
+					t.Fatal(err)
 				}
-			}()
-			if err := awaitAdmissionResult(t, active); err != nil {
-				t.Fatalf("active request after queued cancellation = %v", err)
-			}
-			later := startAdmissionRequest(t, connection, context.Background())
-			if err := awaitAdmissionResult(t, later); err != nil {
-				t.Fatalf("later request = %v", err)
-			}
-			<-served
-			waitForPendingRequests(t, connection, 0)
-			if len(connection.sem) != 0 || probe.writes.Load() != 2 {
-				t.Fatalf("after recovery: in-flight=%d writes=%d", len(connection.sem), probe.writes.Load())
-			}
+				t.Cleanup(func() { _ = connection.Close() })
+				active := startAdmissionRequest(t, connection, context.Background())
+				<-probe.entered
+				ctx, cancel := context.WithCancel(context.Background())
+				want := context.Canceled
+				if mode == "deadline" {
+					cancel()
+					ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+					want = context.DeadlineExceeded
+				}
+				defer cancel()
+				queued := startAdmissionRequest(t, connection, ctx)
+				// Wait for the queued request to block at write admission without
+				// advancing virtual time. Registration must remain observable until
+				// the test explicitly cancels or lets the deadline elapse.
+				synctest.Wait()
+				connection.mu.Lock()
+				pending := len(connection.pending)
+				connection.mu.Unlock()
+				if pending != 2 || ctx.Err() != nil {
+					t.Fatalf("before interruption: pending=%d context=%v; want 2 live requests", pending, ctx.Err())
+				}
+				if mode == "cancel" {
+					cancel()
+				}
+				if err := awaitAdmissionResult(t, queued); !errors.Is(err, want) || errors.Is(err, ErrClosed) {
+					t.Fatalf("queued request = %v, want only %v", err, want)
+				}
+				waitForPendingRequests(t, connection, 1)
+				if len(connection.sem) != 1 {
+					t.Fatalf("in-flight slots = %d, want only active request", len(connection.sem))
+				}
+				if probe.writes.Load() != 1 || probe.deadlines.Load() != 0 {
+					t.Fatalf("queued cancellation touched active socket: writes=%d deadlines=%d",
+						probe.writes.Load(), probe.deadlines.Load())
+				}
+				select {
+				case err := <-active:
+					t.Fatalf("queued cancellation interrupted active request: %v", err)
+				default:
+				}
+				served := make(chan struct{})
+				go func() {
+					defer close(served)
+					for range 2 {
+						id := readRequestID(t, server)
+						// ApiVersionsResponse has an empty valid protobuf body.
+						writeResponse(t, server, 0, id, nil)
+					}
+				}()
+				if err := awaitAdmissionResult(t, active); err != nil {
+					t.Fatalf("active request after queued cancellation = %v", err)
+				}
+				later := startAdmissionRequest(t, connection, context.Background())
+				if err := awaitAdmissionResult(t, later); err != nil {
+					t.Fatalf("later request = %v", err)
+				}
+				<-served
+				waitForPendingRequests(t, connection, 0)
+				if len(connection.sem) != 0 || probe.writes.Load() != 2 {
+					t.Fatalf("after recovery: in-flight=%d writes=%d", len(connection.sem), probe.writes.Load())
+				}
+			})
 		})
 	}
 }

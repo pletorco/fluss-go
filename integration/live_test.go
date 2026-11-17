@@ -123,6 +123,10 @@ func TestFluss100Integration(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})
 
+	t.Run("KV scan interruption preserves undelivered pages", func(t *testing.T) {
+		testInterruptedKVPage(t, plainAddress, client, admin, database)
+	})
+
 	t.Run("typed data API", func(t *testing.T) {
 		testTypedData(t, client, logPath, kvPath)
 	})

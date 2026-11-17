@@ -23,6 +23,7 @@ type BatchScanner struct {
 	resolver   schemaResolver
 	scannerID  []byte
 	sequence   int32
+	pendingKV  *kvSessionBatch // Owned response awaiting successful decoding and delivery; guarded by pollMu.
 
 	pollMu sync.Mutex
 	mu     sync.RWMutex
@@ -155,6 +156,8 @@ func batchProjection(schema Schema, names []string) ([]int, error) {
 }
 
 // Poll returns available rows. A completed scanner keeps returning Done without further I/O.
+// A KV session page that cannot be decoded is retained for the next Poll; its
+// error does not consume rows that were never returned to the caller.
 func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	if s == nil {
 		return BatchResult{}, fmt.Errorf("%w: nil batch scanner", ErrInvalidConfig)
@@ -197,39 +200,65 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 }
 
 func (s *BatchScanner) pollKVSession(ctx context.Context, backend kvSessionScanBackend) (BatchResult, error) {
-	batch, err := backend.scanKV(
-		ctx, s.bucket, int64(s.config.Limit), s.config.BatchSizeBytes,
-		s.scannerID, s.sequence, false,
-	)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return BatchResult{}, err
 	}
-	if len(batch.scannerID) == 0 {
-		// Fluss 1.0 does not register a session for an empty bucket, so its
-		// terminal open response intentionally has no scanner ID.
-		if batch.hasMore || len(batch.records) != 0 || len(s.scannerID) != 0 {
-			return BatchResult{}, fmt.Errorf("%w: KV scan response omitted scanner ID", ErrValidation)
+	if s.pendingKV == nil {
+		batch, err := s.fetchKVSession(ctx, backend)
+		if err != nil {
+			return BatchResult{}, err
 		}
-		s.markDone()
-		return BatchResult{Done: true}, nil
+		if batch == nil {
+			s.markDone()
+			return BatchResult{Done: true}, nil
+		}
+		s.pendingKV = batch
 	}
-	if len(s.scannerID) != 0 && !bytes.Equal(s.scannerID, batch.scannerID) {
-		return BatchResult{}, fmt.Errorf("%w: KV scan response changed scanner ID", ErrValidation)
-	}
-	s.scannerID = append(s.scannerID[:0], batch.scannerID...)
-	s.sequence++
+	batch := s.pendingKV
 	var rows []Row
 	if len(batch.records) != 0 {
+		var err error
 		rows, err = decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, batch.records)
 		if err != nil {
 			return BatchResult{}, err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return BatchResult{}, err
+	}
 	result := BatchResult{Rows: s.projectRows(rows), Done: !batch.hasMore}
+	s.pendingKV = nil
 	if result.Done {
 		s.markDone()
 	}
 	return result, nil
+}
+
+// fetchKVSession advances server-side progress only. The caller retains the
+// owned response until delivery, since replaying the request may be unsafe,
+// especially after a terminal page has already closed the server session.
+func (s *BatchScanner) fetchKVSession(ctx context.Context, backend kvSessionScanBackend) (*kvSessionBatch, error) {
+	batch, err := backend.scanKV(
+		ctx, s.bucket, int64(s.config.Limit), s.config.BatchSizeBytes,
+		s.scannerID, s.sequence, false,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(batch.scannerID) == 0 {
+		// Fluss 1.0 does not register a session for an empty bucket, so its
+		// terminal open response intentionally has no scanner ID.
+		if batch.hasMore || len(batch.records) != 0 || len(s.scannerID) != 0 {
+			return nil, fmt.Errorf("%w: KV scan response omitted scanner ID", ErrValidation)
+		}
+		return nil, nil
+	}
+	if len(s.scannerID) != 0 && !bytes.Equal(s.scannerID, batch.scannerID) {
+		return nil, fmt.Errorf("%w: KV scan response changed scanner ID", ErrValidation)
+	}
+	s.scannerID = append(s.scannerID[:0], batch.scannerID...)
+	s.sequence++
+	return &batch, nil
 }
 
 func batchPollContext(caller, life context.Context) (context.Context, context.CancelFunc) {
@@ -297,7 +326,9 @@ func (s *BatchScanner) Close() error {
 	if ok {
 		s.pollMu.Lock()
 		defer s.pollMu.Unlock()
-		if len(s.scannerID) != 0 && !s.done {
+		closeSession := len(s.scannerID) != 0 && !s.done && (s.pendingKV == nil || s.pendingKV.hasMore)
+		s.pendingKV = nil
+		if closeSession {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			_, err := backend.scanKV(
