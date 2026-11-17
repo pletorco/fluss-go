@@ -343,6 +343,8 @@ func (w *AppendWriter) enqueue(ctx context.Context, item *pendingWrite) {
 }
 
 // Flush waits until every previously accepted append reaches a terminal result.
+// It returns all unrecoverable batch failures observed by this writer, including
+// failures reported by earlier Flush calls. A caller's context only bounds its wait.
 func (w *AppendWriter) Flush(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
@@ -369,7 +371,8 @@ func (w *AppendWriter) Flush(ctx context.Context) error {
 }
 
 // Close flushes accepted appends and stops the writer.
-// Close is idempotent.
+// Close is idempotent and retains the terminal result, including batch failures
+// already reported by Flush. A caller's context only bounds its wait.
 func (w *AppendWriter) Close(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
@@ -441,9 +444,9 @@ func (l *appendWriterLoop) run() {
 			}
 		case <-l.timerC:
 			l.timerC = nil
-			_ = l.queueAll()
+			l.queueAll()
 		case completion := <-l.completions:
-			_ = l.handleCompletion(completion)
+			l.handleCompletion(completion)
 		}
 	}
 }
@@ -459,9 +462,9 @@ func (l *appendWriterLoop) add(item *pendingWrite) {
 		return
 	}
 	if item.arrow != nil {
-		_ = l.flushBucket(bucket)
+		l.flushBucket(bucket)
 		l.batches[bucket] = &bucketBatch{items: []*pendingWrite{item}}
-		_ = l.flushBucket(bucket)
+		l.flushBucket(bucket)
 		return
 	}
 	bucket, batch, ok := l.availableBatch(bucket, item)
@@ -471,7 +474,7 @@ func (l *appendWriterLoop) add(item *pendingWrite) {
 	batch.items = append(batch.items, item)
 	batch.bytes += item.size
 	if l.batchFull(batch) || l.writer.config.BatchTimeout == 0 {
-		_ = l.flushBucket(bucket)
+		l.flushBucket(bucket)
 		if l.writer.effectiveNoKeyAssigner() == NoKeyAssignerSticky {
 			l.writer.advanceSticky()
 		}
@@ -485,7 +488,7 @@ func (l *appendWriterLoop) availableBatch(bucket int32, item *pendingWrite) (int
 	if len(batch.items) == 0 || !l.batchFullWith(batch, item) {
 		return bucket, batch, true
 	}
-	_ = l.flushBucket(bucket)
+	l.flushBucket(bucket)
 	if l.writer.effectiveNoKeyAssigner() != NoKeyAssignerSticky {
 		return bucket, l.batch(bucket), true
 	}
@@ -516,20 +519,19 @@ func (l *appendWriterLoop) batchFullWith(batch *bucketBatch, item *pendingWrite)
 		batch.bytes+item.size > l.writer.config.MaxBatchBytes
 }
 
-func (l *appendWriterLoop) flushBucket(bucket int32) error {
+func (l *appendWriterLoop) flushBucket(bucket int32) {
 	batch := l.batches[bucket]
 	if batch == nil || len(batch.items) == 0 {
-		return nil
+		return
 	}
 	delete(l.batches, bucket)
 	if err := l.poisoned[bucket]; err != nil {
-		poisoned := fmt.Errorf("%w: bucket %d: %v", ErrWriterState, bucket, err)
+		poisoned := fmt.Errorf("%w: bucket %d: %w", ErrWriterState, bucket, err)
 		l.writer.completeBatch(batch, bucket, 0, false, poisoned)
-		return poisoned
+		return
 	}
 	l.pending[bucket] = append(l.pending[bucket], batch)
 	l.dispatch()
-	return nil
 }
 
 func (l *appendWriterLoop) dispatch() {
@@ -580,7 +582,7 @@ func (l *appendWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequen
 	}
 }
 
-func (l *appendWriterLoop) handleCompletion(completion logBatchCompletion) error {
+func (l *appendWriterLoop) handleCompletion(completion logBatchCompletion) {
 	delete(l.active, completion.bucket)
 	l.inFlight--
 	queueTime := time.Duration(0)
@@ -598,7 +600,7 @@ func (l *appendWriterLoop) handleCompletion(completion logBatchCompletion) error
 		l.writer.completeBatch(completion.batch, completion.bucket, 0, false, completion.err)
 		for _, batch := range l.pending[completion.bucket] {
 			poisoned := fmt.Errorf(
-				"%w: bucket %d: %v", ErrWriterState, completion.bucket, completion.err,
+				"%w: bucket %d: %w", ErrWriterState, completion.bucket, completion.err,
 			)
 			l.writer.completeBatch(batch, completion.bucket, 0, false, poisoned)
 		}
@@ -610,25 +612,30 @@ func (l *appendWriterLoop) handleCompletion(completion logBatchCompletion) error
 		)
 	}
 	l.dispatch()
-	return completion.err
 }
 
 func (l *appendWriterLoop) flushAll() error {
 	l.stopTimer()
-	err := l.queueAll()
+	l.queueAll()
 	for l.inFlight > 0 {
-		err = errors.Join(err, l.handleCompletion(<-l.completions))
+		l.handleCompletion(<-l.completions)
 	}
-	return err
+	// One retained cause per failed bucket bounds history and preserves errors
+	// processed before the barrier. Bucket order makes repeated results stable.
+	var failures []error
+	for _, bucket := range l.writer.buckets {
+		if err := l.poisoned[bucket]; err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
-func (l *appendWriterLoop) queueAll() error {
+func (l *appendWriterLoop) queueAll() {
 	l.stopTimer()
-	var joined error
 	for _, bucket := range l.writer.buckets {
-		joined = errors.Join(joined, l.flushBucket(bucket))
+		l.flushBucket(bucket)
 	}
-	return joined
 }
 
 func (l *appendWriterLoop) armTimer() {

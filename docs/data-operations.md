@@ -57,6 +57,13 @@ operation and its client-side network call. The timeout is therefore also the
 upper bound for an accepted request when the backend stays responsive at the
 socket level.
 
+`Flush` waits for previously accepted work and returns the retained original
+cause of each unrecoverable batch failure, even if its future completed before
+the call. Failures are cumulative for the writer's lifetime: repeated flushes
+and later successful writes do not clear them. Individual row validation and
+pre-dispatch cancellation errors remain on their futures and do not poison a
+bucket or enter this batch-failure history.
+
 `Close` stops admission, flushes accepted work, and retains the terminal flush
 result. Concurrent and repeated callers observe the same final error. A
 caller's context only bounds how long that caller waits; it does not shorten

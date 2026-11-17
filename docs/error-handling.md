@@ -84,6 +84,8 @@ with a live context when the application can continue waiting.
 When a non-recoverable batch fails, its futures receive the original error and the writer
 conservatively poisons that bucket. Later mutations routed to the same bucket
 match `ErrWriterState`; other buckets in the same writer remain independent.
+The uncertain-state error also wraps the original cause, so `errors.Is` and
+`errors.As` can inspect it without parsing error text.
 Do not automatically replay the uncertain records:
 
 1. Stop accepting new work for the affected logical key or bucket.
@@ -98,8 +100,12 @@ Do not automatically replay the uncertain records:
 
 `Flush(ctx)` and `Close(ctx)` are barriers for previously accepted work, but
 their context cancellation can also stop the caller before the barrier result
-is known. Preserve the first causal write error rather than replacing it with
-only a shutdown error.
+is known. Batch failures are retained for the writer's lifetime and joined in
+bucket order, including failures already reported by a future or earlier flush.
+A successful write on another bucket does not clear them. Repeated `Close`
+calls return the saved terminal result; a caller's canceled wait does not replace
+the eventual write error. Per-row validation or pre-dispatch cancellation errors
+remain available only through their futures.
 
 ## Partial results
 

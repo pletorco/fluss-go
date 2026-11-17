@@ -368,7 +368,7 @@ func TestWriterSchedulingIsolatesAmbiguousFailure(t *testing.T) {
 		t.Fatalf("healthy writer inherited failure: %v", result.Err)
 	}
 
-	if err := failing.Close(context.Background()); err != nil {
+	if err := failing.Close(context.Background()); !errors.Is(err, failure) {
 		t.Fatalf("failing Close() = %v", err)
 	}
 	if err := healthy.Close(context.Background()); err != nil {

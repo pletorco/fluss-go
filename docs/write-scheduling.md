@@ -38,7 +38,12 @@ budget that sum rather than treating `MaxBuffered` as a client-global limit.
 - **Failure:** explicitly enabled idempotent retries preserve the writer ID,
   bucket sequence, and encoded bytes. An unrecoverable ambiguous response
   poisons only that bucket, so one writer's uncertain state is not inherited
-  by another.
+  by another. Its original batch failure is retained for every later `Flush`
+  and the terminal `Close`, even when completion preceded the barrier. Successful
+  writes on healthy buckets and repeated flushes do not clear failures. The
+  existing poisoned-bucket map bounds this history to one cause per bucket;
+  barriers join causes in sorted bucket order, preserving `errors.Is`/`errors.As`.
+  Input rejection and pre-dispatch row cancellation remain future-local.
 - **Shutdown:** `Close` drains commands accepted by that writer and stops its
   worker. Writers should be closed before the parent client. Closing one writer
   neither flushes nor closes another writer. The context passed to `Close`

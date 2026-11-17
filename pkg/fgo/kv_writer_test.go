@@ -362,7 +362,8 @@ func TestUpsertWriterPartitionRoutingAndHash(t *testing.T) {
 func TestUpsertWriterFailureCancellationAndClose(t *testing.T) {
 	table := upsertWriterTable()
 	backend := kvBackend(0)
-	backend.putErr = errors.New("ambiguous")
+	failure := errors.New("ambiguous")
+	backend.putErr = failure
 	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
@@ -374,8 +375,8 @@ func TestUpsertWriterFailureCancellationAndClose(t *testing.T) {
 	if result := writer.Delete(context.Background(), PrimaryKey{int32(1)}).Await(context.Background()); !errors.Is(result.Err, ErrWriterState) {
 		t.Fatalf("write after poison = %#v", result)
 	}
-	if err := writer.Close(context.Background()); err != nil {
-		t.Fatal(err)
+	if err := writer.Close(context.Background()); !errors.Is(err, failure) {
+		t.Fatalf("Close lost ambiguous failure: %v", err)
 	}
 	if result := writer.Delete(context.Background(), PrimaryKey{int32(1)}).Await(context.Background()); !errors.Is(result.Err, ErrClosed) {
 		t.Fatalf("delete after close = %#v", result)
