@@ -110,6 +110,9 @@ Batch-shaped APIs preserve input association and successful work:
 - `PrefixLookup` returns one `PrefixLookupResult` per prefix.
 - `LogScanner.Poll` may return records and `BucketErrors` together. Process the
   records, retain the bucket failures, and always release owned Arrow batches.
+  A poll that returns a request-level error (including cancellation or wakeup)
+  does not advance offsets or count discarded rows toward the row limit. Retry
+  with a live context to read those undelivered records.
 - `fadm.ListOffsets` and `fadm.TableStats` return one result per requested
   bucket.
 - ACL creation and deletion return one result per input entry or filter after
