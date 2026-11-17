@@ -119,6 +119,10 @@ func TestFluss100Integration(t *testing.T) {
 		testAppendInputOwnership(t, client, admin, database)
 	})
 
+	t.Run("decimal validation and roundtrip", func(t *testing.T) {
+		testDecimalInputs(t, client, admin, database)
+	})
+
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})

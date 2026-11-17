@@ -23,6 +23,10 @@ Codec errors are returned without replacement or fallback.
 - A nullable Fluss value is represented by an untyped `nil` in `Row`. A codec
   should map it to an application representation that can distinguish null
   from the type's zero value, such as a pointer or an explicit option type.
+  A typed-nil `*big.Rat` is invalid decimal input, not SQL NULL: row validation,
+  encoders, and writers reject it with `ErrInvalidRow`, including inside arrays,
+  maps, and nested rows. Use an untyped `nil` for NULL or a non-nil `*big.Rat`
+  (including `new(big.Rat)` for zero) for a decimal value.
 - A codec must emit the Go value accepted by the matching Fluss logical type.
   Decimal, date, time, timestamp, binary, array, and map conversions remain
   explicit application-code decisions.

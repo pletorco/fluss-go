@@ -389,8 +389,8 @@ func validUntypedValue(kind DataType, value any) bool {
 		_, ok := value.([]byte)
 		return ok
 	case DecimalType:
-		_, ok := value.(*big.Rat)
-		return ok
+		decimal, ok := value.(*big.Rat)
+		return ok && decimal != nil
 	case DateType, TimeType, TimestampType, TimestampLTZType:
 		_, ok := value.(time.Time)
 		return ok
