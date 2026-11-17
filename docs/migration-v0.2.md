@@ -57,7 +57,9 @@ The [live evidence matrix](live-evidence.md) describes the expanded runtime
 regressions. The [dependency and license policy](dependency-license-policy.md)
 retains the same allowlist with the updated pinned scanner. Daily CVE checks
 and latest-stable Trivy drift alerts are maintainer workflows, not new
-application dependencies. The
+application dependencies. The S3 service fixture now uses digest-pinned
+RustFS 1.0.6 instead of the withdrawn public MinIO image; it requires no
+application or production storage migration. The
 [build-vs-buy record](build-vs-buy.md), [README](../README.md), and adapter
 manual changes retain the pure-Go boundary and align versions. Changes to
 [coding guidelines](../CODING_GUIDELINES.md) and

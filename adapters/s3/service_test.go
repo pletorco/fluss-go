@@ -23,7 +23,7 @@ const (
 
 func TestS3AdapterService(t *testing.T) {
 	if os.Getenv("FLUSS_GO_S3_SERVICE") != "1" {
-		t.Skip("run task test:s3 to start the reproducible MinIO service")
+		t.Skip("run task test:s3 to start the reproducible RustFS service")
 	}
 	fixture := []byte("0123456789-service-fixture")
 	client := newServiceClient(t)

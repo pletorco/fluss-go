@@ -44,6 +44,9 @@ breaking changes.
 
 ### Changed
 
+- Replaced the unavailable public MinIO test image with official RustFS 1.0.6
+  pinned by digest. S3 adapter service assertions are unchanged; RustFS is
+  test infrastructure requiring no cloud credentials, not a runtime dependency.
 - Aligned all optional adapter root requirements and installation examples with
   `v0.2.0-beta.4`; root and adapter modules should be upgraded together.
 - Reduced append admission allocations by snapshotting schema metadata once

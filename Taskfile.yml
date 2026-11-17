@@ -244,7 +244,7 @@ tasks:
       - ./integration/run.sh
 
   test:s3:
-    desc: Run the AWS SDK adapter against a reproducible MinIO service
+    desc: Run the AWS SDK adapter against a reproducible RustFS service
     preconditions:
       - sh: command -v docker >/dev/null 2>&1
         msg: Docker is required for the S3 service environment.
