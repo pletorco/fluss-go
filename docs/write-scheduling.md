@@ -87,9 +87,11 @@ benefit without an adaptive controller.
 A page allocator or additional byte admission pool is rejected for now. Rows
 are bounded to 16 MiB, accepted records are bounded by `MaxBuffered`, and
 encoded batches are bounded by `MaxBatchBytes`, so memory has finite limits.
-Charging retained Go values accurately before encoding would require copying
-caller-owned strings, byte slices, and Arrow buffers at admission, changing
-ownership and allocation behavior. Applications should set `MaxBuffered` and
+Row appends own encoded row and bucket-key snapshots before `Append` returns;
+mutable input values can be reused after that return. Arrow appends keep their
+explicit caller-retention contract until the future completes. A byte admission
+pool would still have to account for per-record encodings, active batch buffers,
+and retained Arrow buffers separately. Applications should set `MaxBuffered` and
 `MaxBatchBytes` from their maximum row size. A future byte pool must account
 for retained and encoded storage separately and demonstrate a lower peak heap
 on a representative workload before replacing these bounds.
