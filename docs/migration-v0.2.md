@@ -1,23 +1,70 @@
-# Upgrade to v0.2.0-beta.3
+# Upgrade to v0.2.0-beta.4
 
 The fluss-go v0.2 line, introduced by `v0.2.0-beta.1`, targets Apache Fluss 1.0.
 It deliberately drops Apache Fluss 0.9.1 compatibility instead of maintaining a
-mixed protocol baseline. `v0.2.0-beta.3` is the current release of that line.
+mixed protocol baseline. `v0.2.0-beta.4` is the current release of that line.
 
 | Apache Fluss cluster | fluss-go version |
 | --- | --- |
 | `0.9.1-incubating` | Pin `v0.1.0-beta.11` |
-| `1.0.0` | Use `v0.2.0-beta.3` |
+| `1.0.0` | Use `v0.2.0-beta.4` |
 
 Upgrade the cluster to Fluss 1.0 before deploying an application built with
 fluss-go v0.2. No runtime switch or compatibility mode selects the old
 protocol. Root and adapter modules should use the same fluss-go version.
 
 ```sh
-go get github.com/pletorco/fluss-go@v0.2.0-beta.3
-go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.3
+go get github.com/pletorco/fluss-go@v0.2.0-beta.4
+go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.4
 go mod tidy
 ```
+
+## Upgrading from v0.2.0-beta.3
+
+`v0.2.0-beta.4` adds no exported API and keeps the same Fluss 1.0 wire formats
+and Go 1.26.11 minimum. Upgrade the root and every optional adapter together.
+Review these corrected runtime contracts before rollout:
+
+- Interrupted log polls and failed KV page decoding no longer discard
+  undelivered records. Retry `Poll` after a recoverable error; close unfinished
+  scanners and continue releasing each delivered result. KV scans retain at
+  most one page rather than requesting it again from the server. See
+  [data operations](data-operations.md) and
+  [client configuration](client-configuration.md).
+- `Flush` and `Close` now retain background batch failures, even after a failed
+  future completes. Repeated barriers do not clear those errors; inspect them
+  with `errors.Is`/`errors.As` and replace a failed writer when appropriate.
+  See [error handling](error-handling.md).
+- Writer command admission and transport frame admission honor cancellation
+  while waiting for capacity. Cancellation before command submission releases
+  its slot without interrupting accepted writes. A canceled `Close` that has
+  not submitted shutdown does not stop the writer; retry it with a live context.
+  See [write scheduling](write-scheduling.md).
+- `Append` owns encoded row and key bytes before returning, so byte slices,
+  nested containers, and decimals may then be reused. Writer schema metadata
+  is snapshotted at construction; construct a new writer after changing the
+  schema. Arrow batch ownership is unchanged. The
+  [append performance report](append-performance.md) records the allocation
+  improvements and their workload-specific limits.
+- `GetTable` returns independent schema metadata, including nested types and
+  key slices; modifying it cannot poison later lookups or historical record
+  decoding. See [schema evolution](schema-evolution.md).
+- A typed-nil `*big.Rat` now returns `ErrInvalidRow` rather than panicking,
+  including in nested values and keys. Use untyped `nil` for SQL NULL and a
+  non-nil decimal pointer for zero. See [typed API mapping](typed-api.md).
+
+The [live evidence matrix](live-evidence.md) describes the expanded runtime
+regressions. The [dependency and license policy](dependency-license-policy.md)
+retains the same allowlist with the updated pinned scanner. Daily CVE checks
+and latest-stable Trivy drift alerts are maintainer workflows, not new
+application dependencies. The S3 service fixture now uses digest-pinned
+RustFS 1.0.6 instead of the withdrawn public MinIO image; it requires no
+application or production storage migration. The
+[build-vs-buy record](build-vs-buy.md), [README](../README.md), and adapter
+manual changes retain the pure-Go boundary and align versions. Changes to
+[coding guidelines](../CODING_GUIDELINES.md) and
+[release procedures](releasing.md) affect contributors only. There is no
+additional application migration beyond the contracts above.
 
 ## Upgrading from v0.2.0-beta.2
 

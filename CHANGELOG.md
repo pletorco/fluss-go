@@ -8,6 +8,8 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.2.0-beta.4] - 2026-11-17
+
 ### Fixed
 
 - Rejected typed-nil decimal pointers with `ErrInvalidRow` instead of panicking
@@ -42,6 +44,11 @@ breaking changes.
 
 ### Changed
 
+- Replaced the unavailable public MinIO test image with official RustFS 1.0.6
+  pinned by digest. S3 adapter service assertions are unchanged; RustFS is
+  test infrastructure requiring no cloud credentials, not a runtime dependency.
+- Aligned all optional adapter root requirements and installation examples with
+  `v0.2.0-beta.4`; root and adapter modules should be upgraded together.
 - Reduced append admission allocations by snapshotting schema metadata once
   per writer, validating row values without rebuilding schema lookups, and
   reusing precomputed bucket-key positions. Standalone codecs still validate
@@ -448,7 +455,9 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.2...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.4...HEAD
+[v0.2.0-beta.4]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.3...v0.2.0-beta.4
+[v0.2.0-beta.3]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [v0.2.0-beta.2]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [v0.2.0-beta.1]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.11...v0.2.0-beta.1
 [v0.1.0-beta.11]: https://github.com/pletorco/fluss-go/compare/v0.1.0-beta.10...v0.1.0-beta.11

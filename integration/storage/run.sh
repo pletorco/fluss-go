@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly COMPOSE_FILE="$ROOT/integration/storage/compose.yml"
 readonly PROJECT="fluss-go-storage-integration"
-readonly MINIO_IMAGE="quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+readonly RUSTFS_IMAGE="rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a"
 readonly HADOOP_IMAGE="apache/hadoop@sha256:127774dadab40ce84df7ac668a7a8c99945688b3fe336f1388f4477ca33e1529"
 readonly TARGET="${1:-all}"
 
@@ -36,8 +36,8 @@ cleanup() {
 trap cleanup EXIT
 
 case "$TARGET" in
-  all) services=(minio hdfs-namenode hdfs-datanode) ;;
-  s3) services=(minio) ;;
+  all) services=(rustfs hdfs-namenode hdfs-datanode) ;;
+  s3) services=(rustfs) ;;
   hdfs) services=(hdfs-namenode hdfs-datanode) ;;
   *) printf 'usage: %s [all|s3|hdfs]\n' "$0" >&2; exit 2 ;;
 esac
@@ -48,7 +48,7 @@ for service in "${services[@]}"; do
   container="$(compose ps --quiet "$service")"
   actual_image="$(docker inspect --format '{{.Config.Image}}' "$container")"
   case "$service" in
-    minio) expected_image="$MINIO_IMAGE" ;;
+    rustfs) expected_image="$RUSTFS_IMAGE" ;;
     hdfs-*) expected_image="$HADOOP_IMAGE" ;;
   esac
   if [[ "$actual_image" != "$expected_image" ]]; then

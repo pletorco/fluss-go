@@ -8,7 +8,7 @@ This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.3
+go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.4
 ```
 
 Create an `aws.Config` with the official `config.LoadDefaultConfig` credential
@@ -48,12 +48,23 @@ transitive modules must be reviewed on every upgrade.
 
 ## Service tests
 
-`task test:s3` starts the official MinIO image pinned by digest, creates an
+`task test:s3` starts the official RustFS `1.0.6` image pinned by digest, creates an
 ephemeral bucket through the official AWS SDK, and verifies exact ranges,
 metadata mismatch rejection, cancellation, close behavior, service-error
 identity, retry classification, and credential redaction. The runner removes
 the bucket, container, network, and tmpfs-backed data after every run. It needs
 Docker and Docker Compose but no cloud credentials.
+
+The image is `rustfs/rustfs:1.0.6` at index digest
+`sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a`,
+published by [RustFS upstream](https://github.com/rustfs/rustfs/releases/tag/1.0.6)
+under Apache-2.0. It replaces the withdrawn public MinIO image. The fixture
+runs as UID/GID `10001:10001`, uses a writable owned tmpfs, disables the console,
+binds only to loopback, and uses an ephemeral secret. RustFS is test-only:
+it is not linked into or distributed with any Go module and is not the Fluss
+Rust client core. This suite proves the adapter behavior above, not complete
+Amazon S3 feature parity or production RustFS capacity. The container choice
+and alternatives are recorded in the [build-vs-buy register](../../docs/build-vs-buy.md).
 
 `task test:s3:managed` reads an existing application-managed object and is
 skipped unless
