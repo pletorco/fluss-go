@@ -51,8 +51,7 @@ type AppendWriter struct {
 	commands           chan writerCommand
 	slots              chan struct{}
 	done               chan struct{}
-	admission          chan struct{}
-	closed             bool  // Guarded by admission.
+	admission          writerAdmission
 	closeErr           error // Published by closing done after the scheduler exits.
 	roundRobin         int
 	stickyIndex        int
@@ -158,7 +157,7 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 		bucketKeyPositions: appendBucketKeyPositions(table.Schema),
 		writerID:           writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
 		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
-		admission: make(chan struct{}, 1), stickyIndex: -1,
+		admission: newWriterAdmission(), stickyIndex: -1,
 	}
 	if path.Partition != "" {
 		writer.partitionID = physicalID
@@ -321,25 +320,11 @@ func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arro
 }
 
 func (w *AppendWriter) enqueue(ctx context.Context, item *pendingWrite) {
-	select {
-	case w.slots <- struct{}{}:
-		item.future.release = func() { <-w.slots }
-	case <-ctx.Done():
-		item.future.complete(WriteResult{Err: ctx.Err()})
-		return
-	case <-w.done:
-		item.future.complete(WriteResult{Err: ErrClosed})
-		return
-	}
-	if err := acquireWriterAdmission(ctx, w.admission); err != nil {
+	if err := w.admission.beginSubmission(ctx, w.slots, w.done, item.future); err != nil {
 		item.future.complete(WriteResult{Err: err})
 		return
 	}
-	defer func() { <-w.admission }()
-	if w.closed {
-		item.future.complete(WriteResult{Err: ErrClosed})
-		return
-	}
+	defer w.admission.release()
 	select {
 	case w.commands <- writerCommand{item: item}:
 	case <-ctx.Done():
@@ -353,22 +338,15 @@ func (w *AppendWriter) enqueue(ctx context.Context, item *pendingWrite) {
 // It returns all unrecoverable batch failures observed by this writer, including
 // failures reported by earlier Flush calls. A caller's context only bounds its wait.
 func (w *AppendWriter) Flush(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
-	}
-	barrier := make(chan error, 1)
-	if err := acquireWriterAdmission(ctx, w.admission); err != nil {
+	if err := w.admission.beginCommand(ctx); err != nil {
 		return err
 	}
-	if w.closed {
-		<-w.admission
-		return ErrClosed
-	}
+	barrier := make(chan error, 1)
 	select {
 	case w.commands <- writerCommand{flush: barrier}:
-		<-w.admission
+		w.admission.release()
 	case <-ctx.Done():
-		<-w.admission
+		w.admission.release()
 		return ctx.Err()
 	}
 	select {
@@ -383,34 +361,17 @@ func (w *AppendWriter) Flush(ctx context.Context) error {
 // Close is idempotent and retains the terminal result, including batch failures
 // already reported by Flush. A caller's context only bounds its wait.
 func (w *AppendWriter) Close(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
-	}
-	select {
-	case <-w.done:
-		return w.closeErr
-	default:
-	}
-	if err := acquireWriterAdmission(ctx, w.admission); err != nil {
+	started, err := w.admission.beginClose(ctx, w.done, &w.closeErr)
+	if !started {
 		return err
 	}
-	if w.closed {
-		<-w.admission
-		select {
-		case <-w.done:
-			return w.closeErr
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	w.closed = true
 	barrier := make(chan error, 1)
 	select {
 	case w.commands <- writerCommand{close: barrier}:
-		<-w.admission
+		w.admission.release()
 	case <-ctx.Done():
-		w.closed = false
-		<-w.admission
+		w.admission.closed = false
+		w.admission.release()
 		return ctx.Err()
 	}
 	select {

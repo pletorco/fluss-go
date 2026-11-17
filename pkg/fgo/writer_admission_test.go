@@ -33,7 +33,7 @@ func newWriterAdmissionFixture(t *testing.T, kind string) writerAdmissionFixture
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.writer, f.slots, f.gate = w, w.slots, w.admission
+		f.writer, f.slots, f.gate = w, w.slots, w.admission.gate
 		f.queueDepth = func() int { return len(w.commands) }
 		f.submit = func(ctx context.Context) *WriteFuture { return w.Append(ctx, Row{int32(1), "value"}) }
 		schema, err := w.table.Schema.ArrowSchema()
@@ -58,7 +58,7 @@ func newWriterAdmissionFixture(t *testing.T, kind string) writerAdmissionFixture
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.writer, f.slots, f.gate = w, w.slots, w.admission
+		f.writer, f.slots, f.gate = w, w.slots, w.admission.gate
 		f.queueDepth = func() int { return len(w.commands) }
 		f.submit = func(ctx context.Context) *WriteFuture { return w.Upsert(ctx, Row{int32(1), "value", int64(1)}) }
 		f.mutations = map[string]func(context.Context) *WriteFuture{
@@ -192,10 +192,10 @@ func testWriterAdmissionCancellation(t *testing.T, kind, operation string, holdG
 func TestWriterAdmissionRechecksCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	gate := make(chan struct{}, 1)
+	admission := newWriterAdmission()
 	for range 100 {
-		if err := acquireWriterAdmission(ctx, gate); !errors.Is(err, context.Canceled) || len(gate) != 0 {
-			t.Fatalf("canceled free-gate admission = %v; gate=%d", err, len(gate))
+		if err := admission.acquire(ctx); !errors.Is(err, context.Canceled) || len(admission.gate) != 0 {
+			t.Fatalf("canceled free-gate admission = %v; gate=%d", err, len(admission.gate))
 		}
 	}
 }
