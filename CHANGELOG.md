@@ -10,6 +10,9 @@ breaking changes.
 
 ### Fixed
 
+- Rejected typed-nil decimal pointers with `ErrInvalidRow` instead of panicking
+  in row encoders and writers, including nested values and decimal keys.
+  Untyped `nil` remains SQL NULL and non-nil decimal zero remains a value.
 - Isolated `GetTable` schema metadata from the client schema cache and other
   returned tables, including nested logical types and key definitions. Cache
   insertion snapshots inputs while internal record decoding still shares
