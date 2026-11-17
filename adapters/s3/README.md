@@ -8,7 +8,7 @@ This adapter is a separately versioned Go module. Install the adapter version
 that matches the root client release:
 
 ```sh
-go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.3
+go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.4
 ```
 
 Create an `aws.Config` with the official `config.LoadDefaultConfig` credential
