@@ -140,6 +140,7 @@ type LogScanner struct {
 	pollMu      sync.Mutex
 	mu          sync.RWMutex
 	offset      map[int32]int64
+	subEpoch    map[int32]uint64
 	delivered   int64
 	done        bool
 	closed      bool
@@ -197,6 +198,7 @@ func newLogScanner(
 	scanner := &LogScanner{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: -1, buckets: buckets, schema: table.Schema, offset: make(map[int32]int64, len(buckets)),
+		subEpoch:  make(map[int32]uint64, len(buckets)),
 		compacted: true, resolver: resolverFor(backend, table), filter: filter,
 	}
 	_, scanner.dynamic = backend.(schemaResolverProvider)
@@ -308,6 +310,7 @@ func (s *LogScanner) Subscribe(ctx context.Context, bucket int32, start ScanOffs
 		return ErrClosed
 	}
 	s.offset[bucket] = offset
+	s.subEpoch[bucket]++
 	s.updateDoneLocked()
 	return nil
 }
@@ -315,19 +318,24 @@ func (s *LogScanner) Subscribe(ctx context.Context, bucket int32, start ScanOffs
 // Unsubscribe removes bucket from subsequent polls.
 func (s *LogScanner) Unsubscribe(bucket int32) {
 	s.mu.Lock()
+	if _, subscribed := s.offset[bucket]; subscribed {
+		s.subEpoch[bucket]++
+	}
 	delete(s.offset, bucket)
 	s.updateDoneLocked()
 	s.mu.Unlock()
 }
 
 // Poll waits for records, a terminal bound, wakeup, close, or ctx cancellation.
+// Offsets and row-limit accounting advance only when Poll returns a result
+// without an error; an interrupted poll leaves undelivered records available.
 func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 	if ctx == nil {
 		return ScanResult{}, fmt.Errorf("%w: nil context", ErrInvalidConfig)
 	}
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
-	offsets, requestCtx, cancel, err := s.beginPoll(ctx)
+	progress, requestCtx, cancel, err := s.beginPoll(ctx)
 	if err != nil {
 		return ScanResult{}, err
 	}
@@ -335,35 +343,52 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 		return ScanResult{HighWatermark: map[int32]int64{}, Done: true}, nil
 	}
 	defer s.endPoll(cancel)
-	if len(offsets) == 0 {
+	if len(progress.positions) == 0 {
 		return ScanResult{}, fmt.Errorf("%w: scanner has no subscriptions", ErrInvalidConfig)
 	}
 	stop := context.AfterFunc(s.life, cancel)
 	defer stop()
-	result := ScanResult{HighWatermark: make(map[int32]int64, len(offsets))}
+	result := ScanResult{HighWatermark: make(map[int32]int64, len(progress.positions))}
 	for _, bucket := range s.buckets {
-		offset, subscribed := offsets[bucket]
+		position, subscribed := progress.positions[bucket]
 		if !subscribed {
 			continue
 		}
-		if stop, bounded := s.config.StoppingOffsets[bucket]; bounded && offset >= stop {
+		if stop, bounded := s.config.StoppingOffsets[bucket]; bounded && position.offset >= stop {
 			continue
 		}
-		if err := s.pollBucket(requestCtx, ctx, bucket, offset, &result); err != nil {
+		if err := s.pollBucket(requestCtx, ctx, bucket, progress, &result); err != nil {
 			result.Release()
 			return ScanResult{}, err
 		}
-		if s.Done() {
+		if s.config.RowLimit > 0 && progress.delivered >= s.config.RowLimit || s.Done() {
 			break
 		}
 	}
-	result.Done = s.Done()
+	result.Done, err = s.commitPoll(ctx, progress)
+	if err != nil {
+		result.Release()
+		return ScanResult{}, err
+	}
 	return result, nil
+}
+
+type logPollPosition struct {
+	offset       int64
+	next         int64
+	subscription uint64
+}
+
+// logPollProgress stages positions and row accounting until Poll transfers its
+// result to the caller. Discarding the result must not consume those records.
+type logPollProgress struct {
+	positions map[int32]logPollPosition
+	delivered int64
 }
 
 func (s *LogScanner) beginPoll(
 	ctx context.Context,
-) (map[int32]int64, context.Context, context.CancelFunc, error) {
+) (*logPollProgress, context.Context, context.CancelFunc, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -376,13 +401,17 @@ func (s *LogScanner) beginPoll(
 		s.wakePending = false
 		return nil, nil, nil, ErrWakeup
 	}
-	offsets := make(map[int32]int64, len(s.offset))
+	progress := &logPollProgress{
+		positions: make(map[int32]logPollPosition, len(s.offset)), delivered: s.delivered,
+	}
 	for bucket, offset := range s.offset {
-		offsets[bucket] = offset
+		progress.positions[bucket] = logPollPosition{
+			offset: offset, next: offset, subscription: s.subEpoch[bucket],
+		}
 	}
 	requestCtx, cancel := context.WithCancel(ctx)
 	s.pollCancel = cancel
-	return offsets, requestCtx, cancel, nil
+	return progress, requestCtx, cancel, nil
 }
 
 func (s *LogScanner) endPoll(cancel context.CancelFunc) {
@@ -396,9 +425,11 @@ func (s *LogScanner) pollBucket(
 	requestCtx context.Context,
 	callerCtx context.Context,
 	bucket int32,
-	offset int64,
+	progress *logPollProgress,
 	result *ScanResult,
 ) error {
+	position := progress.positions[bucket]
+	offset := position.offset
 	started := metricStart(s.observer)
 	projection := s.projection
 	if s.dynamic {
@@ -455,11 +486,13 @@ func (s *LogScanner) pollBucket(
 			return err
 		}
 	}
-	rows, arrows, delivered, boundedNext := s.applyBounds(bucket, rows, arrows, next)
+	rows, arrows, delivered, boundedNext := s.applyBounds(bucket, rows, arrows, next, progress.delivered)
 	result.Records = append(result.Records, rows...)
 	result.ArrowBatches = append(result.ArrowBatches, arrows...)
 	result.HighWatermark[bucket] = fetched.highWatermark
-	s.advanceOffset(bucket, offset, boundedNext, delivered)
+	position.next = boundedNext
+	progress.positions[bucket] = position
+	progress.delivered += delivered
 	lag := fetched.highWatermark - boundedNext
 	if lag < 0 {
 		lag = 0
@@ -477,34 +510,45 @@ func (s *LogScanner) recordFetchError(
 	fetchErr error,
 	result *ScanResult,
 ) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
 	s.mu.Lock()
-	closed := s.closed
-	woken := s.wakePending
-	if woken {
-		s.wakePending = false
-	}
+	err := s.pollInterruptionLocked(ctx)
 	s.mu.Unlock()
-	if closed {
-		return ErrClosed
-	}
-	if woken {
-		return ErrWakeup
+	if err != nil {
+		return err
 	}
 	result.BucketErrors = append(result.BucketErrors, BucketScanError{Bucket: bucket, Err: fetchErr})
 	return nil
 }
 
-func (s *LogScanner) advanceOffset(bucket int32, previous, next, delivered int64) {
+func (s *LogScanner) commitPoll(ctx context.Context, progress *logPollProgress) (bool, error) {
 	s.mu.Lock()
-	if current, ok := s.offset[bucket]; ok && current == previous {
-		s.offset[bucket] = next
+	defer s.mu.Unlock()
+	if err := s.pollInterruptionLocked(ctx); err != nil {
+		return false, err
 	}
-	s.delivered += delivered
+	for bucket, position := range progress.positions {
+		if current, ok := s.offset[bucket]; ok && current == position.offset &&
+			s.subEpoch[bucket] == position.subscription {
+			s.offset[bucket] = position.next
+		}
+	}
+	s.delivered = progress.delivered
 	s.updateDoneLocked()
-	s.mu.Unlock()
+	return s.done, nil
+}
+
+func (s *LogScanner) pollInterruptionLocked(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.closed {
+		return ErrClosed
+	}
+	if s.wakePending {
+		s.wakePending = false
+		return ErrWakeup
+	}
+	return nil
 }
 
 // Done reports whether a configured row or stopping-offset bound has completed.

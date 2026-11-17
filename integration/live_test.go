@@ -103,6 +103,10 @@ func TestFluss100Integration(t *testing.T) {
 		testLogData(t, client, logPath)
 	})
 
+	t.Run("scan interruption preserves undelivered records", func(t *testing.T) {
+		testInterruptedLogPoll(t, plainAddress, logPath)
+	})
+
 	t.Run("schema evolution", func(t *testing.T) {
 		testSchemaEvolution(t, client, admin, database)
 	})

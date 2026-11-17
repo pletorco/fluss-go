@@ -8,6 +8,12 @@ breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevented canceled or interrupted multi-bucket log polls from skipping records
+  that were fetched but never returned. Offsets and row-limit accounting now
+  commit with the successful result while preserving subscription changes.
+
 ### Changed
 
 - Updated the pinned Trivy release used by the repository security and

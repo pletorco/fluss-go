@@ -28,11 +28,12 @@ func (s *LogScanner) applyBounds(
 	rows []ScanRecord,
 	arrows []ScanArrowBatch,
 	decodedNext int64,
+	delivered int64,
 ) ([]ScanRecord, []ScanArrowBatch, int64, int64) {
 	if s.config.RowLimit == 0 && s.config.StoppingOffsets == nil {
 		return rows, arrows, scanResultRows(rows, arrows), decodedNext
 	}
-	remaining, stop := s.scanBounds(bucket)
+	remaining, stop := s.scanBounds(bucket, delivered)
 	segments := orderedScanSegments(rows, arrows)
 	bounded := boundedScan{
 		bucket: bucket, stop: stop, remaining: remaining, next: decodedNext,
@@ -59,12 +60,10 @@ func scanResultRows(rows []ScanRecord, arrows []ScanArrowBatch) int64 {
 	return delivered
 }
 
-func (s *LogScanner) scanBounds(bucket int32) (int64, int64) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *LogScanner) scanBounds(bucket int32, delivered int64) (int64, int64) {
 	remaining := int64(math.MaxInt64)
 	if s.config.RowLimit > 0 {
-		remaining = s.config.RowLimit - s.delivered
+		remaining = s.config.RowLimit - delivered
 	}
 	stop := int64(math.MaxInt64)
 	if configured, ok := s.config.StoppingOffsets[bucket]; ok {
