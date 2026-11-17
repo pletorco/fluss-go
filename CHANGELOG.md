@@ -10,6 +10,10 @@ breaking changes.
 
 ### Fixed
 
+- Preserved background batch failures in log and upsert writer `Flush` and
+  `Close`, including failures completed before the barrier. Repeated flushes
+  retain original causes, and poisoned-bucket errors now preserve those causes
+  for `errors.Is` and `errors.As`.
 - Snapshotted append rows and bucket keys before returning from `Append`, so
   caller reuse of byte slices, nested containers, and decimals cannot change
   queued payloads or routing. Indexed batching now counts the encoded indexed
