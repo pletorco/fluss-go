@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -27,9 +26,8 @@ type UpsertWriter struct {
 	slots       chan struct{}
 	done        chan struct{}
 	closing     chan struct{}
-	appendMu    sync.Mutex
-	closed      bool
-	closeErr    error
+	admission   writerAdmission
+	closeErr    error // Published by closing done after the scheduler exits.
 	observer    MetricsObserver
 }
 
@@ -137,6 +135,7 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 		partitionID: -1, writerID: writerID, buckets: buckets,
 		commands: make(chan upsertWriterCommand, config.MaxBuffered),
 		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), closing: make(chan struct{}),
+		admission: newWriterAdmission(),
 	}
 	if path.Partition != "" {
 		writer.partitionID = physicalID
@@ -367,22 +366,11 @@ func rowValues(schema Schema, row Row, columns []string) map[string]any {
 }
 
 func (w *UpsertWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
-	select {
-	case w.slots <- struct{}{}:
-		item.future.release = func() { <-w.slots }
-	case <-ctx.Done():
-		item.future.complete(WriteResult{Err: ctx.Err()})
-		return
-	case <-w.done:
-		item.future.complete(WriteResult{Err: ErrClosed})
+	if err := w.admission.beginSubmission(ctx, w.slots, w.done, item.future); err != nil {
+		item.future.complete(WriteResult{Err: err})
 		return
 	}
-	w.appendMu.Lock()
-	defer w.appendMu.Unlock()
-	if w.closed {
-		item.future.complete(WriteResult{Err: ErrClosed})
-		return
-	}
+	defer w.admission.release()
 	select {
 	case w.commands <- upsertWriterCommand{item: item}:
 	case <-ctx.Done():
@@ -397,20 +385,15 @@ func (w *UpsertWriter) enqueue(ctx context.Context, item *pendingKVWrite) {
 // including failures reported by earlier Flush calls. A caller's context only
 // bounds its wait.
 func (w *UpsertWriter) Flush(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
+	if err := w.admission.beginCommand(ctx); err != nil {
+		return err
 	}
 	barrier := make(chan error, 1)
-	w.appendMu.Lock()
-	if w.closed {
-		w.appendMu.Unlock()
-		return ErrClosed
-	}
 	select {
 	case w.commands <- upsertWriterCommand{flush: barrier}:
-		w.appendMu.Unlock()
+		w.admission.release()
 	case <-ctx.Done():
-		w.appendMu.Unlock()
+		w.admission.release()
 		return ctx.Err()
 	}
 	select {
@@ -425,30 +408,17 @@ func (w *UpsertWriter) Flush(ctx context.Context) error {
 // Close is idempotent and retains the terminal result, including batch failures
 // already reported by Flush. A caller's context only bounds its wait.
 func (w *UpsertWriter) Close(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
+	started, err := w.admission.beginClose(ctx, w.done, &w.closeErr)
+	if !started {
+		return err
 	}
-	w.appendMu.Lock()
-	if w.closed {
-		w.appendMu.Unlock()
-		select {
-		case <-w.done:
-			w.appendMu.Lock()
-			err := w.closeErr
-			w.appendMu.Unlock()
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	w.closed = true
 	barrier := make(chan error, 1)
 	select {
 	case w.commands <- upsertWriterCommand{close: barrier}:
-		w.appendMu.Unlock()
+		w.admission.release()
 	case <-ctx.Done():
-		w.closed = false
-		w.appendMu.Unlock()
+		w.admission.closed = false
+		w.admission.release()
 		return ctx.Err()
 	}
 	select {
@@ -487,9 +457,7 @@ func (l *upsertWriterLoop) run() {
 			case command.close != nil:
 				close(l.writer.closing)
 				err := l.flushAll()
-				l.writer.appendMu.Lock()
 				l.writer.closeErr = err
-				l.writer.appendMu.Unlock()
 				command.close <- err
 				l.timer.Stop()
 				return

@@ -68,11 +68,19 @@ and later successful writes do not clear them. Individual row validation and
 pre-dispatch cancellation errors remain on their futures and do not poison a
 bucket or enter this batch-failure history.
 
+Context cancellation and deadlines also bound waits for buffer capacity,
+serialized command admission, and a full command queue. Canceling a call before
+it submits a command releases its buffer slot, if any, without interrupting
+accepted work or stopping the writer. No helper goroutine outlives that wait.
+
 `Close` stops admission, flushes accepted work, and retains the terminal flush
 result. Concurrent and repeated callers observe the same final error. A
 caller's context only bounds how long that caller waits; it does not shorten
 the configured timeout of work the writer already accepted. A caller whose
-context expires may call `Close` again to observe the final result. Ambiguous
+context expires may call `Close` again to observe the final result.
+If cancellation prevents the close command from being submitted, the writer
+remains open; once the command is accepted, cancellation only stops that
+caller's wait and shutdown continues. Ambiguous
 write failures are not retried and poison only the affected bucket. See
 [error handling](error-handling.md) and
 [write scheduling](write-scheduling.md) for recovery and ownership details.

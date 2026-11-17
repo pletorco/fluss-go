@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -52,9 +51,8 @@ type AppendWriter struct {
 	commands           chan writerCommand
 	slots              chan struct{}
 	done               chan struct{}
-	appendMu           sync.Mutex
-	closed             bool
-	closeErr           error
+	admission          writerAdmission
+	closeErr           error // Published by closing done after the scheduler exits.
 	roundRobin         int
 	stickyIndex        int
 	observer           MetricsObserver
@@ -158,7 +156,8 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 		table: table, path: path, backend: backend, config: config, tableID: table.ID, partitionID: -1,
 		bucketKeyPositions: appendBucketKeyPositions(table.Schema),
 		writerID:           writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
-		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), stickyIndex: -1,
+		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
+		admission: newWriterAdmission(), stickyIndex: -1,
 	}
 	if path.Partition != "" {
 		writer.partitionID = physicalID
@@ -321,22 +320,11 @@ func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arro
 }
 
 func (w *AppendWriter) enqueue(ctx context.Context, item *pendingWrite) {
-	select {
-	case w.slots <- struct{}{}:
-		item.future.release = func() { <-w.slots }
-	case <-ctx.Done():
-		item.future.complete(WriteResult{Err: ctx.Err()})
-		return
-	case <-w.done:
-		item.future.complete(WriteResult{Err: ErrClosed})
+	if err := w.admission.beginSubmission(ctx, w.slots, w.done, item.future); err != nil {
+		item.future.complete(WriteResult{Err: err})
 		return
 	}
-	w.appendMu.Lock()
-	defer w.appendMu.Unlock()
-	if w.closed {
-		item.future.complete(WriteResult{Err: ErrClosed})
-		return
-	}
+	defer w.admission.release()
 	select {
 	case w.commands <- writerCommand{item: item}:
 	case <-ctx.Done():
@@ -350,20 +338,15 @@ func (w *AppendWriter) enqueue(ctx context.Context, item *pendingWrite) {
 // It returns all unrecoverable batch failures observed by this writer, including
 // failures reported by earlier Flush calls. A caller's context only bounds its wait.
 func (w *AppendWriter) Flush(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
+	if err := w.admission.beginCommand(ctx); err != nil {
+		return err
 	}
 	barrier := make(chan error, 1)
-	w.appendMu.Lock()
-	if w.closed {
-		w.appendMu.Unlock()
-		return ErrClosed
-	}
 	select {
 	case w.commands <- writerCommand{flush: barrier}:
-		w.appendMu.Unlock()
+		w.admission.release()
 	case <-ctx.Done():
-		w.appendMu.Unlock()
+		w.admission.release()
 		return ctx.Err()
 	}
 	select {
@@ -378,30 +361,17 @@ func (w *AppendWriter) Flush(ctx context.Context) error {
 // Close is idempotent and retains the terminal result, including batch failures
 // already reported by Flush. A caller's context only bounds its wait.
 func (w *AppendWriter) Close(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("%w: nil context", ErrInvalidConfig)
+	started, err := w.admission.beginClose(ctx, w.done, &w.closeErr)
+	if !started {
+		return err
 	}
-	w.appendMu.Lock()
-	if w.closed {
-		w.appendMu.Unlock()
-		select {
-		case <-w.done:
-			w.appendMu.Lock()
-			err := w.closeErr
-			w.appendMu.Unlock()
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	w.closed = true
 	barrier := make(chan error, 1)
 	select {
 	case w.commands <- writerCommand{close: barrier}:
-		w.appendMu.Unlock()
+		w.admission.release()
 	case <-ctx.Done():
-		w.closed = false
-		w.appendMu.Unlock()
+		w.admission.closed = false
+		w.admission.release()
 		return ctx.Err()
 	}
 	select {
@@ -439,9 +409,7 @@ func (l *appendWriterLoop) run() {
 				command.flush <- l.flushAll()
 			case command.close != nil:
 				err := l.flushAll()
-				l.writer.appendMu.Lock()
 				l.writer.closeErr = err
-				l.writer.appendMu.Unlock()
 				command.close <- err
 				l.timer.Stop()
 				return

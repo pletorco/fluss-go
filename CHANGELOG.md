@@ -10,6 +10,10 @@ breaking changes.
 
 ### Fixed
 
+- Made append and upsert writer command admission cancelable, including
+  mutation submission, `Flush`, and `Close` under command-queue contention.
+  Canceled waiters release their buffer slots without interrupting accepted
+  writes or changing the retained shutdown result.
 - Preserved undelivered KV scan pages when decoding or historical-schema
   lookup fails or is canceled. Retrying `Poll` now decodes the retained page
   before requesting another, including after a terminal server response.
