@@ -10,6 +10,7 @@ import (
 const defaultSchemaCacheEntries = 256
 
 type schemaResolver interface {
+	// Resolved schemas are borrowed read-only; mutable callers must snapshot them.
 	resolveSchema(context.Context, TablePath, int32) (Schema, error)
 }
 
@@ -136,6 +137,7 @@ func (c *schemaCache) fetchAndStore(
 	if err != nil {
 		return Schema{}, err
 	}
+	schema = snapshotSchema(schema)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -151,6 +153,7 @@ func (c *schemaCache) store(path TablePath, schemaID int32, schema Schema) {
 	if schemaID < 0 || path.Validate() != nil || schema.Validate() != nil {
 		return
 	}
+	schema = snapshotSchema(schema)
 	key := schemaCacheKey{path: path, id: schemaID}
 	c.mu.Lock()
 	if !c.closed {

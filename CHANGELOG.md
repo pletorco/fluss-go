@@ -10,6 +10,10 @@ breaking changes.
 
 ### Fixed
 
+- Isolated `GetTable` schema metadata from the client schema cache and other
+  returned tables, including nested logical types and key definitions. Cache
+  insertion snapshots inputs while internal record decoding still shares
+  immutable cached schemas without per-record metadata copies.
 - Made append and upsert writer command admission cancelable, including
   mutation submission, `Flush`, and `Close` under command-queue contention.
   Canceled waiters release their buffer slots without interrupting accepted
