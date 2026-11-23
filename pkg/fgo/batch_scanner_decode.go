@@ -145,9 +145,12 @@ func decodeValueRecordBatchWithResolver(
 		return nil, fmt.Errorf("%w: invalid value record count", ErrMalformedRecordBatch)
 	}
 	rows := make([]Row, 0, count)
+	decoder := valueBatchDecoder{
+		resolver: resolver, table: table, schemas: make(map[int32]valueBatchSchema),
+	}
 	position := headerSize
 	for range count {
-		row, next, err := decodeValueRecord(ctx, resolver, table, encoded, position)
+		row, next, err := decoder.decodeRecord(ctx, encoded, position)
 		if err != nil {
 			return nil, err
 		}
@@ -160,10 +163,19 @@ func decodeValueRecordBatchWithResolver(
 	return rows, nil
 }
 
-func decodeValueRecord(
+type valueBatchSchema struct {
+	writer  Schema
+	mapping []int
+}
+
+type valueBatchDecoder struct {
+	resolver schemaResolver
+	table    Table
+	schemas  map[int32]valueBatchSchema
+}
+
+func (d *valueBatchDecoder) decodeRecord(
 	ctx context.Context,
-	resolver schemaResolver,
-	table Table,
 	encoded []byte,
 	position int,
 ) (Row, int, error) {
@@ -176,15 +188,28 @@ func decodeValueRecord(
 		return nil, position, fmt.Errorf("%w: invalid value record length", ErrMalformedRecordBatch)
 	}
 	schemaID := int32(int16(binary.LittleEndian.Uint16(encoded[position:])))
-	schema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
-	if err != nil {
-		return nil, position, fmt.Errorf("fgo: resolve value schema %d: %w", schemaID, err)
+	schema, found := d.schemas[schemaID]
+	if !found {
+		writer, err := d.resolver.resolveSchema(ctx, d.table.Path, schemaID)
+		if err != nil {
+			return nil, position, fmt.Errorf("fgo: resolve value schema %d: %w", schemaID, err)
+		}
+		schema.writer = writer
 	}
-	row, err := DecodeCompactedRow(schema, encoded[position+2:position+size])
+	row, err := DecodeCompactedRow(schema.writer, encoded[position+2:position+size])
 	if err != nil {
 		return nil, position, err
 	}
-	row, err = evolveRow(schema, table.Schema, row)
+	if !found {
+		schema.mapping, err = schemaColumnMapping(schema.writer, d.table.Schema)
+		if err != nil {
+			return nil, position, err
+		}
+		if len(d.schemas) < defaultSchemaCacheEntries {
+			d.schemas[schemaID] = schema
+		}
+	}
+	row, err = mapEvolvedRow(d.table.Schema, schema.mapping, row)
 	return row, position + size, err
 }
 

@@ -197,6 +197,12 @@ func evolveRow(source, target Schema, row Row) (Row, error) {
 	if err != nil {
 		return nil, err
 	}
+	return mapEvolvedRow(target, mapping, row)
+}
+
+// mapEvolvedRow applies a prepared schema mapping to a decoded row with the
+// writer schema's width. Nullability still needs to be checked for every row.
+func mapEvolvedRow(target Schema, mapping []int, row Row) (Row, error) {
 	result := make(Row, len(target.Columns))
 	for targetIndex, targetColumn := range target.Columns {
 		sourceIndex := mapping[targetIndex]

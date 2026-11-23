@@ -129,8 +129,15 @@ func decodeEvolvedFetchedBatch(
 }
 
 func evolveScanRecords(records []ScanRecord, source, target Schema) error {
+	if len(records) == 0 {
+		return nil
+	}
+	mapping, err := schemaColumnMapping(source, target)
+	if err != nil {
+		return err
+	}
 	for index := range records {
-		row, err := evolveRow(source, target, records[index].Record.Value)
+		row, err := mapEvolvedRow(target, mapping, records[index].Record.Value)
 		if err != nil {
 			return err
 		}

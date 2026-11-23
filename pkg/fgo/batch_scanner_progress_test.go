@@ -234,10 +234,16 @@ func TestBatchScannerRetainsMalformedKVPage(t *testing.T) {
 
 func TestBatchScannerRetriesWholeKVPageAfterPartialDecode(t *testing.T) {
 	table, backend := retryKVScanFixture(t, 1)
-	historical := table
-	historical.SchemaID = 1
-	want := []Row{{int32(1), "one"}, {int32(2), "two"}}
-	backend.batches[0].records = encodedValueBatch(t, historical, want...)
+	want := []Row{{int32(1), "one"}, {int32(2), "two"}, {int32(3), "three"}}
+	var values []schemaValue
+	for i, row := range want {
+		encoded, err := EncodeCompactedRow(table.Schema, row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		values = append(values, schemaValue{id: int16(i%2 + 1), row: encoded})
+	}
+	backend.batches[0].records = encodedSchemaValueBatch(values)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	resolutions := 0
@@ -261,5 +267,8 @@ func TestBatchScannerRetriesWholeKVPageAfterPartialDecode(t *testing.T) {
 	result, err := scanner.Poll(context.Background())
 	if err != nil || !result.Done || !reflect.DeepEqual(result.Rows, want) || len(backend.calls) != 1 {
 		t.Fatalf("retried page = %#v, %v; calls=%#v", result, err, backend.calls)
+	}
+	if resolutions != 4 {
+		t.Fatalf("schema resolutions = %d; want two per decode attempt", resolutions)
 	}
 }

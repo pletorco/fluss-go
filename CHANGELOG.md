@@ -17,6 +17,11 @@ breaking changes.
 - Accepted narrower projections returned by snapshot providers and reported
   inconsistent row widths as validation errors.
 
+### Changed
+
+- Reused schema mappings across decoded rows in log batches and KV pages,
+  reducing allocation and repeated column compatibility checks.
+
 ## [v0.2.0-beta.4] - 2026-11-17
 
 ### Fixed

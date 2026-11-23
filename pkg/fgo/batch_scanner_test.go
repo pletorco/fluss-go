@@ -257,7 +257,7 @@ func TestBatchScannerReadsCurrentKVStateOnce(t *testing.T) {
 	}
 }
 
-func encodedValueBatch(t *testing.T, table Table, rows ...Row) []byte {
+func encodedValueBatch(t testing.TB, table Table, rows ...Row) []byte {
 	t.Helper()
 	encoded := make([]byte, 9)
 	encoded[4] = 0
