@@ -295,7 +295,10 @@ unfinished server session. An empty bucket may complete without allocating a
 scanner ID. Log-table current-state scans
 continue to use one bounded `LIMIT_SCAN` request. Snapshot scans use
 `NewSnapshotBatchScanner` and require a `SnapshotBatchProvider` configured when
-the client is opened. A snapshot provider may return its final rows and
+the client is opened. A provider can return full rows in table order or apply
+a projection that selects fewer columns and return them in requested order.
+For full-width results the scanner applies any requested reordering. Each
+batch must use one row layout. A snapshot provider may return its final rows and
 `io.EOF` together; `Poll` then returns those rows with `Done` set. Process the
 result before checking whether another poll is needed. A later poll returns an
 empty completed result. `BatchResult.Release` releases owned Arrow batches.

@@ -12,6 +12,29 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestReaderKeepsCallerSchemaOutOfSharedCache(t *testing.T) {
+	ctx := context.Background()
+	client, path, calls := schemaOwnershipClient(t)
+	table, err := client.GetTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := table.Schema.Columns[1].Name
+	table.Schema.Columns[1].Name = "locally_renamed"
+	scanner, err := client.NewBatchScanner(ctx, table, testTableBucket(table))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = scanner.Close() })
+	got, err := client.GetTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Schema.Columns[1].Name != want || calls.Load() != 1 {
+		t.Fatalf("server schema column = %q, fetches = %d; want %q and one fetch", got.Schema.Columns[1].Name, calls.Load(), want)
+	}
+}
+
 func schemaOwnershipFixture() Schema {
 	schema, _, _ := mutableAppendInput()
 	schema.PrimaryKey, schema.BucketKey = []string{"id"}, []string{"id"}

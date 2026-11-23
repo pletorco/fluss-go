@@ -8,6 +8,20 @@ breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Kept caller-supplied reader schemas from replacing shared server metadata
+  used by subsequent table lookups and record decoding.
+- Preserved the server's filtered progress when a bounded log scan delivers
+  every eligible record, so it can finish at its stopping offset.
+- Accepted narrower projections returned by snapshot providers and reported
+  inconsistent row widths as validation errors.
+
+### Changed
+
+- Reused schema mappings across decoded rows in log batches and KV pages,
+  reducing allocation and repeated column compatibility checks.
+
 ## [v0.2.0-beta.4] - 2026-11-17
 
 ### Fixed

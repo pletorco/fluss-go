@@ -15,6 +15,9 @@ that result's slices and pointers; keep metadata passed to active readers stable
 Internal cache hits borrow the immutable snapshot rather than cloning it for
 each decoded record.
 
+Reader constructors use the supplied table schema as the target result shape.
+Writer schemas in the shared cache come from server metadata.
+
 The following read paths decode historical schema IDs:
 
 - point and prefix lookup values;
@@ -41,6 +44,22 @@ per schema ID. The client fetches each unknown ID once for concurrent callers,
 maps every compatible row to the reader's target schema, and keeps up to 256
 resolved schemas across all readers. Applications should still bound the
 lifetime of clients used against catalogs with unusually high schema churn.
+
+A row log batch prepares its column mapping once. A KV value batch reuses
+mappings for up to 256 writer schema IDs within the page. The decoder still
+checks each row's values against the target column nullability.
+
+To measure schema mapping overhead as part of batch decoding, run:
+
+```sh
+go test ./pkg/fgo -run '^$' -bench '^BenchmarkReadBatchSchemaEvolution$' -benchmem -benchtime=250ms -count=3
+```
+
+For 128 rows with up to 32 columns, the median row log decode changed from
+2.00 ms and 9,859 allocations to 0.49 ms and 842 allocations. A KV page with
+alternating schema IDs changed from 1.94 ms and 9,729 allocations to 0.48 ms
+and 913 allocations. These local results use Go 1.26.11 on Linux/amd64 with an
+AMD Ryzen 7 7735HS and in-memory inputs.
 
 Log projection is applied after schema resolution. This deliberately fetches
 the complete batch when historical schemas may be present, so row and Arrow

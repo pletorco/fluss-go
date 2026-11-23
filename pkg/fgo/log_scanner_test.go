@@ -733,6 +733,46 @@ func TestLogScannerAdvancesPastServerFilteredBatches(t *testing.T) {
 	_ = scanner.Close()
 }
 
+func TestLogScannerPreservesFilteredProgressWithinBounds(t *testing.T) {
+	table := appendWriterTable()
+	table.Schema.Columns[0].ID = 1
+	table.Schema.Columns[1].ID = 2
+	table.Properties = map[string]string{"table.log.format": "ARROW"}
+	for _, test := range []struct {
+		name       string
+		limit      LogScannerOption
+		wantOffset int64
+		wantRows   int64
+	}{
+		{"all eligible rows", WithScanRowLimit(5), 10, 2},
+		{"row limit exactly met", WithScanRowLimit(2), 10, 2},
+		{"row limit with undelivered rows", WithScanRowLimit(1), 6, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			backend := scannerBackend(0)
+			backend.fetches[0] = scannerFetch{
+				records:           encodedArrowRows(t, table.Schema, 5, 1, 2),
+				filteredEndOffset: 12, filteredEndOffsetKnown: true,
+			}
+			scanner, err := newLogScanner(ctx, backend, table, AtOffset(5),
+				WithScanFilter(Col("id").Gt(int32(0))), WithScanStoppingOffsets(map[int32]int64{0: 10}), test.limit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = scanner.Close() })
+			result, err := scanner.Poll(ctx)
+			defer result.Release()
+			if err != nil || len(result.BucketErrors) != 0 || !result.Done || len(result.ArrowBatches) != 1 {
+				t.Fatalf("Poll() = %#v, %v", result, err)
+			}
+			if scanner.offset[0] != test.wantOffset || result.ArrowBatches[0].Batch.Record.NumRows() != test.wantRows {
+				t.Fatalf("cursor=%d rows=%d; want %d and %d", scanner.offset[0], result.ArrowBatches[0].Batch.Record.NumRows(), test.wantOffset, test.wantRows)
+			}
+		})
+	}
+}
+
 func TestLogScannerRowLimitAndStoppingOffsets(t *testing.T) {
 	table := appendWriterTable()
 	table.BucketCount = 2
@@ -1201,6 +1241,8 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyListOffsets] = 0
 	tablet.versions[fmsg.APIKeyFetchLog] = 0
+	// Seed the server metadata normally loaded by GetTable.
+	client.schemas.store(path, table.SchemaID, table.Schema)
 	scanner, err := client.NewLogScanner(context.Background(), table, AtTimestamp(time.UnixMilli(1234)))
 	if err != nil {
 		t.Fatal(err)
