@@ -272,20 +272,43 @@ func batchPollContext(caller, life context.Context) (context.Context, context.Ca
 
 func (s *BatchScanner) pollSnapshot(ctx context.Context) (BatchResult, error) {
 	rows, err := s.snapshot.ReadBatch(ctx, s.config.Limit)
-	if errors.Is(err, io.EOF) {
-		if len(rows) > s.config.Limit {
-			return BatchResult{}, fmt.Errorf("%w: snapshot provider exceeded batch limit", ErrValidation)
-		}
-		s.markDone()
-		return BatchResult{Rows: s.projectRows(rows), Done: true}, nil
-	}
-	if err != nil {
+	done := errors.Is(err, io.EOF)
+	if err != nil && !done {
 		return BatchResult{}, err
 	}
 	if len(rows) > s.config.Limit {
 		return BatchResult{}, fmt.Errorf("%w: snapshot provider exceeded batch limit", ErrValidation)
 	}
-	return BatchResult{Rows: s.projectRows(rows)}, nil
+	rows, err = s.projectSnapshotRows(rows)
+	if err != nil {
+		return BatchResult{}, err
+	}
+	if done {
+		s.markDone()
+	}
+	return BatchResult{Rows: rows, Done: done}, nil
+}
+
+func (s *BatchScanner) projectSnapshotRows(rows []Row) ([]Row, error) {
+	if len(rows) == 0 {
+		return rows, nil
+	}
+	width := len(rows[0])
+	fullWidth, projectedWidth := len(s.table.Schema.Columns), len(s.projection)
+	full := width == fullWidth
+	if !full && (projectedWidth == 0 || width != projectedWidth) {
+		return nil, fmt.Errorf("%w: snapshot provider returned row width %d, expected %d full columns or a projection of %d columns",
+			ErrValidation, width, fullWidth, projectedWidth)
+	}
+	for i, row := range rows {
+		if len(row) != width {
+			return nil, fmt.Errorf("%w: snapshot provider row %d has width %d, expected %d", ErrValidation, i, len(row), width)
+		}
+	}
+	if full {
+		return s.projectRows(rows), nil
+	}
+	return rows, nil
 }
 
 func (s *BatchScanner) markDone() {

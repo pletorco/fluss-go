@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -646,6 +647,44 @@ func TestSnapshotBatchScannerLifecycle(t *testing.T) {
 	}
 	if err := scanner.Close(); err != nil || reader.closed.Load() != 1 {
 		t.Fatalf("repeated Close() = %v calls=%d", err, reader.closed.Load())
+	}
+}
+
+func TestSnapshotBatchScannerProviderRowLayouts(t *testing.T) {
+	table := upsertWriterTable()
+	for _, test := range []struct {
+		name    string
+		columns []string
+		rows    []Row
+		want    []Row
+		wantErr error
+	}{
+		{name: "projected", columns: []string{"name"}, rows: []Row{{"one"}}, want: []Row{{"one"}}},
+		{name: "reordered full row", columns: []string{"score", "id", "name"},
+			rows: []Row{{int32(1), "one", int64(10)}}, want: []Row{{int64(10), int32(1), "one"}}},
+		{name: "mixed widths", columns: []string{"name"},
+			rows: []Row{{"one"}, {int32(2), "two", int64(20)}}, wantErr: ErrValidation},
+		{name: "invalid width", columns: []string{"name"},
+			rows: []Row{{int32(1), "one"}}, wantErr: ErrValidation},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := &Client{snapshotProvider: SnapshotBatchProviderFunc(func(_ context.Context, request SnapshotBatchRequest) (SnapshotBatchReader, error) {
+				if !reflect.DeepEqual(request.Projection, test.columns) {
+					t.Fatalf("projection = %v; want %v", request.Projection, test.columns)
+				}
+				return &fakeSnapshotBatchReader{batches: [][]Row{test.rows}, eofWithLast: true}, nil
+			})}
+			scanner, err := client.NewSnapshotBatchScanner(ctx, table, testTableBucket(table), 42, WithBatchProjection(test.columns...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = scanner.Close() })
+			result, err := scanner.Poll(ctx)
+			if !errors.Is(err, test.wantErr) || !reflect.DeepEqual(result.Rows, test.want) || result.Done != (test.wantErr == nil) {
+				t.Fatalf("Poll() = %#v, %v; want rows %v, error %v", result, err, test.want, test.wantErr)
+			}
+		})
 	}
 }
 

@@ -14,6 +14,8 @@ breaking changes.
   used by subsequent table lookups and record decoding.
 - Preserved the server's filtered progress when a bounded log scan delivers
   every eligible record, so it can finish at its stopping offset.
+- Accepted narrower projections returned by snapshot providers and reported
+  inconsistent row widths as validation errors.
 
 ## [v0.2.0-beta.4] - 2026-11-17
 

@@ -82,7 +82,8 @@ type SnapshotBatchRequest struct {
 	Bucket TableBucket
 	// SnapshotID identifies the immutable server snapshot.
 	SnapshotID int64
-	// Projection lists requested columns in result order.
+	// Projection lists requested columns in result order. Providers may
+	// apply it when it selects fewer columns than Table.Schema.
 	Projection []string
 	// Limit is the maximum rows requested from one reader call.
 	Limit int
@@ -90,8 +91,9 @@ type SnapshotBatchRequest struct {
 
 // SnapshotBatchReader streams rows from one immutable snapshot. io.EOF marks completion.
 type SnapshotBatchReader interface {
-	// ReadBatch returns at most limit rows. io.EOF marks completion and may
-	// accompany a final non-empty batch.
+	// ReadBatch returns at most limit rows in a consistent layout. Full rows
+	// use table schema order. A narrower projection may be returned directly
+	// in requested column order. io.EOF may accompany a final non-empty batch.
 	ReadBatch(context.Context, int) ([]Row, error)
 	// Close releases reader resources and is safe after completion.
 	Close() error
