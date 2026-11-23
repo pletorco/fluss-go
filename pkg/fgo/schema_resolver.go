@@ -41,9 +41,8 @@ func (r fixedSchemaResolver) resolveSchema(
 func resolverFor(source any, table Table) schemaResolver {
 	if provider, ok := source.(schemaResolverProvider); ok {
 		if resolver := provider.schemaResolver(); resolver != nil {
-			if client, ok := resolver.(*Client); ok && client.schemas != nil {
-				client.schemas.store(table.Path, table.SchemaID, table.Schema)
-			}
+			// Caller-owned table metadata describes the result schema. The
+			// shared resolver supplies the server's writer schema independently.
 			return resolver
 		}
 	}

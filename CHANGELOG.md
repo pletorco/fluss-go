@@ -8,6 +8,11 @@ breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Kept caller-supplied reader schemas from replacing shared server metadata
+  used by subsequent table lookups and record decoding.
+
 ## [v0.2.0-beta.4] - 2026-11-17
 
 ### Fixed

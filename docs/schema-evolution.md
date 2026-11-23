@@ -15,6 +15,9 @@ that result's slices and pointers; keep metadata passed to active readers stable
 Internal cache hits borrow the immutable snapshot rather than cloning it for
 each decoded record.
 
+Reader constructors use the supplied table schema as the target result shape.
+Writer schemas in the shared cache come from server metadata.
+
 The following read paths decode historical schema IDs:
 
 - point and prefix lookup values;

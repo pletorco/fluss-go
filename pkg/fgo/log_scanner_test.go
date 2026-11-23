@@ -1201,6 +1201,8 @@ func TestClientLogScannerBackendMessages(t *testing.T) {
 	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyListOffsets] = 0
 	tablet.versions[fmsg.APIKeyFetchLog] = 0
+	// Seed the server metadata normally loaded by GetTable.
+	client.schemas.store(path, table.SchemaID, table.Schema)
 	scanner, err := client.NewLogScanner(context.Background(), table, AtTimestamp(time.UnixMilli(1234)))
 	if err != nil {
 		t.Fatal(err)
