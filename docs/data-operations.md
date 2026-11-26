@@ -216,6 +216,49 @@ readers intentionally retain the result shape they were created with. See the
 [schema-evolution guide](schema-evolution.md) for the complete compatibility,
 projection, cache, and error contract.
 
+## Partitioned KV keys
+
+Select a partition with `WithUpsertPartition` or `WithLookupPartition`.
+Full and partial upserts, deletes, and point lookups still accept the logical
+primary key, including partition columns. Any supplied partition key value
+that does not match the selected partition returns `fgo.ErrInvalidRow`.
+Only the remaining primary-key columns, in their original order, form the
+stored key. Without an explicit bucket key, these same physical key columns
+determine the bucket.
+
+Prefix lookups still take a leading part of the logical primary key. After
+partition columns are removed, the prefix must cover the bucket key, and the
+bucket key must be a leading part of the physical primary key. For example,
+given primary key `(region, tenant, session)`, partition key `region`, and
+bucket key `tenant`, select partition `apac` and pass prefix `("apac", 7)`.
+Fluss receives only the prefix for tenant `7` and a separate partition ID.
+
+### KV key compatibility
+
+Earlier fluss-go clients included partition columns in stored KV keys. They
+also emitted an extra sign byte for wide DECIMAL (precision greater than 18)
+at negative signed-width boundaries, such as unscaled `-128` or `-32768`.
+For scale 2, those values are `-1.28` and `-327.68`. This can change both the
+stored key and bucket routing if an affected decimal participates in them.
+Previously stored decimal **row values** still decode.
+
+The corrected client neither reads old keys as a fallback nor rewrites them.
+Point lookups can miss old rows, and writing under the corrected key can
+create a second entry for the same logical primary key. Deleting via the
+corrected client only addresses the corrected key.
+
+Before changing clients on a table that may contain affected keys:
+
+1. Stop writes from old clients and take a recoverable backup. Do not mix old
+   and corrected writers against the same table during the transition.
+2. Scan the current state of all affected partitions and buckets. Reconcile
+   duplicate logical keys using an authoritative source or an explicit conflict
+   rule; scan order alone does not identify the winning row.
+3. Write the reconciled rows into a fresh table with the corrected client.
+   Verify counts and representative point and supported prefix lookups from
+   both Go and another Fluss 1.0 client before switching traffic. Keep the
+   source table and backup until verification and rollback are no longer needed.
+
 ## KV merge and insert-if-missing
 
 `MergeModeDefault` applies the table's configured merge engine.

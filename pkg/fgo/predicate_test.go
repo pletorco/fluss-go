@@ -62,7 +62,7 @@ func TestCompilePredicateLiteralEncodings(t *testing.T) {
 		{"string contains", Col("name").Contains("mid"), leafContains, 8, &fmsg.PbLiteralValue{LiteralType: proto.Int32(8), IsNull: proto.Bool(false), StringValue: proto.String("mid")}},
 		{"compact decimal", Col("price").Eq(big.NewRat(-123, 100)), leafEqual, 9, &fmsg.PbLiteralValue{LiteralType: proto.Int32(9), IsNull: proto.Bool(false), DecimalValue: proto.Int64(-123)}},
 		{"decimal from int", Col("price").Eq(2), leafEqual, 9, &fmsg.PbLiteralValue{LiteralType: proto.Int32(9), IsNull: proto.Bool(false), DecimalValue: proto.Int64(200)}},
-		{"wide decimal", Col("wide").Eq(big.NewRat(-128, 100)), leafEqual, 10, &fmsg.PbLiteralValue{LiteralType: proto.Int32(9), IsNull: proto.Bool(false), DecimalBytes: []byte{0xff, 0x80}}},
+		{"wide decimal", Col("wide").Eq(big.NewRat(-128, 100)), leafEqual, 10, &fmsg.PbLiteralValue{LiteralType: proto.Int32(9), IsNull: proto.Bool(false), DecimalBytes: []byte{0x80}}},
 		{"date", Col("day").Eq(day), leafEqual, 11, &fmsg.PbLiteralValue{LiteralType: proto.Int32(10), IsNull: proto.Bool(false), BigintValue: proto.Int64(day.Unix() / 86400)}},
 		{"time", Col("at").Lt(time.Date(1970, 1, 1, 1, 2, 3, 4_000_000, time.UTC)), leafLessThan, 12, &fmsg.PbLiteralValue{LiteralType: proto.Int32(11), IsNull: proto.Bool(false), IntValue: proto.Int32(3_723_004)}},
 		{"timestamp", Col("ts").Ge(stamp), leafGreaterOrEqual, 13, &fmsg.PbLiteralValue{LiteralType: proto.Int32(12), IsNull: proto.Bool(false), TimestampMillisValue: proto.Int64(stamp.UnixMilli()), TimestampNanoOfMillisValue: proto.Int32(7000)}},

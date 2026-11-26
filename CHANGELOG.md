@@ -10,6 +10,14 @@ breaking changes.
 
 ### Fixed
 
+- Encoded Fluss 1.0 physical keys for partitioned KV writes and lookups,
+  excluding partition columns from stored keys and default bucket routing.
+  See [KV key compatibility](docs/data-operations.md#kv-key-compatibility)
+  before upgrading a table written by an older fluss-go client.
+- Encoded wide DECIMAL values in Java's minimal signed form at negative
+  byte-width boundaries, fixing interoperability for affected primary and
+  bucket keys. Existing row values still decode; review the
+  [key cutover guidance](docs/data-operations.md#kv-key-compatibility).
 - Waited for a canceled snapshot read to return before closing its provider
   resources, preventing cleanup from racing with an active read.
 - Retained in-flight KV scan requests across caller cancellation or deadlines,

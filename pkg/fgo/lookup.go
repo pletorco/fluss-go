@@ -22,6 +22,7 @@ type Lookuper struct {
 	tableID     int64
 	partitionID int64
 	bucketCount int32
+	keys        kvKeyLayout
 	resolver    schemaResolver
 	observer    MetricsObserver
 
@@ -62,6 +63,10 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	keys, err := newKVKeyLayout(table.Schema, path.Partition)
+	if err != nil {
+		return nil, err
+	}
 	layout, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err
@@ -74,7 +79,7 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 	}
 	client := &Lookuper{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: layout.partitionID, bucketCount: layout.count, resolver: resolverFor(backend, table),
+		partitionID: layout.partitionID, bucketCount: layout.count, keys: keys, resolver: resolverFor(backend, table),
 		queue: make(chan *lookupTask, config.MaxQueuedKeys),
 		jobs:  make(chan lookupBatch, config.MaxInFlightRequests),
 		slots: make(chan struct{}, config.MaxQueuedKeys),
@@ -366,57 +371,19 @@ func (c *Lookuper) enqueueLookup(
 }
 
 func (c *Lookuper) encodePoint(key PrimaryKey) ([]byte, int32, error) {
-	encoded, err := EncodeLookupKey(c.table.Schema, key, 1)
-	if err != nil {
-		return nil, 0, err
+	names := c.table.Schema.PrimaryKey
+	if len(key) != len(names) {
+		return nil, 0, fmt.Errorf("%w: got %d values for %d primary-key columns", ErrInvalidRow, len(key), len(names))
 	}
-	values := make(map[string]any, len(key))
-	for index, name := range c.table.Schema.PrimaryKey {
-		values[name] = key[index]
-	}
-	bucket, err := c.bucketForValues(values)
-	return encoded, bucket, err
+	return c.keys.encodePoint(c.table.Schema, rowValues(c.table.Schema, Row(key), names), c.bucketCount)
 }
 
 func (c *Lookuper) encodePrefix(prefix PrimaryKey) ([]byte, int32, error) {
-	bucketNames := c.table.Schema.BucketKey
-	if len(bucketNames) == 0 {
-		bucketNames = c.table.Schema.PrimaryKey
+	names := c.table.Schema.PrimaryKey
+	if len(prefix) == 0 || len(prefix) > len(names) {
+		return nil, 0, fmt.Errorf("%w: prefix has %d values for %d primary-key columns", ErrInvalidRow, len(prefix), len(names))
 	}
-	if len(prefix) < len(bucketNames) {
-		return nil, 0, fmt.Errorf("%w: prefix does not contain the complete bucket key", ErrInvalidRow)
-	}
-	for index, name := range bucketNames {
-		if index >= len(c.table.Schema.PrimaryKey) || c.table.Schema.PrimaryKey[index] != name {
-			return nil, 0, fmt.Errorf("%w: bucket key is not a leading primary-key prefix", ErrInvalidSchema)
-		}
-	}
-	encoded, err := EncodePrefixLookupKey(c.table.Schema, prefix, 1)
-	if err != nil {
-		return nil, 0, err
-	}
-	values := make(map[string]any, len(prefix))
-	for index := range prefix {
-		values[c.table.Schema.PrimaryKey[index]] = prefix[index]
-	}
-	bucket, err := c.bucketForValues(values)
-	return encoded, bucket, err
-}
-
-func (c *Lookuper) bucketForValues(values map[string]any) (int32, error) {
-	names := c.table.Schema.BucketKey
-	if len(names) == 0 {
-		names = c.table.Schema.PrimaryKey
-	}
-	key := make(PrimaryKey, len(names))
-	for index, name := range names {
-		key[index] = values[name]
-	}
-	encoded, err := encodeKeyColumns(c.table.Schema, names, key)
-	if err != nil {
-		return 0, err
-	}
-	return flussBucket(encoded, int(c.bucketCount))
+	return c.keys.encodePrefix(c.table.Schema, rowValues(c.table.Schema, Row(prefix), names[:len(prefix)]), c.bucketCount)
 }
 
 func decodeLookupValueWithResolver(
