@@ -594,7 +594,7 @@ func TestAppendWriterRequestTimeoutTerminatesClose(t *testing.T) {
 	}
 	select {
 	case <-writer.done:
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("writer scheduler remained active after timed out close")
 	}
 }
