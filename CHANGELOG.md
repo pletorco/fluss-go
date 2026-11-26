@@ -10,6 +10,8 @@ breaking changes.
 
 ### Fixed
 
+- Retained in-flight KV scan requests across caller cancellation or deadlines,
+  so the next poll resumes without replaying a sequence or reopening a session.
 - Refreshed a stale leader route when a single-bucket `ListOffsets` reply
   reports a routing error in its response body.
 - Canceled schema waits during point and prefix lookup decoding when the

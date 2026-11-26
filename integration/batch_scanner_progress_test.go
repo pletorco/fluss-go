@@ -5,7 +5,7 @@ package integration_test
 import (
 	"context"
 	"errors"
-	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -49,10 +49,22 @@ func testInterruptedKVPage(t *testing.T, address string, client *fgo.Client, adm
 		t.Fatal(err)
 	}
 	_ = waitForSchemaChange(t, ctx, client, path, oldTable.SchemaID)
-	for _, batchBytes := range []int32{1, 1 << 20} {
-		t.Run(fmt.Sprintf("batch_bytes_%d", batchBytes), func(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		batchBytes    int32
+		interruptPage int32
+	}{
+		{name: "decode paginated", batchBytes: 1},
+		{name: "decode terminal", batchBytes: 1 << 20},
+		{name: "initial reply", batchBytes: 1, interruptPage: 1},
+		{name: "continuation reply", batchBytes: 1, interruptPage: 2},
+		{name: "terminal reply", batchBytes: 1 << 20, interruptPage: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			pollCtx, cancelPoll := context.WithCancel(ctx)
 			defer cancelPoll()
+			resume := make(chan struct{})
+			resumeReply := sync.OnceFunc(func() { close(resume) })
 			var armed atomic.Bool
 			var scanCalls atomic.Int32
 			scanClient := openClient(t, []string{address}, fgo.WithMetricsObserver(fgo.MetricsObserverFunc(func(event fgo.MetricEvent) {
@@ -60,9 +72,17 @@ func testInterruptedKVPage(t *testing.T, address string, client *fgo.Client, adm
 					return
 				}
 				if event.APIKey == fmsg.APIKeyScanKv {
-					scanCalls.Add(1)
+					if scanCalls.Add(1) == test.interruptPage && armed.CompareAndSwap(true, false) {
+						// Fluss already produced the response. Hold it before the
+						// scanner sees it, even after the caller's Poll is canceled.
+						cancelPoll()
+						select {
+						case <-resume:
+						case <-ctx.Done():
+						}
+					}
 				}
-				if event.APIKey == fmsg.APIKeyGetTableSchema && armed.CompareAndSwap(true, false) {
+				if test.interruptPage == 0 && event.APIKey == fmsg.APIKeyGetTableSchema && armed.CompareAndSwap(true, false) {
 					cancelPoll()
 				}
 			})))
@@ -78,26 +98,39 @@ func testInterruptedKVPage(t *testing.T, address string, client *fgo.Client, adm
 				t.Fatalf("buckets = %#v, %v", buckets, err)
 			}
 			scanner, err := scanClient.NewBatchScanner(ctx, table, buckets[0],
-				fgo.WithBatchSizeBytes(batchBytes), fgo.WithBatchProjection("name", "id", "extra"))
+				fgo.WithBatchSizeBytes(test.batchBytes), fgo.WithBatchProjection("name", "id", "extra"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer scanner.Close()
+			defer resumeReply()
+			var rows []fgo.Row
+			requestsBefore := max(test.interruptPage-1, 0)
+			for range requestsBefore {
+				result, err := scanner.Poll(ctx)
+				defer result.Release()
+				if err != nil || result.Done || len(result.Rows) == 0 {
+					t.Fatalf("page before interruption = %#v, %v", result, err)
+				}
+				rows = append(rows, result.Rows...)
+			}
 			armed.Store(true)
 			interrupted, err := scanner.Poll(pollCtx)
 			defer interrupted.Release()
 			if !errors.Is(err, context.Canceled) || len(interrupted.Rows) != 0 || scanner.Done() || armed.Load() {
 				t.Fatalf("interrupted Poll = %#v, %v; done=%v, armed=%v", interrupted, err, scanner.Done(), armed.Load())
 			}
-			if got := scanCalls.Load(); got != 1 {
-				t.Fatalf("interrupted Poll made %d ScanKv requests, want 1", got)
+			wantCalls := requestsBefore + 1
+			if got := scanCalls.Load(); got != wantCalls {
+				t.Fatalf("interrupted Poll made %d ScanKv requests, want %d", got, wantCalls)
 			}
+			resumeReply()
 			first, err := scanner.Poll(ctx)
 			defer first.Release()
-			if err != nil || len(first.Rows) == 0 || scanCalls.Load() != 1 || batchBytes > 1 && !first.Done {
+			if err != nil || len(first.Rows) == 0 || scanCalls.Load() != wantCalls || test.batchBytes > 1 && !first.Done {
 				t.Fatalf("retained-page Poll = %#v, %v; requests=%d", first, err, scanCalls.Load())
 			}
-			rows := append([]fgo.Row(nil), first.Rows...)
+			rows = append(rows, first.Rows...)
 			for !scanner.Done() && ctx.Err() == nil {
 				result, err := scanner.Poll(ctx)
 				if err != nil {

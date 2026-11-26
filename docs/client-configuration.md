@@ -76,10 +76,12 @@ writers can share one client.
 `NewBatchScanner` uses the Fluss 1.0 `SCAN_KV` server session for primary-key
 tables. `WithBatchSizeBytes` maps to the per-response byte bound. The row
 `WithBatchLimit` is sent when the session opens and applies to the whole scan,
-while projection remains a client-side result-shaping operation. A failed
-decode retains at most one received page for a later `Poll`, without replaying
-the server request. Callers must close an unfinished scanner to release that
-page and send `close_scanner` if the server session is still active; terminal
+while projection remains a client-side result-shaping operation. For KV
+scans, the `Poll` context bounds the caller's wait and decoding; a submitted
+request has a separate, fixed 30-second timeout rather than a configurable
+Java-style `client.request-timeout`. A later poll can await the same request
+or retry decoding one retained page. Close an unfinished scanner to cancel
+outstanding work and send `close_scanner` for a known active session; terminal
 responses have already reclaimed the server session, even when their rows
 have not yet been delivered.
 
