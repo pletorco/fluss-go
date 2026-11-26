@@ -431,6 +431,9 @@ func testCatalog(t *testing.T, admin *fadm.Client, database string, logPath, kvP
 	t.Run("reused nested DDL schema", func(t *testing.T) {
 		testDDLReusesNestedSchema(t, admin, database)
 	})
+	t.Run("column nullability contract", func(t *testing.T) {
+		testDDLNullabilityContract(t, admin, database)
+	})
 }
 
 func requireEnvironment(t *testing.T) {
@@ -837,6 +840,9 @@ func testSchemaEvolution(
 	}
 	t.Run("returned metadata ownership", func(t *testing.T) {
 		testSchemaMetadataOwnership(t, ctx, client, path)
+	})
+	t.Run("active scanner metadata ownership", func(t *testing.T) {
+		testActiveLogScannerMetadataOwnership(t, ctx, client, path)
 	})
 }
 

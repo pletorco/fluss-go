@@ -1,6 +1,16 @@
 package fgo
 
-import "slices"
+import (
+	"maps"
+	"slices"
+)
+
+// snapshotTable retains detached metadata, not caller rows.
+func snapshotTable(table Table) Table {
+	table.Schema = snapshotSchema(table.Schema)
+	table.Properties = maps.Clone(table.Properties)
+	return table
+}
 
 // snapshotSchema detaches every mutable part of schema metadata. Callers use it
 // at ownership boundaries; internal schema resolvers borrow immutable snapshots.

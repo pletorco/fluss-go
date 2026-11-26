@@ -71,8 +71,10 @@ func (c *Client) NewSnapshotBatchScanner(
 	if snapshotID < 0 || table.Kind != PrimaryKeyTable {
 		return nil, fmt.Errorf("%w: snapshot scans require a primary-key table and non-negative snapshot ID", ErrInvalidConfig)
 	}
+	table = snapshotTable(table)
+	// The provider can keep the request after open. Do not expose scanner-owned metadata.
 	reader, err := c.snapshotProvider.OpenSnapshot(ctx, SnapshotBatchRequest{
-		Table: table, Bucket: bucket, SnapshotID: snapshotID,
+		Table: snapshotTable(table), Bucket: bucket, SnapshotID: snapshotID,
 		Projection: append([]string(nil), config.Projection...), Limit: config.Limit,
 	})
 	if err != nil {
@@ -98,6 +100,7 @@ func newBatchScanner(
 	if err != nil {
 		return nil, err
 	}
+	table = snapshotTable(table)
 	if backend == nil && snapshot == nil {
 		return nil, fmt.Errorf("%w: batch scan backend is required", ErrInvalidConfig)
 	}

@@ -84,3 +84,36 @@ func testSchemaMetadataOwnership(t *testing.T, ctx context.Context, client *fgo.
 		t.Fatalf("caller metadata mutation changed historical/current decoding: %#v", rows)
 	}
 }
+
+func testActiveLogScannerMetadataOwnership(t *testing.T, ctx context.Context, client *fgo.Client, path fgo.TablePath) {
+	t.Helper()
+	table, err := client.GetTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := client.NewLogScanner(ctx, table, fgo.Earliest(),
+		fgo.WithScanProjection("message", "id"), fgo.WithScanRowLimit(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	table.Schema.Columns[1].LogicalType.Root = "BIGINT"
+	s.Schema().Columns[0].LogicalType.Root = "BYTES"
+	if got := s.Schema().Columns[0]; got.LogicalType.Root != "STRING" {
+		t.Fatalf("scanner schema changed to %v", got.LogicalType)
+	}
+	rows := make(map[int32]string)
+	for !s.Done() {
+		result, err := s.Poll(ctx)
+		result.Release()
+		if err != nil || len(result.BucketErrors) != 0 {
+			t.Fatalf("poll after metadata edits = %v, %v", result.BucketErrors, err)
+		}
+		for _, item := range result.Records {
+			rows[item.Record.Value[1].(int32)] = item.Record.Value[0].(string)
+		}
+	}
+	if len(rows) != 2 || rows[1] != "old" || rows[2] != "new" {
+		t.Fatalf("projected rows after metadata edits = %v", rows)
+	}
+}

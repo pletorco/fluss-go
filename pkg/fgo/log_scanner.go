@@ -176,6 +176,7 @@ func newLogScanner(
 	if err := start.Validate(); err != nil {
 		return nil, err
 	}
+	table = snapshotTable(table)
 	config, err := scannerConfig(options)
 	if err != nil {
 		return nil, err
@@ -288,8 +289,8 @@ func (s *LogScanner) initializeOffsets(ctx context.Context, start ScanOffset) er
 	return nil
 }
 
-// Schema returns the result schema after projection.
-func (s *LogScanner) Schema() Schema { return s.schema }
+// Schema returns a detached copy of the result schema after projection.
+func (s *LogScanner) Schema() Schema { return snapshotSchema(s.schema) }
 
 // Subscribe adds or resets one bucket at start.
 func (s *LogScanner) Subscribe(ctx context.Context, bucket int32, start ScanOffset) error {
