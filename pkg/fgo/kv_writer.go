@@ -555,7 +555,7 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 				if err == nil {
 					pressure, pressureKnown = put.pressure, put.pressureKnown
 				}
-				return put.logEnd, err == nil, err
+				return put.logEnd, put.offsetKnown, err
 			},
 		)
 	} else {
@@ -661,11 +661,14 @@ func (w *UpsertWriter) completeKVBatch(
 	if offsetKnown {
 		first = logEnd - int64(len(batch.items))
 	}
-	for index, item := range batch.items {
+	for _, item := range batch.items {
 		item.future.complete(WriteResult{
-			Bucket: bucket, BaseOffset: first + int64(index), OffsetKnown: offsetKnown,
+			Bucket: bucket, BaseOffset: first, OffsetKnown: offsetKnown,
 			Records: 1, Pressure: pressure, PressureKnown: pressureKnown, Err: err,
 		})
+		if offsetKnown {
+			first++
+		}
 	}
 }
 
