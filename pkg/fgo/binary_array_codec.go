@@ -174,7 +174,10 @@ func writeArrayElement(encoded []byte, slot int, logicalType LogicalType, value 
 		variable := signedBigEndian(unscaled)
 		return appendArrayVariable(encoded, slot, variable, 16)
 	case TimestampType, TimestampLTZType:
-		millis, nanos := timestampParts(kind, value.(time.Time))
+		millis, nanos, err := rowTimestampParts(logicalType, value.(time.Time))
+		if err != nil {
+			return nil, err
+		}
 		if logicalType.Precision <= 3 {
 			binary.LittleEndian.PutUint64(encoded[slot:], uint64(millis))
 			break

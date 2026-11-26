@@ -235,6 +235,11 @@ Fluss receives only the prefix for tenant `7` and a separate partition ID.
 
 ### KV key compatibility
 
+For `TIMESTAMP(p)` and `TIMESTAMP_LTZ(p)`, binary row and key encoders reject
+fractional seconds that exceed the declared precision with `ErrInvalidRow`.
+Normalize the timestamp deliberately before encoding if that is what the
+application intends. Representable values retain their existing wire encoding.
+
 Earlier fluss-go clients included partition columns in stored KV keys. They
 also emitted an extra sign byte for wide DECIMAL (precision greater than 18)
 at negative signed-width boundaries, such as unscaled `-128` or `-32768`.
