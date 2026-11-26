@@ -84,7 +84,7 @@ func (b *fakeUpsertWriterBackend) put(
 	if err != nil {
 		return kvPutResult{}, err
 	}
-	return kvPutResult{logEnd: int64(len(b.calls)*10 + len(batch.Records))}, nil
+	return kvPutResult{logEnd: int64(len(b.calls)*10 + len(batch.Records)), offsetKnown: true}, nil
 }
 
 func (b *fakeUpsertWriterBackend) putCalls() []putKVCall {
