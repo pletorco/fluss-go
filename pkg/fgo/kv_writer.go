@@ -322,10 +322,15 @@ func (w *UpsertWriter) validatePartialSelection(selected map[string]bool) error 
 		}
 	}
 	for _, column := range w.table.Schema.Columns {
-		if !selected[column.Name] && !column.Nullable && !slices.Contains(w.table.Schema.PrimaryKey, column.Name) &&
-			!slices.Contains(w.table.Schema.AutoIncrement, column.Name) {
-			return fmt.Errorf("%w: omitted column %q is not nullable", ErrInvalidRow, column.Name)
+		if selected[column.Name] || column.Nullable || slices.Contains(w.table.Schema.PrimaryKey, column.Name) {
+			continue
 		}
+		if slices.Contains(w.table.Schema.AutoIncrement, column.Name) {
+			// In Fluss 1.0 the default partial merger checks nullability before
+			// the server can generate a value for a first insert.
+			return fmt.Errorf("%w: partial upsert does not support NOT NULL auto-increment column %q on Fluss 1.0", ErrUnsupportedAPI, column.Name)
+		}
+		return fmt.Errorf("%w: omitted column %q is not nullable", ErrInvalidRow, column.Name)
 	}
 	return nil
 }

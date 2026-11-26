@@ -278,11 +278,16 @@ change physical primary-key encoding or determine the changelog format.
 `MergeModeOverwrite` bypasses it and writes the supplied values as replacements.
 One writer uses one mode for every mutation it accepts.
 
-`PartialUpsert` sends the complete compacted row shape required by Fluss 1.0
+`PartialUpsert` sends the complete row shape in the table's KV value format
 and marks only the selected target columns for application. Omitted nullable
 fields are encoded as null placeholders in that payload; the server preserves
 their existing stored values. The selection must include every primary-key
-column, and every omitted non-key column must be nullable.
+column and must not include server-generated `AUTO_INCREMENT` columns. On
+Fluss 1.0.0, declare the generated column nullable to use it with a partial
+upsert. Fluss still generates its value on insert and preserves it on update.
+`PartialUpsert` reports `ErrUnsupportedAPI` for a required generated column:
+the default Fluss partial merger rejects the schema before generation runs.
+Ordinary omitted non-key fields still have to be nullable.
 
 <!-- go-source: internal/docexamples/snippets_test.go kvMerge -->
 ```go

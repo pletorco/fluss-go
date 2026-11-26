@@ -54,6 +54,8 @@ breaking changes.
   state, returning only a defined terminal status.
 - Routed primary-key reads and writes by the table or partition's actual
   bucket count, even when a bucket temporarily has no leader.
+- Reported the Fluss 1.0 limitation on partial upserts of a `NOT NULL`
+  auto-increment column before dispatch, instead of an unrelated row error.
 - Kept throttled KV buckets out of the active RPC slots so healthy buckets
   can continue writing.
 - Returned an explicit error when a scan cannot resolve all bucket leaders,
