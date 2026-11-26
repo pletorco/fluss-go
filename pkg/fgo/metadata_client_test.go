@@ -82,22 +82,52 @@ func TestMetadataResponseConversionFailures(t *testing.T) {
 	}
 }
 
-func TestApplyPartitionServersCopiesAvailableNodes(t *testing.T) {
+func TestRouterOwnsFetchedPartitionAndServers(t *testing.T) {
+	path := PhysicalTablePath{TablePath: TablePath{Database: "db", Table: "events"}, Partition: "day=1"}
 	coordinator := ServerNode{ID: 1, Address: "coordinator:9123", ServerType: Coordinator}
-	tablets := map[int32]ServerNode{2: {ID: 2, Address: "tablet:9123", ServerType: TabletServer}}
-	metadata := &Metadata{}
-	applyPartitionServers(metadata, PartitionMetadata{
-		coordinator: coordinator,
-		tablets:     tablets,
-	})
-	tablets[2] = ServerNode{}
-	if metadata.Coordinator != coordinator || metadata.Tablets[2].Address != "tablet:9123" {
-		t.Fatalf("partition servers = %#v", metadata)
+	node := ServerNode{ID: 2, Address: "tablet:9123", ServerType: TabletServer}
+	leader := node
+	partition := PartitionMetadata{
+		Path: path, BucketCount: 1,
+		Buckets:       map[int32]ServerNode{0: node},
+		BucketDetails: map[int32]BucketMetadata{0: {Leader: &leader, Replicas: []int32{2, 3}, ISR: []int32{2}}},
+		coordinator:   coordinator,
+		tablets:       map[int32]ServerNode{2: node},
 	}
-	unchanged := *metadata
-	applyPartitionServers(metadata, PartitionMetadata{})
-	if metadata.Coordinator != unchanged.Coordinator || metadata.Tablets[2] != unchanged.Tablets[2] {
-		t.Fatalf("empty partition changed metadata = %#v", metadata)
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
+		return TableMetadata{Path: path.TablePath}, nil
+	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
+		return partition, nil
+	})
+	if err := router.RefreshPhysical(t.Context(), path); err != nil {
+		t.Fatal(err)
+	}
+	partition.tablets[2] = ServerNode{}
+	delete(partition.Buckets, 0)
+	detail := partition.BucketDetails[0]
+	detail.Leader.Address = "changed:9123"
+	detail.Replicas[0], detail.ISR[0] = 9, 9
+	delete(partition.BucketDetails, 0)
+	if got, count, err := router.lookupPhysical(path, 0); err != nil || got != node || count != 1 {
+		t.Fatalf("cached route = %v, %d, %v", got, count, err)
+	}
+	router.mu.RLock()
+	cached := router.metadata.Tables[path.TablePath].Partitions[physicalTableKey(path)]
+	owned, ownedTablet := cached.BucketDetails[0], cached.tablets[2]
+	router.mu.RUnlock()
+	if owned.Leader == nil || *owned.Leader != node || owned.Replicas[0] != 2 || owned.ISR[0] != 2 || ownedTablet != node {
+		t.Fatalf("cached partition aliased its fetch response: %#v, %#v", owned, ownedTablet)
+	}
+	partition.coordinator = ServerNode{}
+	partition.tablets = nil
+	if err := router.RefreshPhysical(t.Context(), path); err != nil {
+		t.Fatal(err)
+	}
+	router.mu.RLock()
+	gotCoordinator, gotTablet := router.metadata.Coordinator, router.metadata.Tablets[2]
+	router.mu.RUnlock()
+	if gotCoordinator != coordinator || gotTablet != node {
+		t.Fatalf("empty partition server metadata changed defaults = %v, %v", gotCoordinator, gotTablet)
 	}
 }
 

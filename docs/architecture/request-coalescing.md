@@ -23,6 +23,35 @@ completion and publication. Connections are owned by the connection cache after
 publication and are closed by the connection manager. Metadata and schemas are
 copied into their caches before the shared operation completes.
 
+## Routing metadata ownership and refresh cost
+
+The router owns its cache; it does not hand out cached maps. Route readers
+take the existing read lock and return a server node by value. Table or
+partition refreshes copy the incoming metadata (including nested replica
+state) before taking the write lock. Before publishing, they check the
+operation context again and verify the parent table ID for partitions.
+Publication and invalidation update only the affected entry under the lock.
+A partition refresh that must reload its parent table still copies that new
+table response, but neither path copies unrelated cached metadata.
+
+To measure a single partition refresh without network overhead:
+
+```sh
+go test ./pkg/fgo -run '^$' -bench '^BenchmarkRouterRefreshPartition$' -benchmem -benchtime=300ms -count=3
+```
+
+Local medians (Go 1.26.11, Linux/amd64, AMD Ryzen 7 7735HS; four buckets and
+three replicas per partition):
+
+| Cached partitions | Time before → after | Bytes/op before → after | Allocations/op before → after |
+| --- | ---: | ---: | ---: |
+| 1 | 7.068 → 3.241 µs | 4,464 → 1,936 | 47 → 23 |
+| 100 | 122.378 → 3.263 µs | 167,736 → 1,936 | 1,732 → 23 |
+| 1,000 | 1,348.903 → 3.358 µs | 1,673,252 → 1,936 | 17,034 → 23 |
+
+These are in-memory measurements of the refresh path, not estimates of
+end-to-end RPC latency.
+
 ## Build-vs-buy decision
 
 `golang.org/x/sync/singleflight` was evaluated because it reliably suppresses
