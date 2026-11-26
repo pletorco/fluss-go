@@ -547,20 +547,11 @@ func (c *Client) GetTable(ctx context.Context, path TablePath) (Table, error) {
 	if err := path.Validate(); err != nil {
 		return Table{}, err
 	}
-	infoRequest, err := fmsg.NewRequest(fmsg.APIKeyGetTableInfo, 0)
+	info, err := c.getTableInfo(ctx, path)
 	if err != nil {
 		return Table{}, err
 	}
-	infoRequest.Message().(*fmsg.GetTableInfoRequest).TablePath = pbTablePath(path)
-	infoResponse, err := c.RequestCoordinator(ctx, infoRequest)
-	if err != nil {
-		return Table{}, err
-	}
-	info, ok := infoResponse.Message().(*fmsg.GetTableInfoResponse)
-	if !ok {
-		return Table{}, fmt.Errorf("fgo: get table info: unexpected response %T", infoResponse.Message())
-	}
-	schema, err := c.resolveSchema(ctx, path, info.GetSchemaId())
+	schema, err := c.resolveSchema(ctx, path, info.GetTableId(), info.GetSchemaId())
 	if err != nil {
 		return Table{}, err
 	}
@@ -591,17 +582,51 @@ func (c *Client) GetTable(ctx context.Context, path TablePath) (Table, error) {
 		RemoteDataDirectory: info.GetRemoteDataDir(), Properties: descriptor.Properties,
 	}
 	if c.schemas != nil {
-		c.schemas.store(path, table.SchemaID, schema)
+		c.schemas.store(path, table.ID, table.SchemaID, schema)
 	}
 	table.Schema = snapshotSchema(schema)
 	return table, nil
 }
 
-func (c *Client) resolveSchema(ctx context.Context, path TablePath, schemaID int32) (Schema, error) {
-	if c.schemas == nil {
-		return c.fetchSchema(ctx, path, schemaID)
+func (c *Client) getTableInfo(ctx context.Context, path TablePath) (*fmsg.GetTableInfoResponse, error) {
+	request, err := fmsg.NewRequest(fmsg.APIKeyGetTableInfo, 0)
+	if err != nil {
+		return nil, err
 	}
-	return c.schemas.resolveSchema(ctx, path, schemaID)
+	request.Message().(*fmsg.GetTableInfoRequest).TablePath = pbTablePath(path)
+	response, err := c.RequestCoordinator(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	info, ok := response.Message().(*fmsg.GetTableInfoResponse)
+	if !ok {
+		return nil, fmt.Errorf("fgo: get table info: unexpected response %T", response.Message())
+	}
+	return info, nil
+}
+
+func (c *Client) resolveSchema(ctx context.Context, path TablePath, tableID int64, schemaID int32) (Schema, error) {
+	if c.schemas == nil {
+		return c.fetchTableSchema(ctx, path, tableID, schemaID)
+	}
+	return c.schemas.resolveSchema(ctx, path, tableID, schemaID)
+}
+
+func (c *Client) fetchTableSchema(ctx context.Context, path TablePath, tableID int64, schemaID int32) (Schema, error) {
+	schema, err := c.fetchSchema(ctx, path, schemaID)
+	if err != nil {
+		return Schema{}, err
+	}
+	// GetTableSchema addresses the table by path and returns only the schema
+	// ID. Recheck the table identity before publishing a cache miss.
+	info, err := c.getTableInfo(ctx, path)
+	if err != nil {
+		return Schema{}, err
+	}
+	if info.GetTableId() != tableID {
+		return Schema{}, fmt.Errorf("%w: table %s now has ID %d, expected %d", ErrMetadata, path, info.GetTableId(), tableID)
+	}
+	return schema, nil
 }
 
 func (c *Client) fetchSchema(ctx context.Context, path TablePath, schemaID int32) (Schema, error) {

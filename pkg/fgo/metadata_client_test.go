@@ -150,6 +150,34 @@ func TestGetTableLoadsServerSchema(t *testing.T) {
 	}
 }
 
+func TestGetTableRejectsReplacementDuringSchemaFetch(t *testing.T) {
+	path := TablePath{Database: "db", Table: "events"}
+	var tableID int64 = 9
+	client := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
+		switch message := response.Message().(type) {
+		case *fmsg.GetTableInfoResponse:
+			message.TableId, message.SchemaId = proto.Int64(tableID), proto.Int32(1)
+			message.TableJson = []byte(`{"bucket_count":1}`)
+		case *fmsg.GetTableSchemaResponse:
+			tableID = 10
+			message.SchemaId = proto.Int32(1)
+			message.SchemaJson = []byte(`{"version":1,"columns":[{"name":"new_column","data_type":{"type":"BIGINT"},"id":1}],"highest_field_id":1}`)
+		}
+		return response, nil
+	}), nil)
+	client.versions[fmsg.APIKeyGetTableInfo], client.versions[fmsg.APIKeyGetTableSchema] = 0, 0
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if _, err := client.GetTable(ctx, path); !errors.Is(err, ErrMetadata) {
+		t.Fatalf("GetTable during replacement = %v", err)
+	}
+	table, err := client.GetTable(ctx, path)
+	if err != nil || table.ID != 10 || table.Schema.Columns[0].Name != "new_column" {
+		t.Fatalf("GetTable after replacement = %+v, %v", table, err)
+	}
+}
+
 func metadataResponse(path TablePath) *fmsg.MetadataResponse {
 	return &fmsg.MetadataResponse{
 		CoordinatorServer: serverNode(1, "coordinator", 9123),

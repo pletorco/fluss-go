@@ -917,6 +917,7 @@ func serveReplacementCoordinator(t *testing.T, conn net.Conn) <-chan struct{} {
 			fmsg.APIKeyApiVersions,
 			fmsg.APIKeyGetTableInfo,
 			fmsg.APIKeyGetTableSchema,
+			fmsg.APIKeyGetTableInfo,
 			fmsg.APIKeyGetMetadata,
 		} {
 			id, key, _ := readTransportRequest(t, conn)

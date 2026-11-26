@@ -111,6 +111,10 @@ func TestFluss100Integration(t *testing.T) {
 		testSchemaEvolution(t, client, admin, database)
 	})
 
+	t.Run("schema cache after table recreation", func(t *testing.T) {
+		testSchemaAfterTableRecreation(t, client, admin, database)
+	})
+
 	t.Run("log write formats", func(t *testing.T) {
 		testLogFormats(t, client, admin, database)
 	})

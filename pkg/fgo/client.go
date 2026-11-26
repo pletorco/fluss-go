@@ -96,7 +96,7 @@ func Open(ctx context.Context, options ...Option) (*Client, error) {
 
 func newClient(requester fmsg.Requester, closeFn func() error) *Client {
 	client := newPhysicalClient(requester, closeFn)
-	client.schemas = newSchemaCache(defaultSchemaCacheEntries, client.fetchSchema)
+	client.schemas = newSchemaCache(defaultSchemaCacheEntries, client.fetchTableSchema)
 	return client
 }
 

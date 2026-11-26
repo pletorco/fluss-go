@@ -17,7 +17,7 @@ func TestSchemaCacheCoalescesFetchesAndSeparatesWaiterCancellation(t *testing.T)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var calls atomic.Int32
-	cache := newSchemaCache(4, func(ctx context.Context, _ TablePath, _ int32) (Schema, error) {
+	cache := newSchemaCache(4, func(ctx context.Context, _ TablePath, _ int64, _ int32) (Schema, error) {
 		if calls.Add(1) == 1 {
 			close(started)
 		}
@@ -37,17 +37,17 @@ func TestSchemaCacheCoalescesFetchesAndSeparatesWaiterCancellation(t *testing.T)
 	canceledResult := make(chan result, 1)
 	canceled, cancel := context.WithCancel(context.Background())
 	go func() {
-		schema, err := cache.resolveSchema(canceled, path, 1)
+		schema, err := cache.resolveSchema(canceled, path, 9, 1)
 		canceledResult <- result{schema: schema, err: err}
 	}()
 	for range 7 {
 		go func() {
-			schema, err := cache.resolveSchema(context.Background(), path, 1)
+			schema, err := cache.resolveSchema(context.Background(), path, 9, 1)
 			results <- result{schema: schema, err: err}
 		}()
 	}
 	<-started
-	waitForCoalescerWaiters(t, cache.flights, schemaCacheKey{path: path, id: 1}, 8)
+	waitForCoalescerWaiters(t, cache.flights, schemaCacheKey{path: path, tableID: 9, id: 1}, 8)
 	cancel()
 	if result := <-canceledResult; !errors.Is(result.err, context.Canceled) {
 		t.Fatalf("canceled resolve = %#v", result)
@@ -71,7 +71,7 @@ func TestSchemaCacheCoalescesFetchesAndSeparatesWaiterCancellation(t *testing.T)
 func TestSchemaCacheCancelsUnobservedFetchAndEvictsLRU(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
 	fetchCanceled := make(chan struct{})
-	canceling := newSchemaCache(1, func(ctx context.Context, _ TablePath, _ int32) (Schema, error) {
+	canceling := newSchemaCache(1, func(ctx context.Context, _ TablePath, _ int64, _ int32) (Schema, error) {
 		<-ctx.Done()
 		close(fetchCanceled)
 		return Schema{}, ctx.Err()
@@ -79,7 +79,7 @@ func TestSchemaCacheCancelsUnobservedFetchAndEvictsLRU(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() {
-		_, err := canceling.resolveSchema(ctx, path, 1)
+		_, err := canceling.resolveSchema(ctx, path, 9, 1)
 		result <- err
 	}()
 	cancel()
@@ -94,14 +94,14 @@ func TestSchemaCacheCancelsUnobservedFetchAndEvictsLRU(t *testing.T) {
 
 	var mu sync.Mutex
 	calls := make(map[int32]int)
-	cache := newSchemaCache(2, func(_ context.Context, _ TablePath, id int32) (Schema, error) {
+	cache := newSchemaCache(2, func(_ context.Context, _ TablePath, _ int64, id int32) (Schema, error) {
 		mu.Lock()
 		calls[id]++
 		mu.Unlock()
 		return evolutionSchema("name", true, StringType), nil
 	})
 	for _, id := range []int32{1, 2, 1, 3, 2} {
-		if _, err := cache.resolveSchema(context.Background(), path, id); err != nil {
+		if _, err := cache.resolveSchema(context.Background(), path, 9, id); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -109,26 +109,26 @@ func TestSchemaCacheCancelsUnobservedFetchAndEvictsLRU(t *testing.T) {
 		t.Fatalf("fetch calls = %#v", calls)
 	}
 	cache.close()
-	if _, err := cache.resolveSchema(context.Background(), path, 1); !errors.Is(err, ErrClosed) {
+	if _, err := cache.resolveSchema(context.Background(), path, 9, 1); !errors.Is(err, ErrClosed) {
 		t.Fatalf("closed cache error = %v", err)
 	}
 }
 
 func TestSchemaCacheRejectsInvalidInputsAndMalformedSchemas(t *testing.T) {
-	cache := newSchemaCache(1, func(context.Context, TablePath, int32) (Schema, error) {
+	cache := newSchemaCache(1, func(context.Context, TablePath, int64, int32) (Schema, error) {
 		return Schema{}, nil
 	})
 	path := TablePath{Database: "db", Table: "events"}
-	if _, err := cache.resolveSchema(nil, path, 1); !errors.Is(err, ErrInvalidConfig) {
+	if _, err := cache.resolveSchema(nil, path, 9, 1); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil context error = %v", err)
 	}
-	if _, err := cache.resolveSchema(context.Background(), TablePath{}, 1); !errors.Is(err, ErrInvalidConfig) {
+	if _, err := cache.resolveSchema(context.Background(), TablePath{}, 9, 1); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("invalid path error = %v", err)
 	}
-	if _, err := cache.resolveSchema(context.Background(), path, -1); !errors.Is(err, ErrInvalidSchema) {
+	if _, err := cache.resolveSchema(context.Background(), path, 9, -1); !errors.Is(err, ErrInvalidSchema) {
 		t.Fatalf("negative schema ID error = %v", err)
 	}
-	if _, err := cache.resolveSchema(context.Background(), path, 1); !errors.Is(err, ErrInvalidSchema) {
+	if _, err := cache.resolveSchema(context.Background(), path, 9, 1); !errors.Is(err, ErrInvalidSchema) {
 		t.Fatalf("malformed fetched schema error = %v", err)
 	}
 }
@@ -259,12 +259,12 @@ func TestJava091SchemaFixturesResolveByID(t *testing.T) {
 		1: []byte(`{"version":1,"columns":[{"name":"id","data_type":{"type":"INTEGER","nullable":false},"id":1},{"name":"old_name","data_type":{"type":"STRING","nullable":true},"id":2}],"highest_field_id":2}`),
 		2: []byte(`{"version":1,"columns":[{"name":"id","data_type":{"type":"INTEGER","nullable":false},"id":1},{"name":"name","data_type":{"type":"STRING","nullable":true},"id":2},{"name":"extra","data_type":{"type":"BIGINT","nullable":true},"id":3}],"highest_field_id":3}`),
 	}
-	cache := newSchemaCache(4, func(_ context.Context, _ TablePath, id int32) (Schema, error) {
+	cache := newSchemaCache(4, func(_ context.Context, _ TablePath, _ int64, id int32) (Schema, error) {
 		return ParseSchemaJSON(fixtures[id])
 	})
 	path := TablePath{Database: "db", Table: "events"}
 	for _, id := range []int32{1, 2, 1} {
-		schema, err := cache.resolveSchema(context.Background(), path, id)
+		schema, err := cache.resolveSchema(context.Background(), path, 9, id)
 		if err != nil || schema.HighestFieldID != int(id+1) {
 			t.Fatalf("schema %d = %#v, %v", id, schema, err)
 		}
@@ -308,6 +308,7 @@ type mapSchemaResolver struct {
 func (r *mapSchemaResolver) resolveSchema(
 	_ context.Context,
 	_ TablePath,
+	_ int64,
 	id int32,
 ) (Schema, error) {
 	schema, ok := r.schemas[id]

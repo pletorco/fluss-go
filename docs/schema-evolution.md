@@ -17,6 +17,9 @@ each decoded record.
 
 Reader constructors use the supplied table schema as the target result shape.
 Writer schemas in the shared cache come from server metadata.
+The cache keys include table identity, since a recreated table can reuse the
+same path and schema ID. On a cache miss, a table-info request checks the
+identity after the path-based schema fetch before the client caches the result.
 
 The following read paths decode historical schema IDs:
 
