@@ -104,7 +104,7 @@ done
 cd "$ROOT"
 go test ./pkg/fmsg -run '^TestProtocolGoldenBytes$'
 go test ./pkg/fgo -run '^Test(CompactedPrimaryKeyMatchesJavaFixture|RowsMatchJava091Fixtures|KVAndLogBatchesMatchJava091Fixtures|LogBatchEncodesV0AndV1Headers|ArrowLogBatchDecodesJava091Fixture|FlussBucketMatchesJava091)$'
-go test -tags=integration -run '^Test(ReliabilityConfigValidation|TableOffsetReadinessError)$' ./integration
+go test -tags=integration -run '^Test(ReliabilityConfigValidation|TableOffsetReadinessError|TableReadinessDeadline)$' ./integration
 
 if [[ "${FLUSS_RELIABILITY_ONLY:-0}" == "1" ]]; then
   selected_reliability="$(go test -tags=integration -list '^TestFluss100Reliability$' ./integration)"

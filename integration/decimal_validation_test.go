@@ -18,8 +18,6 @@ func testDecimalInputs(t *testing.T, client *fgo.Client, admin *fadm.Client, dat
 	t.Helper()
 	for _, format := range []string{"compacted", "indexed", "kv"} {
 		t.Run(format, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
 			schema := fgo.Schema{Columns: []fgo.Column{
 				{Name: "id", Type: fgo.IntType},
 				{Name: "amount", Type: fgo.DecimalType, Nullable: true,
@@ -35,10 +33,15 @@ func testDecimalInputs(t *testing.T, client *fgo.Client, admin *fadm.Client, dat
 				descriptor.Properties = map[string]string{"table.log.format": strings.ToUpper(format)}
 			}
 			path := fgo.TablePath{Database: database, Table: "decimals_" + format}
-			if err := admin.CreateTable(ctx, path, descriptor, false); err != nil {
+			createCtx, cancelCreate := context.WithTimeout(t.Context(), 30*time.Second)
+			err := admin.CreateTable(createCtx, path, descriptor, false)
+			cancelCreate()
+			if err != nil {
 				t.Fatal(err)
 			}
 			waitForTableReady(t, admin, path)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
 			table, err := client.GetTable(ctx, path)
 			if err != nil {
 				t.Fatal(err)
