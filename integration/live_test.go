@@ -99,6 +99,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("dynamic partition creation and routing", func(t *testing.T) {
 		testDynamicPartition(t, plainAddress, admin, database)
 	})
+	t.Run("partition bucket rescale", func(t *testing.T) {
+		testPartitionBucketRescale(t, client, admin, database)
+	})
 
 	t.Run("append and scan", func(t *testing.T) {
 		testLogData(t, client, logPath)

@@ -22,10 +22,9 @@ func sortedBuckets(buckets map[int32]ServerNode) ([]int32, error) {
 	return ids, nil
 }
 
-// completeScanBuckets prevents an all-bucket scan from silently accepting a
-// subset of the physical layout. The size check bounds allocation by metadata
-// actually received, not by the advertised count alone.
-func completeScanBuckets(count int32, leaders map[int32]ServerNode) ([]int32, error) {
+// completeBucketIDs requires a leader for every bucket in a physical layout.
+// The size check bounds allocation by metadata actually received.
+func completeBucketIDs(count int32, leaders map[int32]ServerNode) ([]int32, error) {
 	if count <= 0 || len(leaders) > int(count) {
 		return nil, fmt.Errorf("%w: %d leaders for %d buckets", ErrMetadata, len(leaders), count)
 	}

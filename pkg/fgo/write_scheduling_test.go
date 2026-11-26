@@ -43,8 +43,8 @@ func newSchedulingLogBackend(bucketCount int) *schedulingLogBackend {
 func (b *schedulingLogBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]ServerNode, error) {
-	return appendWriterTable().ID, b.locations, nil
+) (bucketLayout, error) {
+	return bucketLayout{physicalID: appendWriterTable().ID, count: int32(len(b.locations)), leaders: b.locations}, nil
 }
 
 func (b *schedulingLogBackend) initWriter(
@@ -212,8 +212,8 @@ type bucketIsolationLogBackend struct {
 func (b bucketIsolationLogBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]ServerNode, error) {
-	return appendWriterTable().ID, b.locations, nil
+) (bucketLayout, error) {
+	return bucketLayout{physicalID: appendWriterTable().ID, count: int32(len(b.locations)), leaders: b.locations}, nil
 }
 
 func (bucketIsolationLogBackend) initWriter(

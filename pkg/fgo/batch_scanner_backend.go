@@ -66,7 +66,7 @@ func resolvedTableBuckets(
 	bucketCount int32,
 	locations map[int32]ServerNode,
 ) ([]TableBucket, error) {
-	buckets, err := completeScanBuckets(bucketCount, locations)
+	buckets, err := completeBucketIDs(bucketCount, locations)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +93,9 @@ func (b clientBatchScanBackend) limitScan(
 	message.TableId = proto.Int64(bucket.TableID)
 	message.BucketId = proto.Int32(bucket.BucketID)
 	message.Limit = proto.Int32(limit)
+	if bucket.BucketCount > 0 {
+		message.RoutingBucketCount = proto.Int32(bucket.BucketCount)
+	}
 	if bucket.PartitionID >= 0 {
 		message.PartitionId = proto.Int64(bucket.PartitionID)
 	}

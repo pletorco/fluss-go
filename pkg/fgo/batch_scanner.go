@@ -33,7 +33,8 @@ type BatchScanner struct {
 	closed   bool
 }
 
-// NewBatchScanner scans the current state of one table bucket with Fluss LIMIT_SCAN.
+// NewBatchScanner scans the current state of one table bucket. Use a bucket
+// from [Client.ResolveTableBuckets] to include its actual routing count.
 func (c *Client) NewBatchScanner(
 	ctx context.Context,
 	table Table,
@@ -97,7 +98,9 @@ func newBatchScanner(
 	if backend == nil && snapshot == nil {
 		return nil, fmt.Errorf("%w: batch scan backend is required", ErrInvalidConfig)
 	}
-	if bucket.BucketCount <= 0 && table.BucketCount > 0 {
+	// Preserve the existing KV scan fallback, but a named log partition
+	// may have a different layout from the table's default for new partitions.
+	if bucket.BucketCount <= 0 && table.BucketCount > 0 && (bucket.PartitionID < 0 || table.Kind == PrimaryKeyTable) {
 		bucket.BucketCount = int32(table.BucketCount)
 	}
 	scanner := &BatchScanner{

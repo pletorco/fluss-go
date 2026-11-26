@@ -150,9 +150,10 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 	return c.requestBucket(ctx, path, bucket, request, 0)
 }
 
-// A positive keyedCount is the count used to hash the key, not the one used
-// to find a leader. Preserve it even on reroute so Fluss can reject stale keys.
-func (c *Client) requestBucket(ctx context.Context, path PhysicalTablePath, bucket int32, request fmsg.Request, keyedCount int32) (fmsg.Response, error) {
+// A positive layoutCount is the count used to choose the bucket, not the one
+// used to find its leader. Preserve it even on reroute so Fluss can reject a
+// request tied to a stale layout.
+func (c *Client) requestBucket(ctx context.Context, path PhysicalTablePath, bucket int32, request fmsg.Request, layoutCount int32) (fmsg.Response, error) {
 	if err := c.ensureOpen(); err != nil {
 		return nil, err
 	}
@@ -163,8 +164,8 @@ func (c *Client) requestBucket(ctx context.Context, path PhysicalTablePath, buck
 	if err != nil {
 		return nil, err
 	}
-	if keyedCount > 0 {
-		bucketCount = keyedCount
+	if layoutCount > 0 {
+		bucketCount = layoutCount
 	}
 	setRoutingBucketCount(request, bucketCount)
 	response, err := c.RequestTo(ctx, node, request)
@@ -182,7 +183,7 @@ func (c *Client) requestBucket(ctx context.Context, path PhysicalTablePath, buck
 	if refreshErr != nil {
 		return nil, refreshErr
 	}
-	if keyedCount <= 0 {
+	if layoutCount <= 0 {
 		setRoutingBucketCount(request, bucketCount)
 	}
 	return c.RequestTo(ctx, node, request)

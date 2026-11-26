@@ -196,6 +196,52 @@ func batchBackendClient(node ServerNode, requester requesterFunc) *Client {
 	return &Client{manager: manager}
 }
 
+func TestLogBatchScannerUsesPhysicalRoutingBucketCount(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		partitionID int64
+		bucketCount int32
+		wantCount   int32
+	}{
+		{name: "known physical count", partitionID: 10, bucketCount: 1, wantCount: 1},
+		{name: "unknown physical count", partitionID: 10},
+		{name: "unpartitioned fallback", partitionID: -1, wantCount: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			table := appendWriterTable()
+			table.BucketCount = 2
+			bucket := testTableBucket(table)
+			bucket.PartitionID, bucket.BucketCount = test.partitionID, test.bucketCount
+			client := batchBackendClient(bucket.Leader, func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
+				message := request.(*fmsg.MessageRequest).Message().(*fmsg.LimitScanRequest)
+				if message.GetRoutingBucketCount() != test.wantCount ||
+					(message.RoutingBucketCount == nil) != (test.wantCount == 0) ||
+					(message.PartitionId == nil) != (test.partitionID < 0) ||
+					message.GetPartitionId() != max(0, test.partitionID) {
+					t.Fatalf("LIMIT_SCAN routing = %v", message)
+				}
+				response, err := fmsg.NewResponse(request.APIKey(), request.Version())
+				if err != nil {
+					return nil, err
+				}
+				response.Message().(*fmsg.LimitScanResponse).IsLogTable = proto.Bool(true)
+				return response, nil
+			})
+			defer client.Close()
+			scanner, err := client.NewBatchScanner(t.Context(), table, bucket)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer scanner.Close()
+			result, err := scanner.Poll(t.Context())
+			defer result.Release()
+			if err != nil || !result.Done {
+				t.Fatalf("Poll = %+v, %v", result, err)
+			}
+		})
+	}
+}
+
 func TestClientBatchBackendBuildsScanKVRequests(t *testing.T) {
 	table := upsertWriterTable()
 	bucket := testTableBucket(table)
