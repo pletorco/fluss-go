@@ -111,6 +111,13 @@ func (m *connectionManager) openManagedConnection(
 	if client, found, err := m.cachedClient(key); found || err != nil {
 		return client, err
 	}
+	// Limit the shared attempt, not the wait of any one caller. The same
+	// deadline applies to dialing, TLS, negotiation, and authentication.
+	if m.cfg.connectTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, m.cfg.connectTimeout)
+		defer cancel()
+	}
 	client, err := m.open(ctx, key.address, key.serverType)
 	if err != nil {
 		return nil, err

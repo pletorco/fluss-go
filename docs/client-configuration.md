@@ -17,7 +17,7 @@ implement that Java client tuning control.
 | --- | --- | --- |
 | `bootstrap.servers` | `WithBootstrapServers` | Direct semantic mapping. |
 | `client.id` | None | `WithClientSoftware` sets the API-versions software name and version; it is not the Java metrics client ID. |
-| `client.connect-timeout` | `WithConnectTimeout` | Direct semantic mapping. |
+| `client.connect-timeout` | `WithConnectTimeout` | Bounds each shared attempt through TCP dial, TLS, API negotiation, and authentication (default 10 s). The caller's context still bounds its own wait and the overall bootstrap. |
 | `client.request-timeout` | `WithAppendRequest`, `WithUpsertRequest`, `WithLookupRequestTimeout`, and call contexts | Go exposes request bounds at the resource or call boundary rather than as one global value. |
 | `client.security.protocol` | `WithAuthenticator`; absence selects plaintext | Fluss 1.0 provides native `PLAINTEXT` and `SASL`. `WithTLSConfig` is a Go transport extension for externally terminated TLS, not a native Fluss 1.0 security protocol. |
 | `client.security.sasl.mechanism` | `SASLPlainAuthenticator` or a custom `AuthenticatorFactory` | `SASL/PLAIN` is the only built-in Fluss 1.0 mechanism. |
