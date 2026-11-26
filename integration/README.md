@@ -32,6 +32,13 @@ Compose, OpenSSL, Go, and Task are required. Ports `19123` through `19126`,
 be free. The plaintext and native SASL ports can be overridden with their
 corresponding `FLUSS_*_PORT` variables.
 
+To also verify Go appends with the official Java reader, run
+`task test:integration` with JDK 17 or later and set
+`FLUSS_INTEGRATION_JAVA_CLIENT_JAR` to the absolute path of the Maven artifact
+`org.apache.fluss:fluss-client:1.0.0`. The two opt-in checks read a Go Arrow
+append from a table with no log format property and a Go row append from an
+explicit COMPACTED table. The integration suite does not download the jar.
+
 The same plaintext cluster runs the required eight-second reliability smoke
 profile. `task test:reliability` runs one selected longer profile without the
 unrelated functional and TLS phases. Profile bounds, fault semantics, JSON

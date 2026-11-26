@@ -24,6 +24,7 @@ func testAppendWriterOwnsMutableInput(t *testing.T, format LogFormat, bucketKey 
 	schema, row, mutate := mutableAppendInput()
 	table := appendWriterTable()
 	table.Schema, table.BucketCount = schema, 4
+	table.Properties["table.log.format"] = string(format)
 	if bucketKey != "" {
 		table.Schema.BucketKey = []string{bucketKey}
 	}
@@ -143,6 +144,7 @@ func mutableAppendInput() (Schema, Row, func()) {
 
 func TestAppendWriterAccountsForIndexedRowBytes(t *testing.T) {
 	table := appendWriterTable()
+	table.Properties["table.log.format"] = "INDEXED"
 	table.Schema.Columns[1].Type = BytesType
 	row := Row{int32(1), bytes.Repeat([]byte{'x'}, 24)}
 	encoded, err := EncodeIndexedRow(table.Schema, row)

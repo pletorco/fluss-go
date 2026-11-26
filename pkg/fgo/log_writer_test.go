@@ -96,6 +96,7 @@ func appendWriterTable() Table {
 	return Table{
 		ID: 9, SchemaID: 3, Path: TablePath{Database: "db", Table: "events"}, Kind: LogTable,
 		BucketCount: 1,
+		Properties:  map[string]string{"table.log.format": "COMPACTED"},
 		Schema: Schema{Columns: []Column{
 			{Name: "id", Type: IntType},
 			{Name: "name", Type: StringType, Nullable: true},
@@ -367,6 +368,7 @@ func testAppendWriterRowFormat(t *testing.T, format LogFormat, compacted bool) {
 
 func TestAppendWriterArrowAndPartition(t *testing.T) {
 	table := appendWriterTable()
+	table.Properties = nil // Exercise stock Fluss 1.0's Arrow default.
 	table.BucketCount = 2
 	backend := logBackend(0, 1)
 	backend.partitionID = 88
@@ -383,7 +385,7 @@ func TestAppendWriterArrowAndPartition(t *testing.T) {
 	writer, err := newAppendWriter(
 		context.Background(), backend, table,
 		WithAppendPartition("day=1"), WithAppendBatchTimeout(0),
-		WithAppendLogFormat(LogFormatArrow), WithAppendArrowCompression(ArrowCompressionLZ4),
+		WithAppendArrowCompression(ArrowCompressionLZ4),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -409,8 +411,10 @@ func TestAppendWriterArrowAndPartition(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	indexedTable := appendWriterTable()
+	indexedTable.Properties["table.log.format"] = "INDEXED"
 	rowWriter, err := newAppendWriter(
-		context.Background(), logBackend(0, 1), table,
+		context.Background(), logBackend(0, 1), indexedTable,
 		WithAppendLogFormat(LogFormatIndexed),
 	)
 	if err != nil {

@@ -168,10 +168,11 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 
 func resolveAppendWriterFormat(table Table, config *AppendWriterConfig) error {
 	format := LogFormat(strings.ToLower(strings.TrimSpace(table.Properties["table.log.format"])))
+	if format == "" {
+		// Fluss 1.0 defaults to Arrow without materializing the property.
+		format = LogFormatArrow
+	}
 	switch format {
-	case "":
-		// If metadata did not advertise a format, Auto still accepts either
-		// append method and uses compacted encoding for row appends.
 	case LogFormatCompacted, LogFormatIndexed, LogFormatArrow:
 		if config.Format == LogFormatAuto {
 			config.Format = format
@@ -181,8 +182,7 @@ func resolveAppendWriterFormat(table Table, config *AppendWriterConfig) error {
 	default:
 		return fmt.Errorf("%w: unsupported table.log.format %q", ErrInvalidConfig, format)
 	}
-	if config.arrowCompressionSet &&
-		config.Format != LogFormatAuto && config.Format != LogFormatArrow {
+	if config.arrowCompressionSet && config.Format != LogFormatArrow {
 		return fmt.Errorf("%w: Arrow compression requires Arrow-capable table and writer formats", ErrInvalidConfig)
 	}
 	return nil
@@ -238,7 +238,7 @@ func appendWriterConfig(options []AppendWriterOption) (AppendWriterConfig, error
 	return config, nil
 }
 
-// Append queues one row. The returned future completes exactly once after acknowledgment or
+// Append queues one row for a COMPACTED or INDEXED table. The returned future completes exactly once after acknowledgment or
 // failure. Before Append returns, the writer encodes its own snapshot of the row
 // and bucket key, so the caller may reuse the row and its mutable nested values.
 func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
@@ -287,8 +287,9 @@ func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 	return future
 }
 
-// AppendArrow queues one Arrow record batch for an explicit bucket. The caller must retain the
-// record batch until the returned future completes.
+// AppendArrow queues one Arrow record batch for an explicit bucket. Every row
+// must match the selected partition. The caller must retain the record batch
+// until the returned future completes.
 func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arrow.RecordBatch, changes []ChangeType) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil || batch == nil {
@@ -315,6 +316,10 @@ func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arro
 		return future
 	}
 	if err := validateArrowBatchNullability(expected, batch); err != nil {
+		future.complete(WriteResult{Err: err})
+		return future
+	}
+	if err := validateArrowPartition(batch, w.partitionColumns); err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
 	}

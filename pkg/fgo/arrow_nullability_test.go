@@ -30,6 +30,7 @@ func TestAppendArrowChecksRequiredData(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			table := appendWriterTable()
+			table.Properties["table.log.format"] = "ARROW"
 			table.Schema.Columns = []Column{logicalColumn("value", tc.typ)}
 			backend := logBackend(0)
 			w, err := newAppendWriter(ctx, backend, table, WithAppendLogFormat(LogFormatArrow), WithAppendBatchTimeout(0))

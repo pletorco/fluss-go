@@ -84,6 +84,7 @@ func testTLSSASL(t *testing.T, tlsConfig *tls.Config) {
 			{Name: "message", Type: fgo.StringType},
 		}},
 		BucketCount: 1,
+		Properties:  map[string]string{"table.log.format": "COMPACTED"},
 	}, false); err != nil {
 		t.Fatal(err)
 	}

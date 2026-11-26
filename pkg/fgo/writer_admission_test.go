@@ -27,31 +27,36 @@ func newWriterAdmissionFixture(t *testing.T, kind string) writerAdmissionFixture
 	f := writerAdmissionFixture{
 		backend: &barrierBackend{requests: make(chan barrierRequest, 1), stop: make(chan struct{})},
 	}
-	if kind == "append" {
+	if kind == "append" || kind == "arrow" {
+		table := appendWriterTable()
+		if kind == "arrow" {
+			table.Properties["table.log.format"] = "ARROW"
+		}
 		w, err := newAppendWriter(context.Background(), barrierAppendBackend{logBackend(0), f.backend},
-			appendWriterTable(), WithAppendBuffer(2), WithAppendBatchTimeout(time.Hour))
+			table, WithAppendBuffer(2), WithAppendBatchTimeout(time.Hour))
 		if err != nil {
 			t.Fatal(err)
 		}
 		f.writer, f.slots, f.gate = w, w.slots, w.admission.gate
 		f.queueDepth = func() int { return len(w.commands) }
-		f.submit = func(ctx context.Context) *WriteFuture { return w.Append(ctx, Row{int32(1), "value"}) }
-		schema, err := w.table.Schema.ArrowSchema()
-		if err != nil {
-			t.Fatal(err)
-		}
-		builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
-		builder.Field(0).(*array.Int32Builder).Append(1)
-		builder.Field(1).(*array.StringBuilder).Append("value")
-		record := builder.NewRecordBatch()
-		builder.Release()
-		t.Cleanup(record.Release)
-		f.mutations = map[string]func(context.Context) *WriteFuture{
-			"append": f.submit,
-			"arrow": func(ctx context.Context) *WriteFuture {
+		if kind == "append" {
+			f.submit = func(ctx context.Context) *WriteFuture { return w.Append(ctx, Row{int32(1), "value"}) }
+		} else {
+			schema, err := w.table.Schema.ArrowSchema()
+			if err != nil {
+				t.Fatal(err)
+			}
+			builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+			builder.Field(0).(*array.Int32Builder).Append(1)
+			builder.Field(1).(*array.StringBuilder).Append("value")
+			record := builder.NewRecordBatch()
+			builder.Release()
+			t.Cleanup(record.Release)
+			f.submit = func(ctx context.Context) *WriteFuture {
 				return w.AppendArrow(ctx, 0, record, []ChangeType{Append})
-			},
+			}
 		}
+		f.mutations = map[string]func(context.Context) *WriteFuture{kind: f.submit}
 	} else {
 		w, err := newUpsertWriter(context.Background(), barrierUpsertBackend{kvBackend(0), f.backend},
 			upsertWriterTable(), WithUpsertBuffer(2), WithUpsertBatchTimeout(time.Hour))
@@ -113,8 +118,8 @@ func (f writerAdmissionFixture) saturate(t *testing.T, holdGate bool) (*WriteFut
 }
 
 func TestWriterAdmissionCancellation(t *testing.T) {
-	for _, kind := range []string{"append", "upsert"} {
-		operations := []string{"flush", "close", "append", "arrow"}
+	for _, kind := range []string{"append", "arrow", "upsert"} {
+		operations := []string{"flush", "close", kind}
 		if kind == "upsert" {
 			operations = []string{"flush", "close", "upsert", "partial", "delete"}
 		}
@@ -201,7 +206,7 @@ func TestWriterAdmissionRechecksCanceledContext(t *testing.T) {
 }
 
 func TestWriterAdmissionCloseRetainsTerminalResult(t *testing.T) {
-	for _, kind := range []string{"append", "upsert"} {
+	for _, kind := range []string{"append", "arrow", "upsert"} {
 		t.Run(kind, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				f := newWriterAdmissionFixture(t, kind)

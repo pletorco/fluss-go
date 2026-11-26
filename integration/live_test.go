@@ -106,6 +106,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("append and scan", func(t *testing.T) {
 		testLogData(t, client, logPath)
 	})
+	t.Run("Arrow log scan filter", func(t *testing.T) {
+		testLogScanFilter(t, client, admin, database)
+	})
 
 	t.Run("scan interruption preserves undelivered records", func(t *testing.T) {
 		testInterruptedLogPoll(t, plainAddress, logPath)
@@ -546,6 +549,7 @@ func createTables(t *testing.T, admin *fadm.Client, logPath, kvPath fgo.TablePat
 	}}
 	if err := admin.CreateTable(context.Background(), logPath, fadm.TableDescriptor{
 		Schema: logSchema, BucketCount: 3,
+		Properties: map[string]string{"table.log.format": "COMPACTED"},
 	}, false); err != nil {
 		t.Fatalf("create log table: %v", err)
 	}
@@ -697,14 +701,50 @@ func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
 		t.Fatalf("scanned rows = %#v", found)
 	}
 	testBoundedLogScan(t, ctx, client, table)
-	testLogScanFilter(t, ctx, client, table)
 	testExplicitOffsetInsideBatch(t, ctx, client, table)
 }
 
 // testLogScanFilter verifies that a server-side filter never drops a matching
 // row. Fluss may return non-matching rows, so only the matching row is asserted.
-func testLogScanFilter(t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table) {
+func testLogScanFilter(t *testing.T, client *fgo.Client, admin *fadm.Client, database string) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	path := fgo.TablePath{Database: database, Table: "arrow_scan_filter"}
+	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{
+		Schema: fgo.Schema{Columns: []fgo.Column{
+			{Name: "id", Type: fgo.IntType}, {Name: "message", Type: fgo.StringType},
+		}},
+		BucketCount: 1, Properties: map[string]string{"table.log.format": "ARROW"},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	waitForTableReady(t, admin, path)
+	table, err := client.GetTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := client.NewAppendWriter(ctx, table, fgo.WithAppendBatchTimeout(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close(ctx)
+	schema, err := table.Schema.ArrowSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	defer builder.Release()
+	builder.Field(0).(*array.Int32Builder).AppendValues([]int32{1, 2, 3}, nil)
+	builder.Field(1).(*array.StringBuilder).AppendValues([]string{"first", "second", "third"}, nil)
+	record := builder.NewRecordBatch()
+	defer record.Release()
+	if got := w.AppendArrow(ctx, 0, record, []fgo.ChangeType{fgo.Append, fgo.Append, fgo.Append}).Await(ctx); got.Err != nil {
+		t.Fatal(got.Err)
+	}
+	if err := w.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(),
 		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
@@ -719,8 +759,17 @@ func testLogScanFilter(t *testing.T, ctx context.Context, client *fgo.Client, ta
 		if err != nil {
 			t.Fatalf("filtered Poll() = %v", err)
 		}
-		for _, record := range result.Records {
-			if record.Record.Value[0].(int32) == 2 && record.Record.Value[1].(string) == "second" {
+		if len(result.BucketErrors) != 0 {
+			result.Release()
+			t.Fatalf("filtered Poll() bucket errors = %v", result.BucketErrors)
+		}
+		for _, batch := range result.ArrowBatches {
+			ids := batch.Batch.Record.Column(0).(*array.Int32)
+			messages := batch.Batch.Record.Column(1).(*array.String)
+			for row := 0; row < ids.Len(); row++ {
+				if ids.Value(row) != 2 || messages.Value(row) != "second" {
+					continue
+				}
 				result.Release()
 				return
 			}
@@ -820,6 +869,7 @@ func testSchemaEvolution(
 			{Name: "message", Type: fgo.StringType, Nullable: true},
 		}},
 		BucketCount: 1,
+		Properties:  map[string]string{"table.log.format": "COMPACTED"},
 	}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -935,6 +985,7 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 	}
 	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{
 		Schema: schema, BucketCount: 1,
+		Properties: map[string]string{"table.log.format": "COMPACTED"},
 	}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1049,8 +1100,45 @@ func testLogFormats(
 	} {
 		testLogFormat(t, client, admin, database, schema, format)
 	}
+	t.Run("omitted format defaults to Arrow", func(t *testing.T) {
+		ctx := t.Context()
+		path := fgo.TablePath{Database: database, Table: "format_default"}
+		if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{Schema: schema, BucketCount: 1}, false); err != nil {
+			t.Fatal(err)
+		}
+		waitForTableReady(t, admin, path)
+		table, err := client.GetTable(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if format, exists := table.Properties["table.log.format"]; exists {
+			t.Fatalf("expected omitted table.log.format, got %q", format)
+		}
+		for _, format := range []fgo.LogFormat{fgo.LogFormatCompacted, fgo.LogFormatIndexed} {
+			if w, err := client.NewAppendWriter(ctx, table, fgo.WithAppendLogFormat(format)); !errors.Is(err, fgo.ErrInvalidConfig) {
+				if w != nil {
+					_ = w.Close(ctx)
+				}
+				t.Fatalf("open with %s: got %v, want ErrInvalidConfig", format, err)
+			}
+		}
+		writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendBatchTimeout(0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer writer.Close(ctx)
+		if got := writer.Append(ctx, fgo.Row{int32(1), "compacted"}).Await(ctx); !errors.Is(got.Err, fgo.ErrInvalidConfig) {
+			t.Fatalf("row append: got %v, want ErrInvalidConfig", got.Err)
+		}
+		appendArrowFormatRow(t, writer, table)
+		assertFormatRow(t, client, table, fgo.LogFormatArrow)
+		assertJavaLogRow(t, table, "arrow")
+	})
 	t.Run("TIME row precision", func(t *testing.T) {
 		testTimeRowPrecision(t, client, admin, database)
+	})
+	t.Run("Arrow partition batch validation", func(t *testing.T) {
+		testArrowPartitionAppend(t, client, admin, database)
 	})
 	t.Run("TIMESTAMP row and key precision", func(t *testing.T) {
 		testTimestampPrecision(t, client, admin, database)
@@ -1099,9 +1187,30 @@ func testLogFormat(
 		t.Fatal(err)
 	}
 	assertFormatRow(t, client, table, format)
+	if format == fgo.LogFormatCompacted {
+		assertJavaLogRow(t, table, "compacted")
+	}
 	if format == fgo.LogFormatArrow {
 		testDefaultFetchWithLargeArrowBatch(t, client, table)
 	}
+}
+
+func assertJavaLogRow(t *testing.T, table fgo.Table, message string) {
+	t.Helper()
+	t.Run("official Java reader "+table.Path.Table, func(t *testing.T) {
+		jar := os.Getenv("FLUSS_INTEGRATION_JAVA_CLIENT_JAR")
+		if jar == "" {
+			t.Skip("set FLUSS_INTEGRATION_JAVA_CLIENT_JAR to the official Fluss 1.0.0 client jar")
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+		address := net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_COORDINATOR_PORT", "19123"))
+		args := []string{"--add-opens=java.base/java.nio=ALL-UNNAMED", "--class-path", jar,
+			"testdata/ReadLogRow.java", address, table.Path.Database, table.Path.Table, message}
+		if output, err := exec.CommandContext(ctx, "java", args...).CombinedOutput(); err != nil {
+			t.Fatalf("official Java reader: %v\n%s", err, output)
+		}
+	})
 }
 
 func appendArrowFormatRow(t *testing.T, writer *fgo.AppendWriter, table fgo.Table) {

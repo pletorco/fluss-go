@@ -24,7 +24,8 @@ func testPartitionAfterTableRecreation(t *testing.T, client *fgo.Client, admin *
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
-		if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{Schema: schema, BucketCount: 1}, false); err != nil {
+		if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{Schema: schema, BucketCount: 1,
+			Properties: map[string]string{"table.log.format": "COMPACTED"}}, false); err != nil {
 			t.Fatal(err)
 		}
 		if err := admin.CreatePartition(ctx, path, fadm.PartitionSpec{"region": physical.Partition}, false); err != nil {

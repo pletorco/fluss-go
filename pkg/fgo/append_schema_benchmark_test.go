@@ -34,6 +34,7 @@ func BenchmarkAppendWriterSchema(b *testing.B) {
 			for _, records := range []int{1, 16, 64} {
 				b.Run(fmt.Sprintf("%s/%s/%d", format, shape, records), func(b *testing.B) {
 					table, row := appendBenchmarkInput(shape)
+					table.Properties["table.log.format"] = string(format)
 					writer, err := newAppendWriter(context.Background(), newSchedulingLogBackend(1), table,
 						WithAppendLogFormat(format), WithAppendBatchLimits(1<<20, records),
 						WithAppendBuffer(records), WithAppendBatchTimeout(time.Hour))
@@ -81,6 +82,7 @@ func BenchmarkAppendWriterRetention(b *testing.B) {
 
 func benchmarkAppendRetention(b *testing.B, format LogFormat, shape string) {
 	table, row := appendBenchmarkInput(shape)
+	table.Properties["table.log.format"] = string(format)
 	runtime.GC()
 	var baseline, sample runtime.MemStats
 	runtime.ReadMemStats(&baseline)

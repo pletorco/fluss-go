@@ -107,8 +107,16 @@ write failures are not retried and poison only the affected bucket. See
 Select an explicit format only when it agrees with the table's advertised
 `table.log.format` property. Auto mode uses the advertised format: call
 `Append` for COMPACTED or INDEXED and `AppendArrow` for ARROW. If metadata
-omits the property, Auto still accepts both methods and encodes row appends
-as COMPACTED. An unrecognized advertised format fails when opening the writer.
+omits the property, the Fluss 1.0 default is ARROW; row appends return
+`fgo.ErrInvalidConfig` before queuing anything. To use `Append` or the typed
+row writer, create the table with `table.log.format=COMPACTED` or `INDEXED`.
+A writer option cannot override the table's format, and an unrecognized
+advertised format fails when opening the writer. This check cannot repair
+incompatible batches already written to a table.
+
+For a partitioned Arrow log, every row in a batch must match the partition
+selected by `WithAppendPartition`. A mismatched or null partition value
+rejects the entire batch with `fgo.ErrInvalidRow` before it is queued.
 
 <!-- go-source: internal/docexamples/snippets_test.go logFormat -->
 ```go
