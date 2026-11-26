@@ -273,7 +273,8 @@ func (s *BatchScanner) Done() bool {
 }
 
 // Close stops the scanner and cancels an active poll.
-// Close is idempotent.
+// For snapshot scans, the first Close waits for the active poll to finish
+// before closing the snapshot reader. Later calls to Close are no-ops.
 func (s *BatchScanner) Close() error {
 	if s == nil {
 		return nil
@@ -288,6 +289,11 @@ func (s *BatchScanner) Close() error {
 	reader := s.snapshot
 	s.mu.Unlock()
 	if reader != nil {
+		// Wait for any admitted poll to leave. New polls cannot read the
+		// snapshot once closed is set, so release the gate before calling
+		// into the provider.
+		s.pollGate <- struct{}{}
+		<-s.pollGate
 		return reader.Close()
 	}
 	if backend, ok := s.backend.(kvSessionScanBackend); ok {

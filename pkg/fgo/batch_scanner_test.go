@@ -11,7 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/pletorco/fluss-go/pkg/fmsg"
@@ -635,6 +635,7 @@ type fakeSnapshotBatchReader struct {
 	block       bool
 	entered     chan struct{}
 	enterOnce   sync.Once
+	unwind      func()
 	closed      atomic.Int32
 	readErr     error
 	closeErr    error
@@ -646,6 +647,9 @@ func (r *fakeSnapshotBatchReader) ReadBatch(ctx context.Context, _ int) ([]Row, 
 			r.enterOnce.Do(func() { close(r.entered) })
 		}
 		<-ctx.Done()
+		if r.unwind != nil {
+			r.unwind()
+		}
 		return nil, ctx.Err()
 	}
 	r.mu.Lock()
@@ -818,33 +822,85 @@ func assertSnapshotEOFCase(t *testing.T, table Table, test snapshotEOFCase) {
 	}
 }
 
-func TestSnapshotBatchScannerCloseUnblocksPoll(t *testing.T) {
-	table := upsertWriterTable()
-	entered := make(chan struct{})
-	reader := &fakeSnapshotBatchReader{block: true, entered: entered}
-	scanner, err := newBatchScanner(
-		context.Background(), nil, reader, table, testTableBucket(table),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestSnapshotBatchScannerCloseWaitsForRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		canceled, releaseRead := make(chan struct{}), make(chan struct{})
+		allowReturn := sync.OnceFunc(func() { close(releaseRead) })
+		defer allowReturn()
+		closeErr := errors.New("snapshot cleanup failed")
+		reader := &fakeSnapshotBatchReader{
+			block: true, entered: make(chan struct{}), closeErr: closeErr,
+			unwind: func() {
+				close(canceled)
+				<-releaseRead
+			},
+		}
+		table := upsertWriterTable()
+		client := &Client{snapshotProvider: SnapshotBatchProviderFunc(func(
+			context.Context, SnapshotBatchRequest,
+		) (SnapshotBatchReader, error) {
+			return reader, nil
+		})}
+		scanner, err := client.NewSnapshotBatchScanner(t.Context(), table, testTableBucket(table), 42)
+		if err != nil {
+			t.Fatal(err)
+		}
+		active := startSnapshotPoll(t.Context(), scanner)
+		<-reader.entered
+		queued := startSnapshotPoll(t.Context(), scanner)
+		synctest.Wait()
+
+		closed := make(chan error, 1)
+		go func() { closed <- scanner.Close() }()
+		synctest.Wait()
+		select {
+		case <-canceled:
+		default:
+			t.Fatal("Close did not cancel the active ReadBatch context")
+		}
+		if got := reader.closed.Load(); got != 0 {
+			t.Fatalf("reader Close called %d times while ReadBatch was still unwinding", got)
+		}
+		select {
+		case err := <-closed:
+			t.Fatalf("scanner Close returned before ReadBatch: %v", err)
+		default:
+		}
+		select {
+		case err := <-queued:
+			if !errors.Is(err, ErrClosed) {
+				t.Fatalf("queued Poll = %v; want ErrClosed", err)
+			}
+		default:
+			t.Fatal("queued Poll did not wake while the read was unwinding")
+		}
+
+		alsoClosed := make(chan error, 1)
+		go func() { alsoClosed <- scanner.Close() }()
+		synctest.Wait()
+		allowReturn()
+		if err := <-active; !errors.Is(err, context.Canceled) {
+			t.Fatalf("active Poll = %v; want context.Canceled", err)
+		}
+		if err := <-closed; !errors.Is(err, closeErr) {
+			t.Fatalf("first Close = %v; want provider error %v", err, closeErr)
+		}
+		if err := <-alsoClosed; err != nil || reader.closed.Load() != 1 {
+			t.Fatalf("repeated Close = %v; reader close calls = %d", err, reader.closed.Load())
+		}
+		if _, err := scanner.Poll(t.Context()); !errors.Is(err, ErrClosed) {
+			t.Fatalf("Poll after Close = %v; want ErrClosed", err)
+		}
+	})
+}
+
+func startSnapshotPoll(ctx context.Context, scanner *BatchScanner) <-chan error {
 	polled := make(chan error, 1)
 	go func() {
-		_, err := scanner.Poll(context.Background())
+		_, err := scanner.Poll(ctx)
 		polled <- err
 	}()
-	<-entered
-	if err := scanner.Close(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-polled:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("Poll() error = %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Close did not unblock Poll")
-	}
+	return polled
 }
 
 func TestSnapshotBatchScannerRejectsInvalidProviderResults(t *testing.T) {

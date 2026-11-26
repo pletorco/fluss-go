@@ -339,6 +339,11 @@ batch must use one row layout. A snapshot provider may return its final rows and
 result before checking whether another poll is needed. A later poll returns an
 empty completed result. `BatchResult.Release` releases owned Arrow batches.
 
+For snapshot scans, the first `Close` cancels an active poll and waits for it
+to return before closing the reader. Providers must make `ReadBatch` respond
+to its context, including while waiting on I/O. Reader `Close` is called once
+and need not run concurrently with `ReadBatch`.
+
 ## Metrics
 
 Register one observer when opening the client:
