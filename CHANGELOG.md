@@ -48,6 +48,8 @@ breaking changes.
   handles after drop and recreation instead of combining old and new IDs.
 - Opened append writers using the target partition's actual bucket count, so
   partitions created before and after a change to the table default remain writable.
+- Treated an omitted log format as Fluss 1.0's ARROW default. Row appends
+  require tables explicitly configured for COMPACTED or INDEXED.
 - Rejected insert-if-missing lookups on partitioned tables up front because
   Fluss 1.0 cannot insert using the canonical physical lookup key.
 - Left write offsets unknown when a successful Append or Upsert reply omits

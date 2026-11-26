@@ -107,6 +107,7 @@ func TestAppendRejectsTypedNilDecimalBeforeAdmission(t *testing.T) {
 				defer cancel()
 				table := appendWriterTable()
 				table.Schema.Columns[1] = test.column
+				table.Properties["table.log.format"] = string(format)
 				backend := logBackend(0)
 				writer, err := newAppendWriter(ctx, backend, table, WithAppendLogFormat(format), WithAppendBuffer(1))
 				if err != nil {

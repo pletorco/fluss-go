@@ -98,6 +98,7 @@ func TestPreparedAppendPreservesRowValidation(t *testing.T) {
 				}
 				table := appendWriterTable()
 				table.Schema = schema
+				table.Properties["table.log.format"] = string(format)
 				backend := logBackend(0)
 				writer, err := newAppendWriter(context.Background(), backend, table, WithAppendLogFormat(format))
 				if err != nil {

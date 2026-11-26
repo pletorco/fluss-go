@@ -22,7 +22,8 @@ func testPartitionBucketRescale(t *testing.T, client *fgo.Client, admin *fadm.Cl
 		PartitionKey: []string{"region"},
 		BucketKey:    []string{"id"},
 	}
-	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{Schema: schema, BucketCount: 1}, false); err != nil {
+	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{Schema: schema, BucketCount: 1,
+		Properties: map[string]string{"table.log.format": "COMPACTED"}}, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := admin.CreatePartition(ctx, path, fadm.PartitionSpec{"region": "old"}, false); err != nil {

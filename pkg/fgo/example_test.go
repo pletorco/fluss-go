@@ -154,6 +154,7 @@ func ExampleClient_NewAppendWriter() {
 		}
 	}()
 
+	// Row appends require a table created with COMPACTED or INDEXED log format.
 	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "events",
@@ -251,6 +252,7 @@ func ExampleNewTypedAppendWriter() {
 	}
 	defer client.Close()
 
+	// Typed row appends also require COMPACTED or INDEXED log format.
 	table, err := client.GetTable(ctx, fgo.TablePath{
 		Database: "production",
 		Table:    "events",

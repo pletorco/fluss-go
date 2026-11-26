@@ -11,8 +11,11 @@ func TestResolveAppendWriterFormat(t *testing.T) {
 		format, want   LogFormat
 		compression    bool
 	}{
-		{name: "omitted", format: LogFormatAuto, want: LogFormatAuto},
-		{name: "omitted with Arrow compression", format: LogFormatAuto, want: LogFormatAuto, compression: true},
+		{name: "blank", property: " ", format: LogFormatAuto, want: LogFormatArrow},
+		{name: "omitted with Arrow compression", format: LogFormatAuto, want: LogFormatArrow, compression: true},
+		{name: "omitted with explicit compacted", format: LogFormatCompacted},
+		{name: "omitted with explicit indexed", format: LogFormatIndexed},
+		{name: "omitted with explicit Arrow", format: LogFormatArrow, want: LogFormatArrow},
 		{name: "compacted", property: " COMPACTED ", format: LogFormatAuto, want: LogFormatCompacted},
 		{name: "indexed", property: "INDEXED", format: LogFormatAuto, want: LogFormatIndexed},
 		{name: "Arrow", property: "ARROW", format: LogFormatAuto, want: LogFormatArrow, compression: true},

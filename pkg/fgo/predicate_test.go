@@ -175,6 +175,7 @@ func TestCompilePredicateRejectsInvalid(t *testing.T) {
 
 func filterScannerTable() Table {
 	table := appendWriterTable()
+	table.Properties["table.log.format"] = "ARROW"
 	table.Schema.Columns[0].ID, table.Schema.Columns[1].ID = 0, 1
 	return table
 }
