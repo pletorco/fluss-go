@@ -205,7 +205,7 @@ func TestHistoricalSchemasDecodeAcrossReadPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	lookupValue := append([]byte{1, 0}, oldEncoded...)
-	row, err := decodeLookupValueWithResolver(context.Background(), resolver, table, lookupValue)
+	row, err := decodeLookupValueWithResolver(context.Background(), resolver, table, lookupValue, compactedEncoding)
 	if err != nil || len(row) != 3 || row[1] != "old" || row[2] != nil {
 		t.Fatalf("historical lookup = %#v, %v", row, err)
 	}
@@ -217,7 +217,7 @@ func TestHistoricalSchemasDecodeAcrossReadPaths(t *testing.T) {
 	valueBatch := encodedSchemaValueBatch(
 		[]schemaValue{{id: 1, row: oldEncoded}, {id: 2, row: currentEncoded}},
 	)
-	rows, err := decodeValueRecordBatchWithResolver(context.Background(), resolver, table, valueBatch)
+	rows, err := decodeValueRecordBatchWithResolver(context.Background(), resolver, table, valueBatch, compactedEncoding)
 	if err != nil || len(rows) != 2 || rows[0][2] != nil || rows[1][2] != int64(4) {
 		t.Fatalf("historical value batch = %#v, %v", rows, err)
 	}

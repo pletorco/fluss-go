@@ -15,16 +15,17 @@ var ErrNotFound = fmt.Errorf("fgo: record not found")
 // Lookuper performs batched point and prefix lookups for a primary-key
 // table. A Lookuper is safe for concurrent calls and must be closed.
 type Lookuper struct {
-	table       Table
-	path        PhysicalTablePath
-	backend     lookupBackend
-	config      LookupConfig
-	tableID     int64
-	partitionID int64
-	bucketCount int32
-	keys        kvKeyLayout
-	resolver    schemaResolver
-	observer    MetricsObserver
+	table         Table
+	path          PhysicalTablePath
+	backend       lookupBackend
+	config        LookupConfig
+	tableID       int64
+	partitionID   int64
+	bucketCount   int32
+	keys          kvKeyLayout
+	valueEncoding rowEncoding
+	resolver      schemaResolver
+	observer      MetricsObserver
 
 	mu     sync.RWMutex
 	closed bool
@@ -55,6 +56,10 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 	if err := table.Schema.Validate(); err != nil {
 		return nil, err
 	}
+	valueEncoding, err := kvValueEncoding(table)
+	if err != nil {
+		return nil, err
+	}
 	config, err := lookupConfig(options)
 	if err != nil {
 		return nil, err
@@ -80,10 +85,11 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 	client := &Lookuper{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: layout.partitionID, bucketCount: layout.count, keys: keys, resolver: resolverFor(backend, table),
-		queue: make(chan *lookupTask, config.MaxQueuedKeys),
-		jobs:  make(chan lookupBatch, config.MaxInFlightRequests),
-		slots: make(chan struct{}, config.MaxQueuedKeys),
-		done:  make(chan struct{}),
+		valueEncoding: valueEncoding,
+		queue:         make(chan *lookupTask, config.MaxQueuedKeys),
+		jobs:          make(chan lookupBatch, config.MaxInFlightRequests),
+		slots:         make(chan struct{}, config.MaxQueuedKeys),
+		done:          make(chan struct{}),
 	}
 	client.life, client.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the lookuper lifecycle.
 	go client.runScheduler()
@@ -298,7 +304,7 @@ func (c *Lookuper) decodeResult(caller, decodeCtx context.Context, value []byte)
 	if err := c.decodeContextError(caller); err != nil {
 		return nil, err
 	}
-	row, err := decodeLookupValueWithResolver(decodeCtx, c.resolver, c.table, value)
+	row, err := decodeLookupValueWithResolver(decodeCtx, c.resolver, c.table, value, c.valueEncoding)
 	// Cache hits and other synchronous decoders may not observe cancellation.
 	// Do not deliver a row from an interrupted decode.
 	if stop := c.decodeContextError(caller); stop != nil {
@@ -391,6 +397,7 @@ func decodeLookupValueWithResolver(
 	resolver schemaResolver,
 	table Table,
 	value []byte,
+	encoding rowEncoding,
 ) (Row, error) {
 	if len(value) < 2 {
 		return nil, fmt.Errorf("%w: lookup value omits schema ID", ErrMalformedRow)
@@ -400,7 +407,7 @@ func decodeLookupValueWithResolver(
 	if err != nil {
 		return nil, fmt.Errorf("fgo: resolve lookup schema %d: %w", schemaID, err)
 	}
-	row, err := DecodeCompactedRow(schema, value[2:])
+	row, err := decodeRow(schema, value[2:], encoding)
 	if err != nil {
 		return nil, err
 	}

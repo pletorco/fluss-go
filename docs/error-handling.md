@@ -65,8 +65,12 @@ with `WithAppendRetryPolicy` or `WithUpsertRetryPolicy`. More than one attempt r
 sequence, is bounded by the original request timeout, and occurs only for
 typed retriable server errors or connection failures. A duplicate-sequence
 response proves that the batch was already accepted and completes the future
-successfully; `WriteResult.OffsetKnown` is false when that response omitted the
-assigned offset.
+successfully. For log appends, `WriteResult.OffsetKnown` is false when that
+response omitted the assigned offset. Successful KV writes never set
+`OffsetKnown`: Fluss reports the bucket's batch log end, and each mutation may
+emit zero, one, or multiple change events. Use offsets from the CDC scanner to
+checkpoint consumption, rather than treating the write acknowledgment as a
+per-mutation position.
 
 Out-of-order sequence and unknown-writer errors are not replayed. The affected
 bucket is poisoned because allocating a new writer ID while other buckets are

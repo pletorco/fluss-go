@@ -18,7 +18,7 @@ func (s *BatchScanner) decodeCurrent(ctx context.Context, isLog bool, encoded []
 		return BatchResult{}, nil
 	}
 	if !isLog {
-		rows, err := decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, encoded)
+		rows, err := decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, encoded, s.valueEncoding)
 		if err != nil {
 			return BatchResult{}, err
 		}
@@ -120,11 +120,16 @@ func (s *BatchScanner) projectArrowBatches(batches []ScanArrowBatch) error {
 }
 
 func decodeValueRecordBatch(table Table, encoded []byte) ([]Row, error) {
+	encoding, err := kvValueEncoding(table)
+	if err != nil {
+		return nil, err
+	}
 	return decodeValueRecordBatchWithResolver(
 		context.Background(),
 		fixedSchemaResolver{path: table.Path, schemaID: table.SchemaID, schema: table.Schema},
 		table,
 		encoded,
+		encoding,
 	)
 }
 
@@ -133,6 +138,7 @@ func decodeValueRecordBatchWithResolver(
 	resolver schemaResolver,
 	table Table,
 	encoded []byte,
+	encoding rowEncoding,
 ) ([]Row, error) {
 	const headerSize = 9
 	if len(encoded) < headerSize ||
@@ -146,7 +152,7 @@ func decodeValueRecordBatchWithResolver(
 	}
 	rows := make([]Row, 0, count)
 	decoder := valueBatchDecoder{
-		resolver: resolver, table: table, schemas: make(map[int32]valueBatchSchema),
+		resolver: resolver, table: table, schemas: make(map[int32]valueBatchSchema), encoding: encoding,
 	}
 	position := headerSize
 	for range count {
@@ -172,6 +178,7 @@ type valueBatchDecoder struct {
 	resolver schemaResolver
 	table    Table
 	schemas  map[int32]valueBatchSchema
+	encoding rowEncoding
 }
 
 func (d *valueBatchDecoder) decodeRecord(
@@ -196,7 +203,7 @@ func (d *valueBatchDecoder) decodeRecord(
 		}
 		schema.writer = writer
 	}
-	row, err := DecodeCompactedRow(schema.writer, encoded[position+2:position+size])
+	row, err := decodeRow(schema.writer, encoded[position+2:position+size], d.encoding)
 	if err != nil {
 		return nil, position, err
 	}

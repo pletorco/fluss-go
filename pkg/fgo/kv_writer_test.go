@@ -165,7 +165,7 @@ func TestUpsertWriterRetriesIdenticalIdempotentBatch(t *testing.T) {
 	}
 	result := writer.Upsert(context.Background(), Row{int32(1), "one", nil}).
 		Await(context.Background())
-	if result.Err != nil || !result.OffsetKnown {
+	if result.Err != nil || result.OffsetKnown || result.BaseOffset != 0 || result.Records != 1 {
 		t.Fatalf("retried upsert = %#v", result)
 	}
 	calls := backend.putCalls()

@@ -46,7 +46,7 @@ func BenchmarkReadBatchSchemaEvolution(b *testing.B) {
 	b.Run("mixedKV", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			rows, err := decodeValueRecordBatchWithResolver(ctx, resolver, table, kv)
+			rows, err := decodeValueRecordBatchWithResolver(ctx, resolver, table, kv, compactedEncoding)
 			if err != nil || len(rows) != batchRows {
 				b.Fatalf("decoded KV rows=%d err=%v", len(rows), err)
 			}

@@ -201,7 +201,7 @@ func TestDecodeFetchedRowsTrimsMultipleBatchesAndPreservesOffset(t *testing.T) {
 
 	empty := encodedRows(t, table.Schema, 100)
 	next, rows, arrows, err = decodeFetchedLog(table.Schema, 0, 9, empty)
-	if err != nil || next != 9 || len(rows) != 0 || len(arrows) != 0 {
+	if err != nil || next != 101 || len(rows) != 0 || len(arrows) != 0 {
 		t.Fatalf("empty decodeFetchedLog() = next %d, rows %#v, arrows %#v, %v", next, rows, arrows, err)
 	}
 
@@ -209,7 +209,7 @@ func TestDecodeFetchedRowsTrimsMultipleBatchesAndPreservesOffset(t *testing.T) {
 	if _, _, _, err = decodeFetchedLog(table.Schema, 0, 0, overflow); !errors.Is(err, ErrMalformedRecordBatch) {
 		t.Fatalf("overflow decodeFetchedLog() error = %v", err)
 	}
-	if _, _, err = fetchedBatchOffsets(0, -1, 0); !errors.Is(err, ErrMalformedRecordBatch) {
+	if _, _, err = fetchedBatchOffsets(0, -1, 0, 0); !errors.Is(err, ErrMalformedRecordBatch) {
 		t.Fatalf("negative count error = %v", err)
 	}
 }
