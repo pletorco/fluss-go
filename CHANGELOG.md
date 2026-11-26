@@ -86,6 +86,8 @@ breaking changes.
   every eligible record, so it can finish at its stopping offset.
 - Accepted narrower projections returned by snapshot providers and reported
   inconsistent row widths as validation errors.
+- Rejected nil snapshot readers during open, rather than panicking on the
+  first poll when a provider or decoder returns no reader and no error.
 - Required an explicit producer offset registration result and documented
   that a live registration is left unchanged.
 

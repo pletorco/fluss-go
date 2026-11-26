@@ -402,6 +402,11 @@ batch must use one row layout. A snapshot provider may return its final rows and
 result before checking whether another poll is needed. A later poll returns an
 empty completed result. `BatchResult.Release` releases owned Arrow batches.
 
+On success a snapshot provider or remote snapshot decoder must return a
+non-nil reader. Nil interfaces and typed-nil readers are rejected with
+`ErrValidation` during open; an error from the provider or decoder is passed
+through unchanged. An empty snapshot should use a reader that returns `io.EOF`.
+
 For snapshot scans, the first `Close` cancels an active poll and waits for it
 to return before closing the reader. Providers must make `ReadBatch` respond
 to its context, including while waiting on I/O. Reader `Close` is called once

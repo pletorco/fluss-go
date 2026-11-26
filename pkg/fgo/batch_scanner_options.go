@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 )
 
 // BatchScannerOption configures a bounded current-state or snapshot scan.
@@ -102,9 +103,24 @@ type SnapshotBatchReader interface {
 	Close() error
 }
 
+// An interface holding a typed nil is not itself nil. Neither is a valid
+// reader: a successful open must supply a value whose methods can be called.
+func isNilSnapshotReader(reader SnapshotBatchReader) bool {
+	value := reflect.ValueOf(reader)
+	switch value.Kind() {
+	case reflect.Invalid:
+		return true
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
 // SnapshotBatchProvider opens readers for implementation-specific Fluss snapshot storage.
 type SnapshotBatchProvider interface {
-	// OpenSnapshot returns a new reader owned by the caller.
+	// OpenSnapshot returns a new reader owned by the caller. Neither a nil
+	// interface nor a typed-nil reader is a successful result.
 	OpenSnapshot(context.Context, SnapshotBatchRequest) (SnapshotBatchReader, error)
 }
 

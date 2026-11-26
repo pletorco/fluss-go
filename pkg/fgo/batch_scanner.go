@@ -80,6 +80,9 @@ func (c *Client) NewSnapshotBatchScanner(
 	if err != nil {
 		return nil, err
 	}
+	if isNilSnapshotReader(reader) {
+		return nil, fmt.Errorf("%w: snapshot batch provider returned a nil reader without an error", ErrValidation)
+	}
 	scanner := &BatchScanner{
 		table: table, bucket: bucket, config: config, snapshot: reader, projection: projection,
 		pollGate: make(chan struct{}, 1),
