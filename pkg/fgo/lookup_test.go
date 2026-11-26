@@ -163,6 +163,16 @@ func lookupTable() Table {
 	}
 }
 
+func TestLookuperRejectsPartitionedInsertBeforeRouting(t *testing.T) {
+	table := partitionedKVTable()
+	backend := lookupBackendFor(table, 0)
+	backend.metadataErr = errors.New("must not resolve routing for unsupported insert")
+	l, err := newLookuper(t.Context(), backend, table, WithLookupPartition("apac"), WithLookupInsertIfNotExists(time.Second, -1))
+	if l != nil || !errors.Is(err, ErrUnsupportedAPI) {
+		t.Fatalf("partitioned lookup insert = %v, %v; want ErrUnsupportedAPI", l, err)
+	}
+}
+
 func lookupBackendFor(table Table, bucketIDs ...int32) *fakeLookupBackend {
 	locations := make(map[int32]ServerNode, len(bucketIDs))
 	for _, bucket := range bucketIDs {

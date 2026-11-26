@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
@@ -38,6 +39,13 @@ func testPartitionedKVWireKeys(t *testing.T, client *fgo.Client, admin *fadm.Cli
 		t.Fatal(err)
 	}
 	wire := readyWireKV(t, ctx, client, admin, fgo.PhysicalTablePath{TablePath: path, Partition: "apac"})
+	if l, err := client.NewLookuper(ctx, wire.table, fgo.WithLookupPartition("apac"),
+		fgo.WithLookupInsertIfNotExists(time.Second, -1)); l != nil || !errors.Is(err, fgo.ErrUnsupportedAPI) {
+		if l != nil {
+			_ = l.Close()
+		}
+		t.Fatalf("partitioned lookup insert-if-missing: %v, want ErrUnsupportedAPI", err)
+	}
 	writer, err := client.NewUpsertWriter(ctx, wire.table, fgo.WithUpsertPartition("apac"), fgo.WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
@@ -201,6 +209,14 @@ func (w wireKV) put(t *testing.T, ctx context.Context, key []byte, row fgo.Row) 
 
 func (w wireKV) putEncoded(t *testing.T, ctx context.Context, key, value []byte) {
 	t.Helper()
+	result := w.putEncodedWithTargets(t, ctx, key, value, nil)
+	if err := fgo.ResponseError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyPutKv); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (w wireKV) putEncodedWithTargets(t *testing.T, ctx context.Context, key, value []byte, targets []int32) *fmsg.PbPutKvRespForBucket {
+	t.Helper()
 	init, err := fmsg.NewRequest(fmsg.APIKeyInitWriter, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +241,7 @@ func (w wireKV) putEncoded(t *testing.T, ctx context.Context, key, value []byte)
 	}
 	message := request.Message().(*fmsg.PutKvRequest)
 	message.TableId, message.Acks, message.TimeoutMs = proto.Int64(w.table.ID), proto.Int32(-1), proto.Int32(5000)
+	message.TargetColumns = targets
 	message.BucketsReq = []*fmsg.PbPutKvReqForBucket{{
 		BucketId: proto.Int32(w.bucket.BucketID), PartitionId: w.partitionID(), Records: batch,
 	}}
@@ -236,7 +253,5 @@ func (w wireKV) putEncoded(t *testing.T, ctx context.Context, key, value []byte)
 	if len(buckets) != 1 {
 		t.Fatalf("wire put returned %d buckets", len(buckets))
 	}
-	if err := fgo.ResponseError(buckets[0].GetErrorCode(), buckets[0].GetErrorMessage(), fmsg.APIKeyPutKv); err != nil {
-		t.Fatal(err)
-	}
+	return buckets[0]
 }

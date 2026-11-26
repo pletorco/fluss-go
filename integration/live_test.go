@@ -1672,6 +1672,9 @@ func testPartialUpsert(t *testing.T, client *fgo.Client, admin *fadm.Client, dat
 	defer cancel()
 	testPartialUpdatePreservesFields(t, ctx, client, admin, database)
 	testKVMergeModes(t, ctx, client, admin, database)
+	t.Run("auto increment boundary", func(t *testing.T) {
+		testPartialUpsertAutoIncrementBoundary(t, client, admin, database)
+	})
 }
 
 func testPartialUpdatePreservesFields(
