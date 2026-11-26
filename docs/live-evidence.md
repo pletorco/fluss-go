@@ -40,7 +40,7 @@ golden coverage remains required even when live evidence exists.
 
 | Public surface | Live evidence | Boundary |
 | --- | --- | --- |
-| Database, table, partition, schema, and offset methods | Covered | Create, describe, list, exists, alter database, alter table, drop, dynamic partitions, historical schema, and earliest/latest offsets are checked with cleanup. Bucket-count request encoding and metadata routing are unit tested; live rescaling is not mutated because it changes the topology used by later failover assertions. |
+| Database, table, partition, schema, and offset methods | Covered | Create, describe, list, exists, alter database, alter table, drop, dynamic partitions, historical schema, and earliest/latest offsets are checked with cleanup. A dedicated log table verifies that changing the bucket-count default preserves writes to existing partitions and allows writes to new partitions, without changing tables used for failover checks. |
 | Cluster health | Covered | Aggregate replica, in-sync replica, leader, active-leader, and status bounds are checked against the live three-tablet cluster. |
 | Remote-log manifests | Covered | The live stock cluster accepts table-scoped manifest listing. The result may be empty because the suite does not wait for tiering; response mapping is unit tested with populated entries. |
 | Active KV snapshot listing | Covered | Table and partition identities are checked live; preservation of multiple snapshots for one bucket is covered deterministically by unit tests. |

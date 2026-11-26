@@ -32,6 +32,7 @@ type producedLog struct {
 type fakeAppendWriterBackend struct {
 	mu          sync.Mutex
 	physicalID  int64
+	bucketCount int32
 	locations   map[int32]ServerNode
 	writerID    int64
 	metadataErr error
@@ -42,8 +43,12 @@ type fakeAppendWriterBackend struct {
 	calls       []producedLog
 }
 
-func (b *fakeAppendWriterBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
-	return b.physicalID, b.locations, b.metadataErr
+func (b *fakeAppendWriterBackend) metadata(context.Context, PhysicalTablePath) (bucketLayout, error) {
+	count := b.bucketCount
+	if count == 0 {
+		count = int32(len(b.locations))
+	}
+	return bucketLayout{physicalID: b.physicalID, count: count, leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeAppendWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
@@ -184,7 +189,7 @@ func assertLogBatchCalls(t *testing.T, calls []producedLog) {
 func TestAppendWriterAssignmentsAndLinger(t *testing.T) {
 	table := appendWriterTable()
 	table.BucketCount = 3
-	backend := logBackend(7, 2, 4)
+	backend := logBackend(2, 0, 1)
 	writer, err := newAppendWriter(
 		context.Background(), backend, table,
 		WithAppendNoKeyAssigner(NoKeyAssignerRoundRobin), WithAppendBatchTimeout(time.Millisecond),
@@ -199,7 +204,7 @@ func TestAppendWriterAssignmentsAndLinger(t *testing.T) {
 		}
 	}
 	calls := backend.produced()
-	if got := []int32{calls[0].bucket, calls[1].bucket, calls[2].bucket}; got[0] != 2 || got[1] != 4 || got[2] != 7 {
+	if got := []int32{calls[0].bucket, calls[1].bucket, calls[2].bucket}; got[0] != 0 || got[1] != 1 || got[2] != 2 {
 		t.Fatalf("round-robin buckets = %v", got)
 	}
 	if err := writer.Close(context.Background()); err != nil {
@@ -362,7 +367,7 @@ func testAppendWriterRowFormat(t *testing.T, format LogFormat, compacted bool) {
 func TestAppendWriterArrowAndPartition(t *testing.T) {
 	table := appendWriterTable()
 	table.BucketCount = 2
-	backend := logBackend(1, 3)
+	backend := logBackend(0, 1)
 	backend.physicalID = 88
 	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
@@ -382,8 +387,8 @@ func TestAppendWriterArrowAndPartition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := writer.AppendArrow(context.Background(), 3, record, []ChangeType{Append}).Await(context.Background())
-	if result.Err != nil || result.Bucket != 3 || result.Records != 1 {
+	result := writer.AppendArrow(context.Background(), 1, record, []ChangeType{Append}).Await(context.Background())
+	if result.Err != nil || result.Bucket != 1 || result.Records != 1 {
 		t.Fatalf("Arrow result = %#v", result)
 	}
 	call := backend.produced()[0]
@@ -404,7 +409,7 @@ func TestAppendWriterArrowAndPartition(t *testing.T) {
 	}
 
 	rowWriter, err := newAppendWriter(
-		context.Background(), logBackend(1, 3), table,
+		context.Background(), logBackend(0, 1), table,
 		WithAppendLogFormat(LogFormatIndexed),
 	)
 	if err != nil {
@@ -420,7 +425,7 @@ func TestAppendWriterArrowAndPartition(t *testing.T) {
 	badRecord := badBuilder.NewRecordBatch()
 	badBuilder.Release()
 	defer badRecord.Release()
-	autoWriter, err := newAppendWriter(context.Background(), logBackend(1, 3), table)
+	autoWriter, err := newAppendWriter(context.Background(), logBackend(0, 1), table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,6 +468,8 @@ func TestAppendWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"row compression", table, logBackend(0), []AppendWriterOption{WithAppendLogFormat(LogFormatIndexed), WithAppendArrowCompression(ArrowCompressionZSTD)}, ErrInvalidConfig},
 		{"table format", arrowTable, logBackend(0), []AppendWriterOption{WithAppendLogFormat(LogFormatCompacted)}, ErrInvalidConfig},
 		{"no buckets", table, logBackend(), nil, ErrMetadata},
+		{"invalid bucket IDs", table, logBackend(1), nil, ErrMetadata},
+		{"missing physical leader", table, &fakeAppendWriterBackend{physicalID: 88, bucketCount: 2, locations: logBackend(0).locations}, []AppendWriterOption{WithAppendPartition("old")}, ErrNoBucketLeader},
 		{"metadata error", table, &fakeAppendWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"init error", table, &fakeAppendWriterBackend{physicalID: 9, locations: logBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
 	} {
@@ -716,7 +723,7 @@ func TestClientAppendWriterBackendUsesFluss100Messages(t *testing.T) {
 		t.Fatalf("write result = %#v", result)
 	}
 	if produced.GetTableId() != 9 || produced.GetAcks() != -1 || produced.GetTimeoutMs() != 30_000 ||
-		produced.GetBucketsReq()[0].GetBucketId() != 0 {
+		produced.GetBucketsReq()[0].GetBucketId() != 0 || produced.GetBucketsReq()[0].GetRoutingBucketCount() != 1 {
 		t.Fatalf("produce request = %#v", produced)
 	}
 	batch, err := DecodeLogBatchRows(table.Schema, produced.GetBucketsReq()[0].GetRecords(), true)
@@ -792,7 +799,7 @@ func TestClientAppendWriterBackendMetadataFailures(t *testing.T) {
 	}), nil)
 	client.versions[fmsg.APIKeyGetMetadata] = 0
 	backend := clientAppendWriterBackend{client: client}
-	if _, _, err := backend.metadata(context.Background(), path); err == nil {
+	if _, err := backend.metadata(context.Background(), path); err == nil {
 		t.Fatal("unexpected metadata response succeeded")
 	}
 }

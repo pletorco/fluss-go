@@ -134,19 +134,16 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	if err := ensureAppendWriterPartition(ctx, backend, path, table.Schema.PartitionKey); err != nil {
 		return nil, err
 	}
-	physicalID, locations, err := backend.metadata(ctx, path)
+	layout, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, physicalID, table.ID)
+	if path.Partition == "" && layout.physicalID != table.ID {
+		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
 	}
-	buckets, err := sortedBuckets(locations)
+	buckets, err := completeBucketIDs(layout.count, layout.leaders)
 	if err != nil {
-		return nil, err
-	}
-	if table.BucketCount != 0 && table.BucketCount != len(buckets) {
-		return nil, fmt.Errorf("%w: metadata has %d of %d buckets", ErrMetadata, len(buckets), table.BucketCount)
+		return nil, fmt.Errorf("fgo: open append writer for %s: %w", path, err)
 	}
 	writerID, err := backend.initWriter(ctx, path, buckets[0])
 	if err != nil {
@@ -160,7 +157,7 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 		admission: newWriterAdmission(), stickyIndex: -1,
 	}
 	if path.Partition != "" {
-		writer.partitionID = physicalID
+		writer.partitionID = layout.physicalID
 	}
 	go writer.run()
 	return writer, nil
@@ -539,7 +536,8 @@ func (l *appendWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequen
 			l.writer.config.RequestTimeout, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationLogWrite,
 			func(ctx context.Context) (int64, bool, error) {
 				offset, err := l.writer.backend.produce(ctx, logProduceRequest{
-					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
+					path: l.writer.path, bucket: bucket, bucketCount: int32(len(l.writer.buckets)),
+					tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 					records: encoded, timeout: l.writer.config.RequestTimeout, acks: l.writer.config.Acks,
 				})
 				return offset, err == nil, err
@@ -683,11 +681,7 @@ func (w *AppendWriter) assignBucket(item *pendingWrite) (int32, error) {
 		return *item.bucket, nil
 	}
 	if len(w.table.Schema.BucketKey) != 0 {
-		bucket, err := flussBucket(item.bucketKey, len(w.buckets))
-		if err != nil {
-			return 0, err
-		}
-		return w.buckets[int(bucket)], nil
+		return flussBucket(item.bucketKey, len(w.buckets))
 	}
 	if w.effectiveNoKeyAssigner() == NoKeyAssignerRoundRobin {
 		bucket := w.buckets[w.roundRobin%len(w.buckets)]

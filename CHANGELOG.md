@@ -10,6 +10,8 @@ breaking changes.
 
 ### Fixed
 
+- Opened append writers using the target partition's actual bucket count, so
+  partitions created before and after a change to the table default remain writable.
 - Routed primary-key reads and writes by the table or partition's actual
   bucket count, even when a bucket temporarily has no leader.
 - Returned an explicit error when a scan cannot resolve all bucket leaders,

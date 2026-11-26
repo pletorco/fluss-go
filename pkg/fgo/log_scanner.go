@@ -192,7 +192,7 @@ func newLogScanner(
 	if path.Partition == "" && layout.physicalID != table.ID {
 		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
 	}
-	buckets, err := completeScanBuckets(layout.count, layout.leaders)
+	buckets, err := completeBucketIDs(layout.count, layout.leaders)
 	if err != nil {
 		return nil, fmt.Errorf("fgo: open log scanner for %s: %w", path, err)
 	}

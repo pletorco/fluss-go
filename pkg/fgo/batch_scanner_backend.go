@@ -66,7 +66,7 @@ func resolvedTableBuckets(
 	bucketCount int32,
 	locations map[int32]ServerNode,
 ) ([]TableBucket, error) {
-	buckets, err := completeScanBuckets(bucketCount, locations)
+	buckets, err := completeBucketIDs(bucketCount, locations)
 	if err != nil {
 		return nil, err
 	}

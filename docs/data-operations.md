@@ -37,6 +37,11 @@ writer, err := client.NewUpsertWriter(
 creation applies only to log and upsert writers configured with a partition; reads
 never create server state.
 
+Append routing uses the selected partition's own bucket count. Changing the
+table's default count affects only future partitions; existing partitions do
+not need to match the default to open an append writer. If a leader is missing,
+writer setup returns `ErrNoBucketLeader` rather than routing to a subset.
+
 Primary-key lookups and upserts hash keys using the routing bucket count of
 the selected table or partition. A bucket without a leader is never replaced
 with a different bucket. If the bucket layout changes after a lookuper or
