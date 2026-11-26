@@ -21,7 +21,7 @@ type Lookuper struct {
 	config      LookupConfig
 	tableID     int64
 	partitionID int64
-	buckets     []int32
+	bucketCount int32
 	resolver    schemaResolver
 	observer    MetricsObserver
 
@@ -62,27 +62,26 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
-	physicalID, locations, err := backend.metadata(ctx, path)
+	layout, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, physicalID, table.ID)
+	if path.Partition == "" && layout.physicalID != table.ID {
+		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
 	}
-	buckets, err := sortedBuckets(locations)
-	if err != nil {
-		return nil, err
+	if layout.count <= 0 {
+		return nil, fmt.Errorf("%w: %s has no routing bucket count", ErrMetadata, path)
 	}
 	client := &Lookuper{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: -1, buckets: buckets, resolver: resolverFor(backend, table),
+		partitionID: -1, bucketCount: layout.count, resolver: resolverFor(backend, table),
 		queue: make(chan *lookupTask, config.MaxQueuedKeys),
 		jobs:  make(chan lookupBatch, config.MaxInFlightRequests),
 		slots: make(chan struct{}, config.MaxQueuedKeys),
 		done:  make(chan struct{}),
 	}
 	if path.Partition != "" {
-		client.partitionID = physicalID
+		client.partitionID = layout.physicalID
 	}
 	client.life, client.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the lookuper lifecycle.
 	go client.runScheduler()
@@ -395,11 +394,7 @@ func (c *Lookuper) bucketForValues(values map[string]any) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	bucket, err := flussBucket(encoded, len(c.buckets))
-	if err != nil {
-		return 0, err
-	}
-	return c.buckets[int(bucket)], nil
+	return flussBucket(encoded, int(c.bucketCount))
 }
 
 func decodeLookupValueWithResolver(

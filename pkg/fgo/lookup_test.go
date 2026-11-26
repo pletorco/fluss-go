@@ -44,8 +44,8 @@ type fakeLookupBackend struct {
 	maxActive   int
 }
 
-func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
-	return b.physicalID, b.locations, b.metadataErr
+func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (bucketLayout, error) {
+	return bucketLayout{physicalID: b.physicalID, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeLookupBackend) lookup(
@@ -83,13 +83,9 @@ func (b *fakeLookupBackend) lookup(
 
 func (b *fakeLookupBackend) prefixLookup(
 	ctx context.Context,
-	_ PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	keys [][]byte,
+	input lookupRequest,
 ) ([][][]byte, error) {
-	if err := b.begin(ctx, lookupCall{prefix: true, bucket: bucket, tableID: tableID, partitionID: partitionID, keys: cloneBytesList(keys)}); err != nil {
+	if err := b.begin(ctx, lookupCall{prefix: true, bucket: input.bucket, tableID: input.tableID, partitionID: input.partitionID, keys: cloneBytesList(input.keys)}); err != nil {
 		return nil, err
 	}
 	defer b.end()
@@ -107,8 +103,8 @@ func (b *fakeLookupBackend) prefixLookup(
 	if b.prefixErr != nil {
 		return nil, b.prefixErr
 	}
-	values := make([][][]byte, len(keys))
-	for index, key := range keys {
+	values := make([][][]byte, len(input.keys))
+	for index, key := range input.keys {
 		values[index] = cloneBytesList(b.prefixes[string(key)])
 	}
 	return values, nil
@@ -772,10 +768,9 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := backend.prefixLookup(
-		context.Background(), PhysicalTablePath{TablePath: path},
-		0, table.ID, 23, [][]byte{{1}},
-	); err != nil {
+	if _, err := backend.prefixLookup(context.Background(), lookupRequest{
+		path: PhysicalTablePath{TablePath: path}, bucket: 0, tableID: table.ID, partitionID: 23, keys: [][]byte{{1}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if len(pointRequests) != 2 || pointRequests[0].InsertIfNotExists != nil ||
@@ -865,7 +860,9 @@ func TestClientLookupBackendRejectsBadResponses(t *testing.T) {
 			path := PhysicalTablePath{TablePath: table.Path}
 			var err error
 			if test.prefix {
-				_, err = backend.prefixLookup(context.Background(), path, 0, table.ID, -1, [][]byte{{1}})
+				_, err = backend.prefixLookup(context.Background(), lookupRequest{
+					path: path, bucket: 0, tableID: table.ID, partitionID: -1, keys: [][]byte{{1}},
+				})
 			} else {
 				_, err = backend.lookup(context.Background(), lookupRequest{
 					path: path, bucket: 0, tableID: table.ID, partitionID: -1, keys: [][]byte{{1}},

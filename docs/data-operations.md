@@ -37,6 +37,12 @@ writer, err := client.NewUpsertWriter(
 creation applies only to log and upsert writers configured with a partition; reads
 never create server state.
 
+Primary-key lookups and upserts hash keys using the routing bucket count of
+the selected table or partition. A bucket without a leader is never replaced
+with a different bucket. If the bucket layout changes after a lookuper or
+upsert writer opens, refresh the table metadata and reopen that resource when
+Fluss rejects requests for the previous layout.
+
 ## Writer concurrency and shutdown
 
 Log and upsert writers default to four active requests across distinct buckets.
@@ -101,6 +107,11 @@ writer, err := client.NewAppendWriter(
 
 A log scanner can terminate after a total row limit or at exclusive offsets for
 every initial bucket. Stopping-offset maps must contain exactly those buckets.
+`NewLogScanner` and `ResolveTableBuckets` return `ErrNoBucketLeader` if any
+bucket of the selected table or partition is missing a leader. Retry setup
+after leader election; neither method succeeds with a partial bucket list.
+For already open log scanners, an unavailable leader remains a bucket-local
+error, and the next route attempt can refresh that bucket's metadata.
 
 <!-- go-source: internal/docexamples/snippets_test.go boundedScan -->
 ```go

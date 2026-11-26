@@ -47,8 +47,8 @@ type resolvingLogScannerBackend struct {
 
 func (b resolvingLogScannerBackend) schemaResolver() schemaResolver { return b.resolver }
 
-func (b *fakeLogScannerBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
-	return b.physicalID, b.locations, b.metadataErr
+func (b *fakeLogScannerBackend) metadata(context.Context, PhysicalTablePath) (bucketLayout, error) {
+	return bucketLayout{physicalID: b.physicalID, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeLogScannerBackend) listOffset(

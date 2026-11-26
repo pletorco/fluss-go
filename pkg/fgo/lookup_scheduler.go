@@ -145,7 +145,7 @@ func (c *Lookuper) runPointAttempts(
 ) ([][]byte, error) {
 	return retryLookup(ctx, c.config.RetryPolicy, c.observer, c.config.InsertIfNotExists, func() ([][]byte, error) {
 		return c.backend.lookup(ctx, lookupRequest{
-			path: c.path, bucket: bucket, tableID: c.tableID, partitionID: c.partitionID,
+			path: c.path, bucket: bucket, bucketCount: c.bucketCount, tableID: c.tableID, partitionID: c.partitionID,
 			keys: encodedLookupTasks(tasks), insertIfNotExist: c.config.InsertIfNotExists,
 			timeout: c.config.RequestTimeout, acks: c.config.Acks,
 		})
@@ -158,9 +158,10 @@ func (c *Lookuper) runPrefixAttempts(
 	tasks []*lookupTask,
 ) ([][][]byte, error) {
 	return retryLookup(ctx, c.config.RetryPolicy, c.observer, false, func() ([][][]byte, error) {
-		return c.backend.prefixLookup(
-			ctx, c.path, bucket, c.tableID, c.partitionID, encodedLookupTasks(tasks),
-		)
+		return c.backend.prefixLookup(ctx, lookupRequest{
+			path: c.path, bucket: bucket, bucketCount: c.bucketCount, tableID: c.tableID, partitionID: c.partitionID,
+			keys: encodedLookupTasks(tasks),
+		})
 	})
 }
 

@@ -10,6 +10,10 @@ breaking changes.
 
 ### Fixed
 
+- Routed primary-key reads and writes by the table or partition's actual
+  bucket count, even when a bucket temporarily has no leader.
+- Returned an explicit error when a scan cannot resolve all bucket leaders,
+  and refreshed cached leaderless routes so they can recover after election.
 - Reloaded schemas for recreated tables even when the path and schema ID
   match the dropped table.
 - Prevented canceled table and partition refreshes from overwriting newer

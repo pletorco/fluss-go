@@ -163,14 +163,15 @@ func (r *Router) Coordinator() ServerNode {
 }
 
 // Route returns the current tablet leader for a logical table bucket,
-// refreshing missing metadata once.
+// refreshing missing metadata or a cached unavailable leader once.
 func (r *Router) Route(ctx context.Context, path TablePath, bucket int32) (ServerNode, error) {
 	node, _, err := r.routePhysical(ctx, PhysicalTablePath{TablePath: path}, bucket)
 	return node, err
 }
 
 // RoutePhysical returns the leader for a bucket in a named partition. An empty partition names
-// the unpartitioned table and behaves like Route.
+// the unpartitioned table and behaves like Route. Missing metadata or a cached
+// unavailable leader triggers at most one refresh per route.
 func (r *Router) RoutePhysical(ctx context.Context, path PhysicalTablePath, bucket int32) (ServerNode, error) {
 	node, _, err := r.routePhysical(ctx, path, bucket)
 	return node, err
@@ -180,19 +181,13 @@ func (r *Router) routePhysical(ctx context.Context, path PhysicalTablePath, buck
 	if err := path.Validate(); err != nil {
 		return ServerNode{}, 0, err
 	}
-	if path.Partition == "" {
-		if node, count, err := r.lookupPhysical(path, bucket); node != (ServerNode{}) || err != nil {
-			return node, count, err
-		}
-		if err := r.Refresh(ctx, path.TablePath); err != nil {
-			return ServerNode{}, 0, err
-		}
-		return r.lookupPhysicalRequired(path, bucket)
-	}
-	if node, count, err := r.lookupPhysical(path, bucket); node != (ServerNode{}) || err != nil {
+	node, count, err := r.lookupPhysical(path, bucket)
+	noLeader := errors.Is(err, ErrNoBucketLeader)
+	if node != (ServerNode{}) || (err != nil && !noLeader) {
 		return node, count, err
 	}
-	if err := r.refreshPhysical(ctx, path, false); err != nil {
+	// An existing leaderless partition is a cache hit for a non-forced refresh.
+	if err := r.refreshPhysical(ctx, path, noLeader); err != nil {
 		return ServerNode{}, 0, err
 	}
 	return r.lookupPhysicalRequired(path, bucket)
@@ -226,7 +221,7 @@ func (r *Router) lookupPhysical(path PhysicalTablePath, bucket int32) (ServerNod
 func routedBucket(path string, bucket, count int32, leaders map[int32]ServerNode, details map[int32]BucketMetadata) (ServerNode, int32, error) {
 	node, hasLeader := leaders[bucket]
 	_, hasDetails := details[bucket]
-	if !hasLeader && !hasDetails {
+	if !hasLeader && !hasDetails && (bucket < 0 || bucket >= count) {
 		return ServerNode{}, count, nil
 	}
 	if count <= 0 {

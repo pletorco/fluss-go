@@ -125,8 +125,8 @@ type schedulingKVBackend struct {
 func (b schedulingKVBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]ServerNode, error) {
-	return upsertWriterTable().ID, b.schedule.locations, nil
+) (bucketLayout, error) {
+	return bucketLayout{physicalID: upsertWriterTable().ID, count: int32(len(b.schedule.locations)), leaders: b.schedule.locations}, nil
 }
 
 func (b schedulingKVBackend) initWriter(
@@ -243,8 +243,8 @@ type bucketIsolationKVBackend struct {
 func (b bucketIsolationKVBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
-) (int64, map[int32]ServerNode, error) {
-	return upsertWriterTable().ID, b.locations, nil
+) (bucketLayout, error) {
+	return bucketLayout{physicalID: upsertWriterTable().ID, count: int32(len(b.locations)), leaders: b.locations}, nil
 }
 
 func (bucketIsolationKVBackend) initWriter(
