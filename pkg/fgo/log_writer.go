@@ -41,6 +41,7 @@ const (
 type AppendWriter struct {
 	table              Table
 	bucketKeyPositions []int
+	partitionColumns   []physicalPartitionColumn
 	path               PhysicalTablePath
 	backend            appendWriterBackend
 	config             AppendWriterConfig
@@ -127,10 +128,14 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	if err != nil {
 		return nil, err
 	}
-	if err := validateAppendWriterFormat(table, config); err != nil {
+	if err := resolveAppendWriterFormat(table, &config); err != nil {
 		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	partitionColumns, err := physicalPartitionColumns(table.Schema, path.Partition)
+	if err != nil {
+		return nil, err
+	}
 	if err := ensureAppendWriterPartition(ctx, backend, path, table.Schema.PartitionKey); err != nil {
 		return nil, err
 	}
@@ -152,6 +157,7 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	writer := &AppendWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID, partitionID: layout.partitionID,
 		bucketKeyPositions: appendBucketKeyPositions(table.Schema),
+		partitionColumns:   partitionColumns,
 		writerID:           writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
 		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
 		admission: newWriterAdmission(), stickyIndex: -1,
@@ -160,18 +166,24 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	return writer, nil
 }
 
-func validateAppendWriterFormat(table Table, config AppendWriterConfig) error {
+func resolveAppendWriterFormat(table Table, config *AppendWriterConfig) error {
+	format := LogFormat(strings.ToLower(strings.TrimSpace(table.Properties["table.log.format"])))
+	switch format {
+	case "":
+		// If metadata did not advertise a format, Auto still accepts either
+		// append method and uses compacted encoding for row appends.
+	case LogFormatCompacted, LogFormatIndexed, LogFormatArrow:
+		if config.Format == LogFormatAuto {
+			config.Format = format
+		} else if config.Format != format {
+			return fmt.Errorf("%w: writer format %s does not match table.log.format %s", ErrInvalidConfig, config.Format, format)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported table.log.format %q", ErrInvalidConfig, format)
+	}
 	if config.arrowCompressionSet &&
 		config.Format != LogFormatAuto && config.Format != LogFormatArrow {
-		return fmt.Errorf("%w: Arrow compression requires Arrow or auto format", ErrInvalidConfig)
-	}
-	configured := strings.TrimSpace(table.Properties["table.log.format"])
-	if configured != "" && config.Format != LogFormatAuto &&
-		!strings.EqualFold(configured, string(config.Format)) {
-		return fmt.Errorf(
-			"%w: writer format %s does not match table.log.format %s",
-			ErrInvalidConfig, config.Format, configured,
-		)
+		return fmt.Errorf("%w: Arrow compression requires Arrow-capable table and writer formats", ErrInvalidConfig)
 	}
 	return nil
 }
@@ -245,6 +257,12 @@ func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
+	for _, partition := range w.partitionColumns {
+		if !partition.matches(row[partition.position]) {
+			future.complete(WriteResult{Err: fmt.Errorf("%w: row column %q differs from the selected partition", ErrInvalidRow, partition.name)})
+			return future
+		}
+	}
 	encoding := compactedEncoding
 	if w.config.Format == LogFormatIndexed {
 		encoding = indexedEncoding
@@ -294,6 +312,10 @@ func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arro
 	}
 	if !w.hasBucket(bucket) || int64(len(changes)) != batch.NumRows() {
 		future.complete(WriteResult{Err: fmt.Errorf("%w: invalid Arrow bucket or change count", ErrInvalidRow)})
+		return future
+	}
+	if err := validateArrowBatchNullability(expected, batch); err != nil {
+		future.complete(WriteResult{Err: err})
 		return future
 	}
 	for _, change := range changes {

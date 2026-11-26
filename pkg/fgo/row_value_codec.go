@@ -50,7 +50,10 @@ func appendCompactedValue(dst []byte, logicalType LogicalType, value any) ([]byt
 		}
 		return appendVar32(dst, uint32(encoded)), nil
 	case TimestampType, TimestampLTZType:
-		millis, nanos := timestampParts(dataTypeForLogicalType(logicalType), value.(time.Time))
+		millis, nanos, err := rowTimestampParts(logicalType, value.(time.Time))
+		if err != nil {
+			return nil, err
+		}
 		dst = appendVar64(dst, uint64(millis))
 		if logicalType.Precision > 3 {
 			dst = appendVar32(dst, uint32(nanos))
@@ -236,7 +239,10 @@ func appendIndexedValue(dst []byte, logicalType LogicalType, value any) ([]byte,
 		}
 		return appendLittle(dst, uint64(uint32(encoded)), 4), nil
 	case TimestampType, TimestampLTZType:
-		millis, nanos := timestampParts(kind, value.(time.Time))
+		millis, nanos, err := rowTimestampParts(logicalType, value.(time.Time))
+		if err != nil {
+			return nil, err
+		}
 		dst = appendLittle(dst, uint64(millis), 8)
 		if logicalType.Precision > 3 {
 			dst = appendLittle(dst, uint64(uint32(nanos)), 4)
@@ -442,6 +448,20 @@ func temporalTime(kind DataType, value int32) time.Time {
 		return time.Unix(int64(value)*86400, 0).UTC()
 	}
 	return time.Unix(0, int64(value)*int64(time.Millisecond)).UTC()
+}
+
+func rowTimestampParts(typ LogicalType, value time.Time) (int64, int32, error) {
+	const nanosecondPrecision = 9
+	step := 1
+	for range nanosecondPrecision - typ.Precision {
+		step *= 10
+	}
+	kind := dataTypeForLogicalType(typ)
+	if value.Nanosecond()%step != 0 {
+		return 0, 0, fmt.Errorf("%w: %s(%d) cannot represent the supplied fractional seconds", ErrInvalidRow, kind, typ.Precision)
+	}
+	millis, nanos := timestampParts(kind, value)
+	return millis, nanos, nil
 }
 
 func timestampParts(kind DataType, value time.Time) (int64, int32) {
