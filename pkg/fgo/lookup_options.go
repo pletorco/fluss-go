@@ -93,6 +93,7 @@ func WithLookupPartition(partition string) LookupOption {
 
 // WithLookupInsertIfNotExists atomically inserts a missing primary-key row before returning it.
 // Fluss fills auto-increment columns and sets nullable non-key columns to null.
+// Fluss 1.0 supports this option only for unpartitioned tables.
 func WithLookupInsertIfNotExists(timeout time.Duration, acks int32) LookupOption {
 	return func(config *LookupConfig) error {
 		if timeout <= 0 || timeout/time.Millisecond > math.MaxInt32 ||

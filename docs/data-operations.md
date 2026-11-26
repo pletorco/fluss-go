@@ -312,7 +312,9 @@ lookup, err := client.NewLookuper(
 ```
 
 The option is rejected when the schema has required non-key values that Fluss
-cannot synthesize.
+cannot synthesize. It is also unavailable on partitioned tables in Fluss 1.0.0;
+opening that combination returns `ErrUnsupportedAPI` before sending a lookup.
+Ordinary point and prefix lookups on partitioned tables remain supported.
 
 Concurrent point and prefix calls share compatible physical-table and bucket
 batches. Queue entries, batch timeout, keys per request, active requests, request

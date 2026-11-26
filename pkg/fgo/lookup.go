@@ -124,6 +124,11 @@ func validateLookupInsertSchema(schema Schema, config LookupConfig) error {
 	if !config.InsertIfNotExists {
 		return nil
 	}
+	if len(schema.PartitionKey) != 0 {
+		// The Fluss 1.0 insert path decodes a canonical physical key using
+		// the logical primary-key schema, which still includes the partition.
+		return fmt.Errorf("%w: lookup insert-if-not-exists on a partitioned table is not supported by Fluss 1.0", ErrUnsupportedAPI)
+	}
 	for _, column := range schema.Columns {
 		if !column.Nullable && !slices.Contains(schema.PrimaryKey, column.Name) &&
 			!slices.Contains(schema.AutoIncrement, column.Name) {

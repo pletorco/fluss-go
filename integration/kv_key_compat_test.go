@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
@@ -38,6 +39,13 @@ func testPartitionedKVWireKeys(t *testing.T, client *fgo.Client, admin *fadm.Cli
 		t.Fatal(err)
 	}
 	wire := readyWireKV(t, ctx, client, admin, fgo.PhysicalTablePath{TablePath: path, Partition: "apac"})
+	if l, err := client.NewLookuper(ctx, wire.table, fgo.WithLookupPartition("apac"),
+		fgo.WithLookupInsertIfNotExists(time.Second, -1)); l != nil || !errors.Is(err, fgo.ErrUnsupportedAPI) {
+		if l != nil {
+			_ = l.Close()
+		}
+		t.Fatalf("partitioned lookup insert-if-missing: %v, want ErrUnsupportedAPI", err)
+	}
 	writer, err := client.NewUpsertWriter(ctx, wire.table, fgo.WithUpsertPartition("apac"), fgo.WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)

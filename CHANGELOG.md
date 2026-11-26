@@ -46,6 +46,8 @@ breaking changes.
   handles after drop and recreation instead of combining old and new IDs.
 - Opened append writers using the target partition's actual bucket count, so
   partitions created before and after a change to the table default remain writable.
+- Rejected insert-if-missing lookups on partitioned tables up front because
+  Fluss 1.0 cannot insert using the canonical physical lookup key.
 - Left write offsets unknown when a successful Append or Upsert reply omits
   its offset, rather than deriving offsets from protobuf's default zero.
 - Included the resolved routing bucket count in log-table batch scans, so
