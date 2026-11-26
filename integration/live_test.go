@@ -841,6 +841,9 @@ func testSchemaEvolution(
 	t.Run("returned metadata ownership", func(t *testing.T) {
 		testSchemaMetadataOwnership(t, ctx, client, path)
 	})
+	t.Run("active scanner metadata ownership", func(t *testing.T) {
+		testActiveLogScannerMetadataOwnership(t, ctx, client, path)
+	})
 }
 
 func appendSchemaEvolutionRow(

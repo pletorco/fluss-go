@@ -16,7 +16,10 @@ input metadata, and each `GetTable` result owns a separate schema tree, includin
 column slices, nested logical types, and key definitions. Changing one returned
 schema does not change the cache or another metadata result, and does not alter
 the server table. Ordinary Go copies of the same returned `Table` still share
-that result's slices and pointers; keep metadata passed to active readers stable.
+that result's slices and pointers. Once opened, readers and writers own
+copies of their table metadata; later changes to the caller's copy do not
+affect them. `LogScanner.Schema()` returns a separate copy of the result
+schema, including nested fields and any projection.
 Internal cache hits borrow the immutable snapshot rather than cloning it for
 each decoded record.
 

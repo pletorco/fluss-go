@@ -72,6 +72,8 @@ breaking changes.
   to finish.
 - Kept caller-supplied reader schemas from replacing shared server metadata
   used by subsequent table lookups and record decoding.
+- Detached active reader and upsert metadata from caller-owned tables, and
+  made log scanner schema results safe to mutate without affecting the scan.
 - Rejected null values in historical Arrow columns mapped to a required
   target, matching row schema evolution.
 - Preserved the server's filtered progress when a bounded log scan delivers

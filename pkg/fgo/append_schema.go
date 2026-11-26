@@ -1,14 +1,5 @@
 package fgo
 
-import "maps"
-
-// Snapshot only metadata, never caller rows. The writer owns this tree for its
-// lifetime, so per-row validation need not rebuild or revalidate schema metadata.
-func snapshotAppendTable(table Table) Table {
-	table.Schema, table.Properties = snapshotSchema(table.Schema), maps.Clone(table.Properties)
-	return table
-}
-
 func appendBucketKeyPositions(schema Schema) []int {
 	if len(schema.BucketKey) == 0 {
 		return nil
