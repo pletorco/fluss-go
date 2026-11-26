@@ -56,6 +56,9 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 	if err := table.Schema.Validate(); err != nil {
 		return nil, err
 	}
+	if err := validateKVKeyFormat(table); err != nil {
+		return nil, err
+	}
 	valueEncoding, err := kvValueEncoding(table)
 	if err != nil {
 		return nil, err
