@@ -10,6 +10,9 @@ breaking changes.
 
 ### Fixed
 
+- Retained undelivered typed log, current-state, and snapshot scan pages when
+  an application codec fails. Retrying the poll neither skips rows nor replays
+  the underlying read, and completion waits for successful typed delivery.
 - Encoded Fluss 1.0 physical keys for partitioned KV writes and lookups,
   excluding partition columns from stored keys and default bucket routing.
   See [KV key compatibility](docs/data-operations.md#kv-key-compatibility)

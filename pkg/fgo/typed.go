@@ -10,7 +10,7 @@ import (
 type Codec[T any] interface {
 	// Encode maps one application value to schema column order.
 	Encode(T) (Row, error)
-	// Decode maps one row to an application value without retaining the row.
+	// Decode maps one row to an application value without modifying or retaining it.
 	Decode(Row) (T, error)
 }
 
@@ -420,8 +420,9 @@ type TypedScanResult[T any] struct {
 
 // TypedLogScanner decodes row-based log scan results.
 type TypedLogScanner[T any] struct {
-	scanner *LogScanner
-	codec   Codec[T]
+	scanner  *LogScanner
+	codec    Codec[T]
+	delivery *typedScanDelivery[ScanResult]
 }
 
 // NewTypedLogScanner opens a log scanner that decodes every row with codec.
@@ -443,7 +444,7 @@ func NewTypedLogScanner[T any](
 	if err != nil {
 		return nil, err
 	}
-	return &TypedLogScanner[T]{scanner: scanner, codec: codec}, nil
+	return wrapTypedLogScanner(scanner, codec)
 }
 
 func wrapTypedLogScanner[T any](
@@ -456,25 +457,28 @@ func wrapTypedLogScanner[T any](
 	if err := validateTypedCodec(codec); err != nil {
 		return nil, err
 	}
-	return &TypedLogScanner[T]{scanner: scanner, codec: codec}, nil
+	return &TypedLogScanner[T]{scanner: scanner, codec: codec, delivery: newTypedScanDelivery[ScanResult]()}, nil
 }
 
 // Poll waits for the next decoded result.
-// A decode failure returns no partial decoded records.
+// A codec failure returns no partial records and retains the rows for a later Poll.
 func (s *TypedLogScanner[T]) Poll(ctx context.Context) (TypedScanResult[T], error) {
 	if s == nil || s.scanner == nil {
 		return TypedScanResult[T]{}, fmt.Errorf("%w: nil typed log scanner", ErrInvalidConfig)
 	}
+	return pollTypedScan(ctx, s.scanner.life, s.delivery, s.readRows, s.decode, s.scanner.Done)
+}
+
+func (s *TypedLogScanner[T]) readRows(ctx context.Context) (ScanResult, error) {
 	raw, err := s.scanner.Poll(ctx)
-	if err != nil {
-		return TypedScanResult[T]{}, err
-	}
-	defer raw.Release()
 	if len(raw.ArrowBatches) != 0 {
-		return TypedScanResult[T]{}, fmt.Errorf(
-			"%w: typed row scanner does not decode Arrow batches", ErrUnsupportedAPI,
-		)
+		raw.Release()
+		return ScanResult{}, errTypedScanArrow
 	}
+	return raw, err
+}
+
+func (s *TypedLogScanner[T]) decode(raw ScanResult) (TypedScanResult[T], error) {
 	result := TypedScanResult[T]{
 		Records:       make([]TypedScanRecord[T], 0, len(raw.Records)),
 		BucketErrors:  append([]BucketScanError(nil), raw.BucketErrors...),
@@ -497,12 +501,13 @@ func (s *TypedLogScanner[T]) Poll(ctx context.Context) (TypedScanResult[T], erro
 	return result, nil
 }
 
-// Done reports whether configured scan bounds have been reached.
+// Done reports whether configured scan bounds have been reached and all rows delivered.
 func (s *TypedLogScanner[T]) Done() bool {
-	return s == nil || s.scanner == nil || s.scanner.Done()
+	return s == nil || s.scanner == nil || s.delivery.done(s.scanner.Done)
 }
 
-// Wakeup interrupts a blocked Poll with [ErrWakeup].
+// Wakeup interrupts Poll while waiting for the underlying log scanner.
+// It does not interrupt application codec calls.
 func (s *TypedLogScanner[T]) Wakeup() {
 	if s != nil && s.scanner != nil {
 		s.scanner.Wakeup()
@@ -514,7 +519,9 @@ func (s *TypedLogScanner[T]) Close() error {
 	if s == nil || s.scanner == nil {
 		return nil
 	}
-	return s.scanner.Close()
+	err := s.scanner.Close()
+	s.delivery.discard()
+	return err
 }
 
 // TypedBatchResult contains decoded values from one bounded poll.
@@ -527,8 +534,9 @@ type TypedBatchResult[T any] struct {
 
 // TypedBatchScanner decodes bounded current-state or snapshot scan rows.
 type TypedBatchScanner[T any] struct {
-	scanner *BatchScanner
-	codec   Codec[T]
+	scanner  *BatchScanner
+	codec    Codec[T]
+	delivery *typedScanDelivery[BatchResult]
 }
 
 // NewTypedBatchScanner opens a typed current-state scanner for one table bucket.
@@ -550,7 +558,7 @@ func NewTypedBatchScanner[T any](
 	if err != nil {
 		return nil, err
 	}
-	return &TypedBatchScanner[T]{scanner: scanner, codec: codec}, nil
+	return WrapTypedBatchScanner(scanner, codec)
 }
 
 // NewTypedSnapshotBatchScanner opens a typed scanner for one immutable snapshot.
@@ -575,10 +583,11 @@ func NewTypedSnapshotBatchScanner[T any](
 	if err != nil {
 		return nil, err
 	}
-	return &TypedBatchScanner[T]{scanner: scanner, codec: codec}, nil
+	return WrapTypedBatchScanner(scanner, codec)
 }
 
 // WrapTypedBatchScanner wraps an existing row-oriented batch scanner.
+// Poll and close the row scanner only through the wrapper after wrapping it.
 func WrapTypedBatchScanner[T any](
 	scanner *BatchScanner,
 	codec Codec[T],
@@ -589,25 +598,28 @@ func WrapTypedBatchScanner[T any](
 	if err := validateTypedCodec(codec); err != nil {
 		return nil, err
 	}
-	return &TypedBatchScanner[T]{scanner: scanner, codec: codec}, nil
+	return &TypedBatchScanner[T]{scanner: scanner, codec: codec, delivery: newTypedScanDelivery[BatchResult]()}, nil
 }
 
 // Poll returns the next decoded bounded-scan result.
-// A decode failure returns no partial decoded values.
+// A codec failure returns no partial values and retains the rows for a later Poll.
 func (s *TypedBatchScanner[T]) Poll(ctx context.Context) (TypedBatchResult[T], error) {
 	if s == nil || s.scanner == nil {
 		return TypedBatchResult[T]{}, fmt.Errorf("%w: nil typed batch scanner", ErrInvalidConfig)
 	}
+	return pollTypedScan(ctx, s.scanner.life, s.delivery, s.readRows, s.decode, s.scanner.Done)
+}
+
+func (s *TypedBatchScanner[T]) readRows(ctx context.Context) (BatchResult, error) {
 	raw, err := s.scanner.Poll(ctx)
-	if err != nil {
-		return TypedBatchResult[T]{}, err
-	}
-	defer raw.Release()
 	if len(raw.ArrowBatches) != 0 {
-		return TypedBatchResult[T]{}, fmt.Errorf(
-			"%w: typed batch scanner does not decode Arrow batches", ErrUnsupportedAPI,
-		)
+		raw.Release()
+		return BatchResult{}, errTypedScanArrow
 	}
+	return raw, err
+}
+
+func (s *TypedBatchScanner[T]) decode(raw BatchResult) (TypedBatchResult[T], error) {
 	result := TypedBatchResult[T]{Values: make([]T, 0, len(raw.Rows)), Done: raw.Done}
 	for _, row := range raw.Rows {
 		value, err := s.codec.Decode(row)
@@ -619,9 +631,9 @@ func (s *TypedBatchScanner[T]) Poll(ctx context.Context) (TypedBatchResult[T], e
 	return result, nil
 }
 
-// Done reports whether the bounded scan has completed.
+// Done reports whether the bounded scan has completed and all rows were delivered.
 func (s *TypedBatchScanner[T]) Done() bool {
-	return s == nil || s.scanner == nil || s.scanner.Done()
+	return s == nil || s.scanner == nil || s.delivery.done(s.scanner.Done)
 }
 
 // Close closes the wrapped scanner or snapshot reader.
@@ -629,5 +641,7 @@ func (s *TypedBatchScanner[T]) Close() error {
 	if s == nil || s.scanner == nil {
 		return nil
 	}
-	return s.scanner.Close()
+	err := s.scanner.Close()
+	s.delivery.discard()
+	return err
 }
