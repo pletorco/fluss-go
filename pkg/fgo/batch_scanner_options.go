@@ -94,8 +94,11 @@ type SnapshotBatchReader interface {
 	// ReadBatch returns at most limit rows in a consistent layout. Full rows
 	// use table schema order. A narrower projection may be returned directly
 	// in requested column order. io.EOF may accompany a final non-empty batch.
+	// ReadBatch must honor context cancellation and return promptly so the
+	// scanner can safely close the reader.
 	ReadBatch(context.Context, int) ([]Row, error)
-	// Close releases reader resources and is safe after completion.
+	// Close releases reader resources, including after EOF or a read error.
+	// The scanner calls Close once, after any active ReadBatch returns.
 	Close() error
 }
 
