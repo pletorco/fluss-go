@@ -27,6 +27,10 @@ breaking changes.
   so the next poll resumes without replaying a sequence or reopening a session.
 - Refreshed a stale leader route when a single-bucket `ListOffsets` reply
   reports a routing error in its response body.
+- Closed connections that finish after their shared setup was abandoned
+  instead of letting them replace a live cached connection.
+- Applied the connection timeout through TLS, API negotiation, and
+  authentication, so a silent coordinator seed cannot starve later seeds.
 - Canceled schema waits during point and prefix lookup decoding when the
   lookuper closes, without interrupting other readers of the shared schema.
 - Kept partition metadata tied to its parent table ID, rejecting stale table
