@@ -21,6 +21,8 @@ breaking changes.
   excluding partition columns from stored keys and default bucket routing.
   See [KV key compatibility](docs/data-operations.md#kv-key-compatibility)
   before upgrading a table written by an older fluss-go client.
+- Rejected keyed KV reads and writes on lake-bound tables before using an
+  incompatible physical key, including Paimon tables with tiering disabled.
 - Encoded wide DECIMAL values in Java's minimal signed form at negative
   byte-width boundaries, fixing interoperability for affected primary and
   bucket keys. Existing row values still decode; review the

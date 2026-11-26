@@ -222,6 +222,13 @@ projection, cache, and error contract.
 
 ## Partitioned KV keys
 
+Go rejects keyed KV operations (full/partial upserts, deletes, and point/prefix
+lookups) with `fgo.ErrUnsupportedAPI` when table metadata advertises a nonempty
+`table.datalake.format`. Lake-bound tables can use a different physical key
+encoding and bucket routing even with tiering disabled. Current-state scans
+remain available to inspect rows. This guard does not repair existing duplicate
+physical keys; reconcile affected data separately before switching writers.
+
 Select a partition with `WithUpsertPartition` or `WithLookupPartition`.
 Full and partial upserts, deletes, and point lookups still accept the logical
 primary key, including partition columns. Any supplied partition key value
