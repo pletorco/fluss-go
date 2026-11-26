@@ -8,11 +8,16 @@ import (
 // Test-only wrappers that decode with a fixed in-memory schema.
 
 func decodeLookupValue(table Table, value []byte) (Row, error) {
+	encoding, err := kvValueEncoding(table)
+	if err != nil {
+		return nil, err
+	}
 	return decodeLookupValueWithResolver(
 		context.Background(),
 		fixedSchemaResolver{path: table.Path, schemaID: table.SchemaID, schema: table.Schema},
 		table,
 		value,
+		encoding,
 	)
 }
 

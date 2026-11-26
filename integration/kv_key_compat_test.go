@@ -192,6 +192,15 @@ func (w wireKV) wantFound(t *testing.T, ctx context.Context, key []byte, want bo
 
 func (w wireKV) put(t *testing.T, ctx context.Context, key []byte, row fgo.Row) {
 	t.Helper()
+	value, err := fgo.EncodeCompactedRow(w.table.Schema, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.putEncoded(t, ctx, key, value)
+}
+
+func (w wireKV) putEncoded(t *testing.T, ctx context.Context, key, value []byte) {
+	t.Helper()
 	init, err := fmsg.NewRequest(fmsg.APIKeyInitWriter, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -200,10 +209,6 @@ func (w wireKV) put(t *testing.T, ctx context.Context, key []byte, row fgo.Row) 
 		DatabaseName: proto.String(w.path.Database), TableName: proto.String(w.path.Table),
 	}}
 	response, err := w.client.RequestBucket(ctx, w.path, w.bucket.BucketID, init)
-	if err != nil {
-		t.Fatal(err)
-	}
-	value, err := fgo.EncodeCompactedRow(w.table.Schema, row)
 	if err != nil {
 		t.Fatal(err)
 	}

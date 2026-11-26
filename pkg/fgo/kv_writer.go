@@ -14,21 +14,22 @@ import (
 // UpsertWriter batches primary-key upserts and deletes.
 // It owns one background scheduler and must be closed after use.
 type UpsertWriter struct {
-	table       Table
-	path        PhysicalTablePath
-	backend     upsertWriterBackend
-	config      UpsertWriterConfig
-	tableID     int64
-	partitionID int64
-	writerID    int64
-	bucketCount int32
-	keys        kvKeyLayout
-	commands    chan upsertWriterCommand
-	slots       chan struct{}
-	done        chan struct{}
-	admission   writerAdmission
-	closeErr    error // Published by closing done after the scheduler exits.
-	observer    MetricsObserver
+	table         Table
+	path          PhysicalTablePath
+	backend       upsertWriterBackend
+	config        UpsertWriterConfig
+	tableID       int64
+	partitionID   int64
+	writerID      int64
+	bucketCount   int32
+	keys          kvKeyLayout
+	valueEncoding rowEncoding
+	commands      chan upsertWriterCommand
+	slots         chan struct{}
+	done          chan struct{}
+	admission     writerAdmission
+	closeErr      error // Published by closing done after the scheduler exits.
+	observer      MetricsObserver
 }
 
 type upsertWriterCommand struct {
@@ -98,6 +99,10 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 	if err := validateUpsertWriterTable(table); err != nil {
 		return nil, err
 	}
+	valueEncoding, err := kvValueEncoding(table)
+	if err != nil {
+		return nil, err
+	}
 	config, err := upsertWriterConfig(options)
 	if err != nil {
 		return nil, err
@@ -145,8 +150,9 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 	writer := &UpsertWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: layout.partitionID, writerID: writerID, bucketCount: layout.count, keys: keys,
-		commands: make(chan upsertWriterCommand, config.MaxBuffered),
-		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
+		valueEncoding: valueEncoding,
+		commands:      make(chan upsertWriterCommand, config.MaxBuffered),
+		slots:         make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
 		admission: newWriterAdmission(),
 	}
 	go writer.run()
@@ -202,7 +208,7 @@ func (w *UpsertWriter) Upsert(ctx context.Context, row Row) *WriteFuture {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
-	value, err := EncodeCompactedRow(w.table.Schema, row)
+	value, err := encodeRow(w.table.Schema, row, w.valueEncoding)
 	if err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
@@ -232,7 +238,7 @@ func (w *UpsertWriter) PartialUpsert(ctx context.Context, columns []string, valu
 	for index, column := range columns {
 		full[positions[column]] = values[index]
 	}
-	value, err := EncodeCompactedRow(w.table.Schema, full)
+	value, err := encodeRow(w.table.Schema, full, w.valueEncoding)
 	if err != nil {
 		future.complete(WriteResult{Err: err})
 		return future

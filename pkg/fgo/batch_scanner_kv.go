@@ -33,7 +33,7 @@ func (s *BatchScanner) pollKVSession(ctx context.Context, backend kvSessionScanB
 	var rows []Row
 	if len(batch.records) != 0 {
 		var err error
-		rows, err = decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, batch.records)
+		rows, err = decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, batch.records, s.valueEncoding)
 		if err != nil {
 			return BatchResult{}, err
 		}

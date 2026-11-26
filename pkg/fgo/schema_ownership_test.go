@@ -219,7 +219,7 @@ func TestGetTableMutationDoesNotRaceCachedReaders(t *testing.T) {
 	go func() {
 		defer workers.Done()
 		for range 100 {
-			got, err := decodeLookupValueWithResolver(context.Background(), client, reader, encoded)
+			got, err := decodeLookupValueWithResolver(context.Background(), client, reader, encoded, compactedEncoding)
 			if err != nil || !reflect.DeepEqual(got, wantRow) {
 				t.Errorf("concurrent cached decode changed: got=%#v err=%v", got, err)
 				return

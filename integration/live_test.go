@@ -143,6 +143,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("bounded CDC across an empty KV batch", func(t *testing.T) {
 		testEmptyKVLogBatch(t, client, admin, database)
 	})
+	t.Run("INDEXED KV value format", func(t *testing.T) {
+		testIndexedKVValues(t, client, admin, database)
+	})
 	t.Run("partitioned KV physical key compatibility", func(t *testing.T) {
 		testPartitionedKVWireKeys(t, client, admin, database)
 	})

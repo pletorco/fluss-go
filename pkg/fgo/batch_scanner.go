@@ -12,13 +12,14 @@ import (
 // table bucket. Poll calls are serialized; call Close to interrupt an active
 // poll and release scanner resources.
 type BatchScanner struct {
-	table      Table
-	bucket     TableBucket
-	config     BatchScannerConfig
-	backend    batchScanBackend
-	snapshot   SnapshotBatchReader
-	projection []int
-	resolver   schemaResolver
+	table         Table
+	bucket        TableBucket
+	config        BatchScannerConfig
+	backend       batchScanBackend
+	snapshot      SnapshotBatchReader
+	projection    []int
+	resolver      schemaResolver
+	valueEncoding rowEncoding
 
 	// KV session state is guarded by pollGate.
 	scannerID []byte
@@ -100,6 +101,13 @@ func newBatchScanner(
 	if backend == nil && snapshot == nil {
 		return nil, fmt.Errorf("%w: batch scan backend is required", ErrInvalidConfig)
 	}
+	var valueEncoding rowEncoding
+	if table.Kind == PrimaryKeyTable && snapshot == nil {
+		valueEncoding, err = kvValueEncoding(table)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// Preserve the existing KV scan fallback, but a named log partition
 	// may have a different layout from the table's default for new partitions.
 	if bucket.BucketCount <= 0 && table.BucketCount > 0 && (bucket.PartitionID < 0 || table.Kind == PrimaryKeyTable) {
@@ -108,7 +116,8 @@ func newBatchScanner(
 	scanner := &BatchScanner{
 		table: table, bucket: bucket, config: config, backend: backend,
 		snapshot: snapshot, projection: projection, resolver: resolverFor(backend, table),
-		pollGate: make(chan struct{}, 1),
+		valueEncoding: valueEncoding,
+		pollGate:      make(chan struct{}, 1),
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
 	return scanner, nil

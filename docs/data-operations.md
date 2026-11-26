@@ -261,6 +261,10 @@ Before changing clients on a table that may contain affected keys:
 
 ## KV merge and insert-if-missing
 
+Upserts, lookups, and current-state KV scans use the value encoding advertised
+by `table.kv.format` (`COMPACTED` by default or `INDEXED`). This setting does not
+change physical primary-key encoding or determine the changelog format.
+
 `MergeModeDefault` applies the table's configured merge engine.
 `MergeModeOverwrite` bypasses it and writes the supplied values as replacements.
 One writer uses one mode for every mutation it accepts.
