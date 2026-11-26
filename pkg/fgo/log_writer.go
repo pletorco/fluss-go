@@ -41,6 +41,7 @@ const (
 type AppendWriter struct {
 	table              Table
 	bucketKeyPositions []int
+	partitionColumns   []physicalPartitionColumn
 	path               PhysicalTablePath
 	backend            appendWriterBackend
 	config             AppendWriterConfig
@@ -131,6 +132,10 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	partitionColumns, err := physicalPartitionColumns(table.Schema, path.Partition)
+	if err != nil {
+		return nil, err
+	}
 	if err := ensureAppendWriterPartition(ctx, backend, path, table.Schema.PartitionKey); err != nil {
 		return nil, err
 	}
@@ -152,6 +157,7 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	writer := &AppendWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID, partitionID: layout.partitionID,
 		bucketKeyPositions: appendBucketKeyPositions(table.Schema),
+		partitionColumns:   partitionColumns,
 		writerID:           writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
 		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
 		admission: newWriterAdmission(), stickyIndex: -1,
@@ -250,6 +256,12 @@ func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 	if err := validateRowValues(w.table.Schema.Columns, row); err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
+	}
+	for _, partition := range w.partitionColumns {
+		if !partition.matches(row[partition.position]) {
+			future.complete(WriteResult{Err: fmt.Errorf("%w: row column %q differs from the selected partition", ErrInvalidRow, partition.name)})
+			return future
+		}
 	}
 	encoding := compactedEncoding
 	if w.config.Format == LogFormatIndexed {

@@ -30,8 +30,9 @@ func TestAppendWriterOwnsSchemaMetadata(t *testing.T) {
 				t.Fatal(err)
 			}
 			backend := logBackend(0)
+			backend.partitionID = 88
 			writer, err := newAppendWriter(context.Background(), backend, table,
-				WithAppendLogFormat(format), WithAppendBatchTimeout(time.Hour))
+				WithAppendLogFormat(format), WithAppendBatchTimeout(time.Hour), WithAppendPartition("1"))
 			if err != nil {
 				t.Fatal(err)
 			}

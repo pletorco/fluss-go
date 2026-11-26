@@ -11,13 +11,23 @@ import (
 	"time"
 )
 
-type kvPartitionColumn struct {
-	name  string
-	kind  DataType
-	value any
+type physicalPartitionColumn struct {
+	name     string
+	position int
+	kind     DataType
+	value    any
 }
 
-func kvPartitionColumns(schema Schema, name string) ([]kvPartitionColumn, error) {
+func kvPartitionColumns(schema Schema, name string) ([]physicalPartitionColumn, error) {
+	for _, key := range schema.PartitionKey {
+		if !slices.Contains(schema.PrimaryKey, key) {
+			return nil, fmt.Errorf("%w: partition key %q is not part of the logical primary key", ErrInvalidSchema, key)
+		}
+	}
+	return physicalPartitionColumns(schema, name)
+}
+
+func physicalPartitionColumns(schema Schema, name string) ([]physicalPartitionColumn, error) {
 	if len(schema.PartitionKey) == 0 {
 		return nil, nil
 	}
@@ -25,18 +35,18 @@ func kvPartitionColumns(schema Schema, name string) ([]kvPartitionColumn, error)
 	if err != nil {
 		return nil, err
 	}
-	columns := schema.columnsByName()
-	result := make([]kvPartitionColumn, 0, len(spec))
+	result := make([]physicalPartitionColumn, 0, len(spec))
 	for _, key := range schema.PartitionKey {
-		if !slices.Contains(schema.PrimaryKey, key) {
-			return nil, fmt.Errorf("%w: partition key %q is not part of the logical primary key", ErrInvalidSchema, key)
+		position := slices.IndexFunc(schema.Columns, func(c Column) bool { return c.Name == key })
+		if position < 0 {
+			return nil, fmt.Errorf("%w: partition key column %q does not exist", ErrInvalidSchema, key)
 		}
-		kind := dataTypeForLogicalType(logicalTypeForColumn(columns[key]))
+		kind := dataTypeForLogicalType(logicalTypeForColumn(schema.Columns[position]))
 		value, err := parseKVPartitionValue(kind, spec[key])
 		if err != nil {
 			return nil, fmt.Errorf("%w: selected partition has an invalid %s value for column %q", ErrInvalidConfig, kind, key)
 		}
-		result = append(result, kvPartitionColumn{name: key, kind: kind, value: value})
+		result = append(result, physicalPartitionColumn{name: key, position: position, kind: kind, value: value})
 	}
 	return result, nil
 }
@@ -109,7 +119,7 @@ func parseKVPartitionTime(kind DataType, value string) (time.Time, error) {
 	}
 }
 
-func (p kvPartitionColumn) matches(value any) bool {
+func (p physicalPartitionColumn) matches(value any) bool {
 	switch expected := p.value.(type) {
 	case []byte:
 		actual, ok := value.([]byte)

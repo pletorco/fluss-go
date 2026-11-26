@@ -947,8 +947,11 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 	if _, err := waitForPartitionReady(ctx, client, partitionAdmin, table, partitionPath, 1); err != nil {
 		t.Fatalf("dynamic partition did not become ready: %v", err)
 	}
-	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil {
-		t.Fatalf("append to dynamic partition: %v", result.Err)
+	if result := writer.Append(ctx, fgo.Row{int32(1), "other", "mismatch"}).Await(ctx); !errors.Is(result.Err, fgo.ErrInvalidRow) {
+		t.Fatalf("partition mismatch = %+v, want ErrInvalidRow", result)
+	}
+	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil || !result.OffsetKnown || result.BaseOffset != 0 {
+		t.Fatalf("first append to dynamic partition = %+v, want offset 0", result)
 	}
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
