@@ -88,7 +88,7 @@ func (m *connectionManager) getNode(ctx context.Context, node ServerNode) (*Clie
 		return client, err
 	}
 	return m.flights.Do(ctx, key, func(workCtx context.Context) (*Client, error) {
-		return m.openManagedConnection(workCtx, key, node.ID)
+		return m.openManagedConnection(workCtx, key)
 	}, nil)
 }
 
@@ -107,25 +107,38 @@ func (m *connectionManager) cachedClient(key connectionKey) (*Client, bool, erro
 func (m *connectionManager) openManagedConnection(
 	ctx context.Context,
 	key connectionKey,
-	serverID int32,
 ) (*Client, error) {
 	if client, found, err := m.cachedClient(key); found || err != nil {
 		return client, err
 	}
 	client, err := m.open(ctx, key.address, key.serverType)
-	m.mu.Lock()
-	if m.closed && err == nil {
-		err = ErrClosed
+	if err != nil {
+		return nil, err
 	}
-	if err == nil {
-		client.serverID = serverID
-		m.clients[key] = client
-	}
-	m.mu.Unlock()
-	if err != nil && client != nil {
+	winner, err := m.publishConnection(ctx, key, client)
+	if winner != client {
 		_ = client.shutdown()
 	}
-	return client, err
+	return winner, err
+}
+
+func (m *connectionManager) publishConnection(ctx context.Context, key connectionKey, client *Client) (*Client, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return nil, ErrClosed
+	}
+	// The coalescer cancels an abandoned flight before a replacement can
+	// start. Even if setup ignores that cancellation, it cannot publish.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if existing := m.clients[key]; existing != nil {
+		return existing, nil
+	}
+	client.serverID = key.id
+	m.clients[key] = client
+	return client, nil
 }
 
 func (m *connectionManager) open(ctx context.Context, address string, expectedServerType ServerType) (*Client, error) {
