@@ -12,6 +12,8 @@ const (
 	kvBatchHeaderSize    = 28
 	logBatchV0HeaderSize = 48
 	logBatchV1HeaderSize = 52
+	logBatchV2HeaderSize = 56
+	logBatchEpochOffset  = 21
 )
 
 // KV batch bytes are [length:4][magic:1][CRC32C:4][schema:2][reserved:1]
@@ -20,12 +22,10 @@ const (
 // schema through the final record.
 //
 // Log v0 bytes are [base offset:8][length:4][magic:1][commit time:8]
-// [CRC32C:4] plus the common schema-and-writer tail. Log v1 inserts a four-byte
-// leader epoch before the checksum. Their lengths exclude the first 12 bytes,
-// and checksums cover from schema through the final record. These boundaries
-// are pinned to Apache Fluss 0.9.1 commit
-// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and byte-locked by
-// TestKVAndLogBatchesMatchJava091Fixtures.
+// [CRC32C:4] plus the common schema-and-writer tail. Fluss 1.0 log v1 adds
+// a four-byte statistics length and optional statistics before the records.
+// V2 also inserts the leader epoch before the checksum. Lengths exclude the
+// first 12 bytes, and checksums cover schema through the final record.
 
 // ErrMalformedRecordBatch reports an invalid KV, row, or Arrow batch encoding.
 var ErrMalformedRecordBatch = errors.New("fgo: malformed record batch")
@@ -133,15 +133,15 @@ func decodeKVRecord(encoded []byte, position int) (KVRecord, int, error) {
 	return record, bodyEnd, nil
 }
 
-// LogBatch encodes compacted or indexed row records. Magic 0 and 1 use the Fluss 1.0 layouts.
+// LogBatch encodes compacted or indexed row records using the Fluss 1.0 layouts.
 type LogBatch struct {
-	// Magic selects the Fluss v0 or v1 batch header.
+	// Magic selects the Fluss v0, v1, or v2 batch header.
 	Magic byte
 	// BaseOffset is the first record offset.
 	BaseOffset int64
 	// CommitTime is the server commit time in Unix milliseconds.
 	CommitTime int64
-	// LeaderEpoch is present only for magic 1.
+	// LeaderEpoch is present only for magic 2.
 	LeaderEpoch int32
 	// SchemaID identifies the row schema used by Records.
 	SchemaID int16
@@ -174,36 +174,12 @@ func (b LogBatch) EncodeRows(schema Schema, compacted bool) ([]byte, error) {
 // encodeRowRecords shares the batch framing between public row encoding and
 // append writers that already own validated, encoded row snapshots.
 func (b LogBatch) encodeRowRecords(count int, recordAt func(int) ([]byte, ChangeType, error)) ([]byte, error) {
-	if b.Magic != 0 && b.Magic != 1 {
+	layout, ok := logLayout(b.Magic)
+	if !ok {
 		return nil, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, b.Magic)
 	}
-	headerSize := logBatchV0HeaderSize
-	if b.Magic == 1 {
-		headerSize = logBatchV1HeaderSize
-	}
-	encoded := make([]byte, headerSize)
-	binary.LittleEndian.PutUint64(encoded, uint64(b.BaseOffset))
-	encoded[12] = b.Magic
-	binary.LittleEndian.PutUint64(encoded[13:], uint64(b.CommitTime))
-	crcOffset, schemaOffset := 21, 25
-	if b.Magic == 1 {
-		binary.LittleEndian.PutUint32(encoded[21:], uint32(b.LeaderEpoch))
-		crcOffset, schemaOffset = 25, 29
-	}
-	binary.LittleEndian.PutUint16(encoded[schemaOffset:], uint16(b.SchemaID))
-	if b.AppendOnly {
-		encoded[schemaOffset+2] = 1
-	}
-	// The common tail is schema ID, attributes, last offset delta, writer ID,
-	// sequence, and record count. schemaOffset moves by four bytes in v1, so
-	// every later boundary remains relative to it.
-	lastOffset := schemaOffset + 3
-	if count > 0 {
-		binary.LittleEndian.PutUint32(encoded[lastOffset:], uint32(count-1))
-	}
-	binary.LittleEndian.PutUint64(encoded[lastOffset+4:], uint64(b.WriterID))
-	binary.LittleEndian.PutUint32(encoded[lastOffset+12:], uint32(b.BatchSequence))
-	binary.LittleEndian.PutUint32(encoded[lastOffset+16:], uint32(count))
+	encoded := make([]byte, layout.size)
+	writeLogBatchHeader(encoded, layout, b, count)
 	for index := range count {
 		row, change, err := recordAt(index)
 		if err != nil {
@@ -215,32 +191,32 @@ func (b LogBatch) encodeRowRecords(count int, recordAt func(int) ([]byte, Change
 		encoded = append(encoded, byte(change))
 		encoded = append(encoded, row...)
 	}
-	binary.LittleEndian.PutUint32(encoded[8:], uint32(len(encoded)-12))
-	binary.LittleEndian.PutUint32(encoded[crcOffset:], crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli)))
+	finishLogBatch(encoded, layout)
 	return encoded, nil
 }
 
-// DecodeLogBatchRows decodes a single Fluss v0 or v1 row-oriented log batch. It validates the
-// CRC before allocating records and returns the schema ID advertised by the batch.
+// DecodeLogBatchRows decodes a single Fluss v0, v1, or v2 row-oriented log batch.
+// It validates the CRC before allocating records and skips optional statistics.
 func DecodeLogBatchRows(schema Schema, encoded []byte, compacted bool) (LogBatch, error) {
-	magic, headerSize, schemaOffset, err := logBatchHeader(encoded)
+	magic, recordsOffset, schemaOffset, err := logBatchHeader(encoded)
 	if err != nil {
 		return LogBatch{}, err
 	}
 	lastOffset := schemaOffset + 3
-	count := int(binary.LittleEndian.Uint32(encoded[lastOffset+16:]))
-	if count > (len(encoded)-headerSize)/5 {
+	rawCount := binary.LittleEndian.Uint32(encoded[lastOffset+16:])
+	if rawCount > uint32((len(encoded)-recordsOffset)/5) {
 		return LogBatch{}, fmt.Errorf("%w: invalid log record count", ErrMalformedRecordBatch)
 	}
+	count := int(rawCount)
 	batch := LogBatch{
 		Magic: magic, BaseOffset: int64(binary.LittleEndian.Uint64(encoded)), CommitTime: int64(binary.LittleEndian.Uint64(encoded[13:])),
 		SchemaID: int16(binary.LittleEndian.Uint16(encoded[schemaOffset:])), AppendOnly: encoded[schemaOffset+2]&1 != 0,
 		WriterID: int64(binary.LittleEndian.Uint64(encoded[lastOffset+4:])), BatchSequence: int32(binary.LittleEndian.Uint32(encoded[lastOffset+12:])), Records: make([]Record, 0, count),
 	}
-	if magic == 1 {
-		batch.LeaderEpoch = int32(binary.LittleEndian.Uint32(encoded[21:]))
+	if magic == 2 {
+		batch.LeaderEpoch = int32(binary.LittleEndian.Uint32(encoded[logBatchEpochOffset:]))
 	}
-	position := headerSize
+	position := recordsOffset
 	for index := 0; index < count; index++ {
 		record, next, err := decodeLogRecord(schema, batch, encoded, position, index, compacted)
 		if err != nil {
@@ -255,25 +231,79 @@ func DecodeLogBatchRows(schema Schema, encoded []byte, compacted bool) (LogBatch
 	return batch, nil
 }
 
+type logBatchLayout struct {
+	size         int
+	schemaOffset int // The CRC is the four bytes immediately before the schema ID.
+}
+
+func logLayout(magic byte) (logBatchLayout, bool) {
+	switch magic {
+	case 0:
+		return logBatchLayout{logBatchV0HeaderSize, 25}, true
+	case 1:
+		return logBatchLayout{logBatchV1HeaderSize, 25}, true
+	case 2:
+		return logBatchLayout{logBatchV2HeaderSize, 29}, true
+	default:
+		return logBatchLayout{}, false
+	}
+}
+
+func writeLogBatchHeader(encoded []byte, layout logBatchLayout, b LogBatch, count int) {
+	binary.LittleEndian.PutUint64(encoded, uint64(b.BaseOffset))
+	encoded[12] = b.Magic
+	binary.LittleEndian.PutUint64(encoded[13:], uint64(b.CommitTime))
+	if b.Magic == 2 {
+		binary.LittleEndian.PutUint32(encoded[logBatchEpochOffset:], uint32(b.LeaderEpoch))
+	}
+	tail := encoded[layout.schemaOffset:]
+	binary.LittleEndian.PutUint16(tail, uint16(b.SchemaID))
+	if b.AppendOnly {
+		tail[2] = 1
+	}
+	if count > 0 {
+		binary.LittleEndian.PutUint32(tail[3:], uint32(count-1))
+	}
+	binary.LittleEndian.PutUint64(tail[7:], uint64(b.WriterID))
+	binary.LittleEndian.PutUint32(tail[15:], uint32(b.BatchSequence))
+	binary.LittleEndian.PutUint32(tail[19:], uint32(count))
+	// The zero-initialized V1/V2 statistics length means no statistics.
+}
+
+func finishLogBatch(encoded []byte, layout logBatchLayout) {
+	binary.LittleEndian.PutUint32(encoded[8:], uint32(len(encoded)-12))
+	binary.LittleEndian.PutUint32(encoded[layout.schemaOffset-4:], logBatchCRC(encoded[layout.schemaOffset:]))
+}
+
+func logBatchCRC(data []byte) uint32 {
+	return crc32.Checksum(data, crc32.MakeTable(crc32.Castagnoli))
+}
+
 func logBatchHeader(encoded []byte) (byte, int, int, error) {
 	if len(encoded) < 13 || len(encoded) > maxRowBytes {
 		return 0, 0, 0, fmt.Errorf("%w: invalid log batch length", ErrMalformedRecordBatch)
 	}
 	magic := encoded[12]
-	headerSize, crcOffset, schemaOffset := logBatchV0HeaderSize, 21, 25
-	if magic == 1 {
-		headerSize, crcOffset, schemaOffset = logBatchV1HeaderSize, 25, 29
-	} else if magic != 0 {
+	layout, ok := logLayout(magic)
+	if !ok {
 		return 0, 0, 0, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, magic)
 	}
-	if len(encoded) < headerSize || int(binary.LittleEndian.Uint32(encoded[8:])) != len(encoded)-12 {
+	if len(encoded) < layout.size || binary.LittleEndian.Uint32(encoded[8:]) != uint32(len(encoded)-12) {
 		return 0, 0, 0, fmt.Errorf("%w: invalid log batch size", ErrMalformedRecordBatch)
 	}
-	checksum := crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli))
-	if binary.LittleEndian.Uint32(encoded[crcOffset:]) != checksum {
+	schemaOffset := layout.schemaOffset
+	if binary.LittleEndian.Uint32(encoded[schemaOffset-4:]) != logBatchCRC(encoded[schemaOffset:]) {
 		return 0, 0, 0, fmt.Errorf("%w: invalid log batch checksum", ErrMalformedRecordBatch)
 	}
-	return magic, headerSize, schemaOffset, nil
+	recordsOffset := layout.size
+	if magic != 0 {
+		statsLength := binary.LittleEndian.Uint32(encoded[layout.size-4:])
+		if statsLength > uint32(len(encoded)-recordsOffset) {
+			return 0, 0, 0, fmt.Errorf("%w: invalid log statistics length", ErrMalformedRecordBatch)
+		}
+		recordsOffset += int(statsLength)
+	}
+	return magic, recordsOffset, schemaOffset, nil
 }
 
 func decodeLogRecord(

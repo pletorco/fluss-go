@@ -84,6 +84,8 @@ breaking changes.
   target, matching row schema evolution.
 - Preserved the server's filtered progress when a bounded log scan delivers
   every eligible record, so it can finish at its stopping offset.
+- Corrected Fluss 1.0 log-batch framing for magic 1 (optional statistics)
+  and magic 2 (statistics and leader epoch) in the row and Arrow codecs.
 - Accepted narrower projections returned by snapshot providers and reported
   inconsistent row widths as validation errors.
 - Rejected nil snapshot readers during open, rather than panicking on the

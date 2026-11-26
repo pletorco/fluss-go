@@ -155,7 +155,7 @@ func TestArrowLogBatchRoundTripAndOwnership(t *testing.T) {
 	record := testArrowRecord(t, allocator, 64<<10)
 
 	for _, compression := range []ArrowCompressionType{ArrowCompressionNone, ArrowCompressionLZ4, ArrowCompressionZSTD} {
-		for _, magic := range []byte{0, 1} {
+		for _, magic := range []byte{0, 1, 2} {
 			batch := ArrowLogBatch{
 				Magic: magic, BaseOffset: 10, CommitTime: 20, LeaderEpoch: 3, SchemaID: 4,
 				WriterID: 5, BatchSequence: 6, Record: record,
@@ -169,7 +169,7 @@ func TestArrowLogBatchRoundTripAndOwnership(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if decoded.Magic != magic || decoded.BaseOffset != 10 || decoded.SchemaID != 4 ||
+			if decoded.Magic != magic || decoded.BaseOffset != 10 || decoded.SchemaID != 4 || decoded.LeaderEpoch != [...]int32{0, 0, 3}[magic] ||
 				decoded.Record.NumRows() != 4 || !array.RecordEqual(decoded.Record, record) ||
 				len(decoded.Changes) != 4 || decoded.Changes[3] != Delete {
 				t.Fatalf("decoded Arrow batch = %#v", decoded)
@@ -290,7 +290,7 @@ func TestArrowLogBatchRejectsInvalidInput(t *testing.T) {
 	schema := record.Schema()
 
 	tests := []ArrowLogBatch{
-		{Magic: 2, Record: record, Changes: []ChangeType{Append, Append, Append, Append}},
+		{Magic: 3, Record: record, Changes: []ChangeType{Append, Append, Append, Append}},
 		{Magic: 0, Record: record, Changes: []ChangeType{Append}},
 		{Magic: 0, AppendOnly: true, Record: record, Changes: []ChangeType{Insert, Append, Append, Append}},
 	}
