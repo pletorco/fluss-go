@@ -39,7 +39,7 @@ func (f RemoteSnapshotResolverFunc) ResolveSnapshotFiles(
 // format.
 type RemoteSnapshotDecoder interface {
 	// OpenSnapshotFiles consumes downloaded file descriptors and returns a
-	// reader owned by the caller.
+	// non-nil reader owned by the caller on success.
 	OpenSnapshotFiles(context.Context, SnapshotBatchRequest, []RemoteSnapshotFile) (SnapshotBatchReader, error)
 }
 
@@ -120,7 +120,11 @@ func (p *RemoteSnapshotBatchProvider) OpenSnapshot(
 		clearRemoteSnapshotData(downloaded)
 		return nil, err
 	}
-	return p.decoder.OpenSnapshotFiles(ctx, request, downloaded)
+	reader, err := p.decoder.OpenSnapshotFiles(ctx, request, downloaded)
+	if err == nil && isNilSnapshotReader(reader) {
+		return nil, fmt.Errorf("%w: remote snapshot decoder returned a nil reader without an error", ErrValidation)
+	}
+	return reader, err
 }
 
 func currentRemoteToken(source FileSystemSecurityTokenSource) *FileSystemSecurityToken {
