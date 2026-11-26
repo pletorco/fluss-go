@@ -26,7 +26,6 @@ type UpsertWriter struct {
 	commands    chan upsertWriterCommand
 	slots       chan struct{}
 	done        chan struct{}
-	closing     chan struct{}
 	admission   writerAdmission
 	closeErr    error // Published by closing done after the scheduler exits.
 	observer    MetricsObserver
@@ -56,18 +55,21 @@ type kvPendingBatch struct {
 }
 
 type upsertWriterLoop struct {
-	writer      *UpsertWriter
-	buckets     []int32 // Sorted buckets with admitted writes, including ones without a leader at open.
-	batches     map[int32]*kvPendingBatch
-	pending     map[int32][]*kvPendingBatch
-	active      map[int32]bool
-	sequences   map[int32]int32
-	poisoned    map[int32]error
-	throttle    map[int32]time.Time
-	completions chan kvBatchCompletion
-	inFlight    int
-	timer       *time.Timer
-	timerC      <-chan time.Time
+	writer        *UpsertWriter
+	buckets       []int32 // Sorted buckets with admitted writes, including ones without a leader at open.
+	batches       map[int32]*kvPendingBatch
+	pending       map[int32][]*kvPendingBatch
+	active        map[int32]bool
+	sequences     map[int32]int32
+	poisoned      map[int32]error
+	throttle      map[int32]time.Time
+	completions   chan kvBatchCompletion
+	inFlight      int
+	timer         *time.Timer
+	timerC        <-chan time.Time
+	pressureTimer *time.Timer
+	pressureC     <-chan time.Time
+	closing       bool
 }
 
 type kvBatchCompletion struct {
@@ -146,7 +148,7 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: layout.partitionID, writerID: writerID, bucketCount: layout.count, keys: keys,
 		commands: make(chan upsertWriterCommand, config.MaxBuffered),
-		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), closing: make(chan struct{}),
+		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
 		admission: newWriterAdmission(),
 	}
 	go writer.run()
@@ -414,7 +416,7 @@ func (l *upsertWriterLoop) run() {
 			case command.flush != nil:
 				command.flush <- l.flushAll()
 			case command.close != nil:
-				close(l.writer.closing)
+				l.closing = true
 				err := l.flushAll()
 				l.writer.closeErr = err
 				command.close <- err
@@ -424,6 +426,9 @@ func (l *upsertWriterLoop) run() {
 		case <-l.timerC:
 			l.timerC = nil
 			l.queueAll()
+		case <-l.pressureC:
+			l.pressureC = nil
+			l.dispatch()
 		case completion := <-l.completions:
 			l.handleCompletion(completion)
 		}
@@ -496,34 +501,52 @@ func (l *upsertWriterLoop) flushBucket(bucket int32) {
 }
 
 func (l *upsertWriterLoop) dispatch() {
-	for l.inFlight < l.writer.config.MaxConcurrentRequests {
-		dispatched := false
-		for _, bucket := range l.buckets {
-			if l.active[bucket] || len(l.pending[bucket]) == 0 {
-				continue
-			}
-			batch := popWriterBatch(l.pending, bucket)
-			l.active[bucket] = true
-			l.inFlight++
-			sequence := l.sequences[bucket]
-			delay := time.Until(l.throttle[bucket])
-			if delay <= 0 {
-				delete(l.throttle, bucket)
-				delay = 0
-			}
-			go l.executeBatch(bucket, batch, sequence, delay)
-			dispatched = true
-			if l.inFlight == l.writer.config.MaxConcurrentRequests {
-				break
-			}
+	var next time.Time
+	now := time.Now()
+	for _, bucket := range l.buckets {
+		if l.inFlight == l.writer.config.MaxConcurrentRequests {
+			break
 		}
-		if !dispatched {
-			return
+		if l.active[bucket] || len(l.pending[bucket]) == 0 {
+			continue
 		}
+		if deadline := l.throttle[bucket]; !l.closing && deadline.After(now) {
+			if next.IsZero() || deadline.Before(next) {
+				next = deadline
+			}
+			continue
+		}
+		delete(l.throttle, bucket)
+		batch := popWriterBatch(l.pending, bucket)
+		l.active[bucket] = true
+		l.inFlight++
+		go l.executeBatch(bucket, batch, l.sequences[bucket])
 	}
+	if l.inFlight == l.writer.config.MaxConcurrentRequests {
+		// Completion will dispatch again once an RPC slot is free.
+		next = time.Time{}
+	}
+	l.schedulePressureWakeup(next)
 }
 
-func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequence int32, throttle time.Duration) {
+func (l *upsertWriterLoop) schedulePressureWakeup(next time.Time) {
+	if next.IsZero() {
+		if l.pressureC != nil {
+			l.pressureTimer.Stop()
+			l.pressureC = nil
+		}
+		return
+	}
+	delay := time.Until(next)
+	if l.pressureTimer == nil {
+		l.pressureTimer = time.NewTimer(delay)
+	} else {
+		l.pressureTimer.Reset(delay)
+	}
+	l.pressureC = l.pressureTimer.C
+}
+
+func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, sequence int32) {
 	encoded, err := (KVBatch{
 		SchemaID: int16(l.writer.table.SchemaID), WriterID: l.writer.writerID,
 		BatchSequence: sequence, Records: batch.records,
@@ -533,16 +556,6 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 	var pressureKnown bool
 	started := metricStart(l.writer.observer)
 	if err == nil {
-		if throttle > 0 {
-			// Closing skips the pressure delay so Close is not held for it.
-			// The delay only paces requests; sending early keeps sequences valid.
-			timer := time.NewTimer(throttle)
-			select {
-			case <-timer.C:
-			case <-l.writer.closing:
-				timer.Stop()
-			}
-		}
 		result = executeWriterRequest(
 			l.writer.config.RequestTimeout, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
 			func(ctx context.Context) (int64, bool, error) {
@@ -609,8 +622,15 @@ func (l *upsertWriterLoop) handleCompletion(completion kvBatchCompletion) {
 func (l *upsertWriterLoop) flushAll() error {
 	l.stopTimer()
 	l.queueAll()
-	for l.inFlight > 0 {
-		l.handleCompletion(<-l.completions)
+	l.dispatch()
+	for l.inFlight > 0 || l.pressureC != nil {
+		select {
+		case completion := <-l.completions:
+			l.handleCompletion(completion)
+		case <-l.pressureC:
+			l.pressureC = nil
+			l.dispatch()
+		}
 	}
 	// Retain one cause per failed bucket for all barriers, independent of when
 	// the completion was processed. Use bucket order for deterministic results.

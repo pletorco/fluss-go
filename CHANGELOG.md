@@ -37,6 +37,8 @@ breaking changes.
   `LIMIT_SCAN` works for both existing and new partitions after rescaling.
 - Routed primary-key reads and writes by the table or partition's actual
   bucket count, even when a bucket temporarily has no leader.
+- Kept throttled KV buckets out of the active RPC slots so healthy buckets
+  can continue writing.
 - Returned an explicit error when a scan cannot resolve all bucket leaders,
   and refreshed cached leaderless routes so they can recover after election.
 - Reloaded schemas for recreated tables even when the path and schema ID
