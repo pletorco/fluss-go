@@ -947,8 +947,11 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 	if _, err := waitForPartitionReady(ctx, client, partitionAdmin, table, partitionPath, 1); err != nil {
 		t.Fatalf("dynamic partition did not become ready: %v", err)
 	}
-	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil {
-		t.Fatalf("append to dynamic partition: %v", result.Err)
+	if result := writer.Append(ctx, fgo.Row{int32(1), "other", "mismatch"}).Await(ctx); !errors.Is(result.Err, fgo.ErrInvalidRow) {
+		t.Fatalf("partition mismatch = %+v, want ErrInvalidRow", result)
+	}
+	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil || !result.OffsetKnown || result.BaseOffset != 0 {
+		t.Fatalf("first append to dynamic partition = %+v, want offset 0", result)
 	}
 	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
@@ -1054,10 +1057,7 @@ func testLogFormat(
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := []fgo.AppendWriterOption{
-		fgo.WithAppendLogFormat(format),
-		fgo.WithAppendBatchTimeout(0),
-	}
+	options := []fgo.AppendWriterOption{fgo.WithAppendBatchTimeout(0)} // Auto must read the advertised format.
 	if format == fgo.LogFormatArrow {
 		options = append(options, fgo.WithAppendArrowCompression(fgo.ArrowCompressionZSTD))
 	}
@@ -1090,15 +1090,22 @@ func appendArrowFormatRow(t *testing.T, writer *fgo.AppendWriter, table fgo.Tabl
 		t.Fatal(err)
 	}
 	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	defer builder.Release()
+	builder.Field(0).AppendNull() // The batch still declares id NOT NULL.
+	builder.Field(1).AppendNull()
+	invalid := builder.NewRecordBatch()
+	defer invalid.Release()
+	if got := writer.AppendArrow(t.Context(), 0, invalid, []fgo.ChangeType{fgo.Append}).Await(t.Context()); !errors.Is(got.Err, fgo.ErrInvalidRow) {
+		t.Fatalf("append Arrow null under NOT NULL = %+v, want ErrInvalidRow", got)
+	}
 	builder.Field(0).(*array.Int32Builder).Append(1)
 	builder.Field(1).(*array.StringBuilder).Append("arrow")
 	record := builder.NewRecordBatch()
-	builder.Release()
 	defer record.Release()
 	result := writer.AppendArrow(context.Background(), 0, record, []fgo.ChangeType{fgo.Append}).
 		Await(context.Background())
-	if result.Err != nil {
-		t.Fatalf("append Arrow row: %v", result.Err)
+	if result.Err != nil || !result.OffsetKnown || result.BaseOffset != 0 {
+		t.Fatalf("first valid Arrow append = %+v, want offset 0", result)
 	}
 }
 
