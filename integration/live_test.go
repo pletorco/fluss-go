@@ -1437,12 +1437,22 @@ func testTypedLogData(t *testing.T, ctx context.Context, client *fgo.Client, pat
 	if err != nil {
 		t.Fatal(err)
 	}
+	decodeErr := errors.New("injected typed log codec failure")
+	codec := logEventCodec()
+	fail := true
 	scanner, err := fgo.NewTypedLogScanner(
 		ctx,
 		client,
 		logTable,
 		fgo.Latest(),
-		logEventCodec(),
+		fgo.CodecFuncs[typedLogEvent]{DecodeFunc: func(row fgo.Row) (typedLogEvent, error) {
+			event, err := codec.Decode(row)
+			if err == nil && event.ID == 3002 && fail {
+				fail = false
+				return typedLogEvent{}, decodeErr
+			}
+			return event, err
+		}},
 		fgo.WithScanRowLimit(2),
 		fgo.WithLogFetchLimits(1<<20, 1<<20, 1, 100*time.Millisecond),
 	)
@@ -1451,7 +1461,7 @@ func testTypedLogData(t *testing.T, ctx context.Context, client *fgo.Client, pat
 	}
 	defer scanner.Close()
 	written := writeTypedLogEvents(t, ctx, client, logTable)
-	found := scanTypedLogEvents(t, ctx, scanner)
+	found := scanTypedLogEvents(t, ctx, scanner, decodeErr)
 	for _, event := range written {
 		if found[event.ID] != event {
 			t.Fatalf("typed scanned event %d = %#v, want %#v", event.ID, found[event.ID], event)
@@ -1488,11 +1498,20 @@ func scanTypedLogEvents(
 	t *testing.T,
 	ctx context.Context,
 	scanner *fgo.TypedLogScanner[typedLogEvent],
+	decodeErr error,
 ) map[int32]typedLogEvent {
 	t.Helper()
 	found := make(map[int32]typedLogEvent)
+	sawFailure := false
 	for !scanner.Done() {
 		result, pollErr := scanner.Poll(ctx)
+		if errors.Is(pollErr, decodeErr) {
+			if sawFailure || result.Done || scanner.Done() || len(result.Records) != 0 {
+				t.Fatalf("failed typed log poll published progress: %+v, done=%v", result, scanner.Done())
+			}
+			sawFailure = true
+			continue
+		}
 		if pollErr != nil {
 			t.Fatal(pollErr)
 		}
@@ -1502,6 +1521,9 @@ func scanTypedLogEvents(
 		for _, record := range result.Records {
 			found[record.Value.ID] = record.Value
 		}
+	}
+	if !sawFailure {
+		t.Fatal("log poll never observed the injected codec failure")
 	}
 	return found
 }
