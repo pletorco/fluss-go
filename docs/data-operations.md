@@ -37,6 +37,12 @@ writer, err := client.NewUpsertWriter(
 creation applies only to log and upsert writers configured with a partition; reads
 never create server state.
 
+Primary-key lookups and upserts hash keys using the routing bucket count of
+the selected table or partition. A bucket without a leader is never replaced
+with a different bucket. If the bucket layout changes after a lookuper or
+upsert writer opens, refresh the table metadata and reopen that resource when
+Fluss rejects requests for the previous layout.
+
 ## Writer concurrency and shutdown
 
 Log and upsert writers default to four active requests across distinct buckets.

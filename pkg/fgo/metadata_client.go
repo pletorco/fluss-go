@@ -10,6 +10,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// bucketLayout keeps the routing count independent of leader availability.
+type bucketLayout struct {
+	physicalID int64
+	count      int32
+	leaders    map[int32]ServerNode
+}
+
+func (c *Client) fetchBucketLayout(ctx context.Context, path PhysicalTablePath) (bucketLayout, error) {
+	if path.Partition == "" {
+		table, err := c.fetchTableMetadata(ctx, path.TablePath)
+		return bucketLayout{physicalID: table.ID, count: table.BucketCount, leaders: table.Buckets}, err
+	}
+	partition, err := c.fetchPartitionMetadata(ctx, path)
+	return bucketLayout{physicalID: partition.ID, count: partition.BucketCount, leaders: partition.Buckets}, err
+}
+
 func (c *Client) fetchTableMetadata(ctx context.Context, path TablePath) (TableMetadata, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyGetMetadata, 0)
 	if err != nil {

@@ -10,6 +10,8 @@ breaking changes.
 
 ### Fixed
 
+- Routed primary-key reads and writes by the table or partition's actual
+  bucket count, even when a bucket temporarily has no leader.
 - Reloaded schemas for recreated tables even when the path and schema ID
   match the dropped table.
 - Prevented canceled table and partition refreshes from overwriting newer

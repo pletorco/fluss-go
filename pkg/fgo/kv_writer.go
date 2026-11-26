@@ -21,7 +21,7 @@ type UpsertWriter struct {
 	tableID     int64
 	partitionID int64
 	writerID    int64
-	buckets     []int32
+	bucketCount int32
 	commands    chan upsertWriterCommand
 	slots       chan struct{}
 	done        chan struct{}
@@ -56,6 +56,7 @@ type kvPendingBatch struct {
 
 type upsertWriterLoop struct {
 	writer      *UpsertWriter
+	buckets     []int32 // Sorted buckets with admitted writes, including ones without a leader at open.
 	batches     map[int32]*kvPendingBatch
 	pending     map[int32][]*kvPendingBatch
 	active      map[int32]bool
@@ -115,30 +116,36 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 			return nil, err
 		}
 	}
-	physicalID, locations, err := backend.metadata(ctx, path)
+	layout, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, physicalID, table.ID)
+	if path.Partition == "" && layout.physicalID != table.ID {
+		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
 	}
-	buckets, err := sortedBuckets(locations)
+	if layout.count <= 0 {
+		return nil, fmt.Errorf("%w: %s has no routing bucket count", ErrMetadata, path)
+	}
+	if len(layout.leaders) == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoBucketLeader, path)
+	}
+	leaders, err := sortedBuckets(layout.leaders)
 	if err != nil {
 		return nil, err
 	}
-	writerID, err := backend.initWriter(ctx, path, buckets[0])
+	writerID, err := backend.initWriter(ctx, path, leaders[0])
 	if err != nil {
 		return nil, err
 	}
 	writer := &UpsertWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: -1, writerID: writerID, buckets: buckets,
+		partitionID: -1, writerID: writerID, bucketCount: layout.count,
 		commands: make(chan upsertWriterCommand, config.MaxBuffered),
 		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), closing: make(chan struct{}),
 		admission: newWriterAdmission(),
 	}
 	if path.Partition != "" {
-		writer.partitionID = physicalID
+		writer.partitionID = layout.physicalID
 	}
 	go writer.run()
 	return writer, nil
@@ -292,12 +299,11 @@ func (w *UpsertWriter) enqueueMutation(
 		future.complete(WriteResult{Err: err})
 		return
 	}
-	hashBucket, err := flussBucket(bucketKey, len(w.buckets))
+	bucket, err := flussBucket(bucketKey, int(w.bucketCount))
 	if err != nil {
 		future.complete(WriteResult{Err: err})
 		return
 	}
-	bucket := w.buckets[int(hashBucket)]
 	item := &pendingKVWrite{
 		ctx: ctx, record: KVRecord{Key: key, Value: value}, bucket: bucket,
 		targets: append([]int32(nil), targets...), size: len(key) + len(value) + 8, future: future,
@@ -476,6 +482,9 @@ func (l *upsertWriterLoop) add(item *pendingKVWrite) {
 		item.future.complete(WriteResult{Err: err})
 		return
 	}
+	if index, found := slices.BinarySearch(l.buckets, item.bucket); !found {
+		l.buckets = slices.Insert(l.buckets, index, item.bucket)
+	}
 	batch := l.compatibleBatch(item)
 	if len(batch.items) > 0 && l.batchFullWith(batch, item) {
 		l.flushBucket(item.bucket)
@@ -536,7 +545,7 @@ func (l *upsertWriterLoop) flushBucket(bucket int32) {
 func (l *upsertWriterLoop) dispatch() {
 	for l.inFlight < l.writer.config.MaxConcurrentRequests {
 		dispatched := false
-		for _, bucket := range l.writer.buckets {
+		for _, bucket := range l.buckets {
 			if l.active[bucket] || len(l.pending[bucket]) == 0 {
 				continue
 			}
@@ -586,7 +595,7 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 			l.writer.config.RequestTimeout, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationKVWrite,
 			func(ctx context.Context) (int64, bool, error) {
 				put, err := l.writer.backend.put(ctx, kvPutRequest{
-					path: l.writer.path, bucket: bucket, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
+					path: l.writer.path, bucket: bucket, bucketCount: l.writer.bucketCount, tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 					targets: batch.targets, records: encoded, timeout: l.writer.config.RequestTimeout, acks: l.writer.config.Acks,
 					mergeMode: l.writer.config.MergeMode,
 				})
@@ -654,7 +663,7 @@ func (l *upsertWriterLoop) flushAll() error {
 	// Retain one cause per failed bucket for all barriers, independent of when
 	// the completion was processed. Use bucket order for deterministic results.
 	var failures []error
-	for _, bucket := range l.writer.buckets {
+	for _, bucket := range l.buckets {
 		if err := l.poisoned[bucket]; err != nil {
 			failures = append(failures, err)
 		}
@@ -664,7 +673,7 @@ func (l *upsertWriterLoop) flushAll() error {
 
 func (l *upsertWriterLoop) queueAll() {
 	l.stopTimer()
-	for _, bucket := range l.writer.buckets {
+	for _, bucket := range l.buckets {
 		l.flushBucket(bucket)
 	}
 }

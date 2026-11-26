@@ -10,9 +10,9 @@ import (
 )
 
 type lookupBackend interface {
-	metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error)
+	metadata(context.Context, PhysicalTablePath) (bucketLayout, error)
 	lookup(context.Context, lookupRequest) ([][]byte, error)
-	prefixLookup(context.Context, PhysicalTablePath, int32, int64, int64, [][]byte) ([][][]byte, error)
+	prefixLookup(context.Context, lookupRequest) ([][][]byte, error)
 }
 
 type clientLookupBackend struct{ client *Client }
@@ -27,6 +27,7 @@ func (b clientLookupBackend) schemaResolver() schemaResolver {
 type lookupRequest struct {
 	path             PhysicalTablePath
 	bucket           int32
+	bucketCount      int32
 	tableID          int64
 	partitionID      int64
 	keys             [][]byte
@@ -35,8 +36,8 @@ type lookupRequest struct {
 	acks             int32
 }
 
-func (b clientLookupBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]ServerNode, error) {
-	return (clientAppendWriterBackend{client: b.client}).metadata(ctx, path)
+func (b clientLookupBackend) metadata(ctx context.Context, path PhysicalTablePath) (bucketLayout, error) {
+	return b.client.fetchBucketLayout(ctx, path)
 }
 
 func (b clientLookupBackend) lookup(
@@ -62,7 +63,7 @@ func (b clientLookupBackend) lookup(
 		bucketRequest.PartitionId = proto.Int64(input.partitionID)
 	}
 	message.BucketsReq = []*fmsg.PbLookupReqForBucket{bucketRequest}
-	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
+	response, err := b.client.requestBucket(ctx, input.path, input.bucket, request, input.bucketCount)
 	if err != nil {
 		return nil, err
 	}
@@ -95,24 +96,20 @@ func (b clientLookupBackend) lookup(
 
 func (b clientLookupBackend) prefixLookup(
 	ctx context.Context,
-	path PhysicalTablePath,
-	bucket int32,
-	tableID int64,
-	partitionID int64,
-	keys [][]byte,
+	input lookupRequest,
 ) ([][][]byte, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyPrefixLookup, 0)
 	if err != nil {
 		return nil, err
 	}
 	message := request.Message().(*fmsg.PrefixLookupRequest)
-	message.TableId = proto.Int64(tableID)
-	bucketRequest := &fmsg.PbPrefixLookupReqForBucket{BucketId: proto.Int32(bucket), Keys: cloneBytesList(keys)}
-	if partitionID >= 0 {
-		bucketRequest.PartitionId = proto.Int64(partitionID)
+	message.TableId = proto.Int64(input.tableID)
+	bucketRequest := &fmsg.PbPrefixLookupReqForBucket{BucketId: proto.Int32(input.bucket), Keys: cloneBytesList(input.keys)}
+	if input.partitionID >= 0 {
+		bucketRequest.PartitionId = proto.Int64(input.partitionID)
 	}
 	message.BucketsReq = []*fmsg.PbPrefixLookupReqForBucket{bucketRequest}
-	response, err := b.client.RequestBucket(ctx, path, bucket, request)
+	response, err := b.client.requestBucket(ctx, input.path, input.bucket, request, input.bucketCount)
 	if err != nil {
 		return nil, err
 	}
@@ -120,18 +117,18 @@ func (b clientLookupBackend) prefixLookup(
 	if !ok {
 		return nil, fmt.Errorf("fgo: prefix lookup: unexpected response %T", response.Message())
 	}
-	if len(lookup.GetBucketsResp()) != 1 || lookup.GetBucketsResp()[0].GetBucketId() != bucket {
-		return nil, fmt.Errorf("%w: prefix lookup response omitted bucket %d", ErrValidation, bucket)
+	if len(lookup.GetBucketsResp()) != 1 || lookup.GetBucketsResp()[0].GetBucketId() != input.bucket {
+		return nil, fmt.Errorf("%w: prefix lookup response omitted bucket %d", ErrValidation, input.bucket)
 	}
 	result := lookup.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyPrefixLookup); err != nil {
-		b.client.invalidatePhysicalOnMetadataError(path, err)
+		b.client.invalidatePhysicalOnMetadataError(input.path, err)
 		return nil, err
 	}
-	if len(result.GetValueLists()) != len(keys) {
-		return nil, fmt.Errorf("%w: prefix lookup returned %d lists for %d keys", ErrValidation, len(result.GetValueLists()), len(keys))
+	if len(result.GetValueLists()) != len(input.keys) {
+		return nil, fmt.Errorf("%w: prefix lookup returned %d lists for %d keys", ErrValidation, len(result.GetValueLists()), len(input.keys))
 	}
-	values := make([][][]byte, len(keys))
+	values := make([][][]byte, len(input.keys))
 	for index, list := range result.GetValueLists() {
 		values[index] = cloneBytesList(list.GetValues())
 	}

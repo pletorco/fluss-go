@@ -147,6 +147,12 @@ func (c *Client) RequestCoordinator(ctx context.Context, request fmsg.Request) (
 // RequestBucket sends a bucket-scoped request to its current tablet leader. A stale metadata
 // response causes one cache invalidation and one bounded reroute.
 func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, bucket int32, request fmsg.Request) (fmsg.Response, error) {
+	return c.requestBucket(ctx, path, bucket, request, 0)
+}
+
+// A positive keyedCount is the count used to hash the key, not the one used
+// to find a leader. Preserve it even on reroute so Fluss can reject stale keys.
+func (c *Client) requestBucket(ctx context.Context, path PhysicalTablePath, bucket int32, request fmsg.Request, keyedCount int32) (fmsg.Response, error) {
 	if err := c.ensureOpen(); err != nil {
 		return nil, err
 	}
@@ -156,6 +162,9 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 	node, bucketCount, err := c.router.routePhysical(ctx, path, bucket)
 	if err != nil {
 		return nil, err
+	}
+	if keyedCount > 0 {
+		bucketCount = keyedCount
 	}
 	setRoutingBucketCount(request, bucketCount)
 	response, err := c.RequestTo(ctx, node, request)
@@ -173,7 +182,9 @@ func (c *Client) RequestBucket(ctx context.Context, path PhysicalTablePath, buck
 	if refreshErr != nil {
 		return nil, refreshErr
 	}
-	setRoutingBucketCount(request, bucketCount)
+	if keyedCount <= 0 {
+		setRoutingBucketCount(request, bucketCount)
+	}
 	return c.RequestTo(ctx, node, request)
 }
 

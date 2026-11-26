@@ -11,7 +11,7 @@ import (
 )
 
 type upsertWriterBackend interface {
-	metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error)
+	metadata(context.Context, PhysicalTablePath) (bucketLayout, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
 	put(context.Context, kvPutRequest) (kvPutResult, error)
 }
@@ -35,6 +35,7 @@ func (b clientUpsertWriterBackend) ensurePartition(
 type kvPutRequest struct {
 	path        PhysicalTablePath
 	bucket      int32
+	bucketCount int32
 	tableID     int64
 	partitionID int64
 	targets     []int32
@@ -44,8 +45,8 @@ type kvPutRequest struct {
 	mergeMode   MergeMode
 }
 
-func (b clientUpsertWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]ServerNode, error) {
-	return (clientAppendWriterBackend{client: b.client}).metadata(ctx, path)
+func (b clientUpsertWriterBackend) metadata(ctx context.Context, path PhysicalTablePath) (bucketLayout, error) {
+	return b.client.fetchBucketLayout(ctx, path)
 }
 
 func (b clientUpsertWriterBackend) initWriter(ctx context.Context, path PhysicalTablePath, bucket int32) (int64, error) {
@@ -71,7 +72,7 @@ func (b clientUpsertWriterBackend) put(
 		bucketRequest.PartitionId = proto.Int64(input.partitionID)
 	}
 	message.BucketsReq = []*fmsg.PbPutKvReqForBucket{bucketRequest}
-	response, err := b.client.RequestBucket(ctx, input.path, input.bucket, request)
+	response, err := b.client.requestBucket(ctx, input.path, input.bucket, request, input.bucketCount)
 	if err != nil {
 		return kvPutResult{}, err
 	}

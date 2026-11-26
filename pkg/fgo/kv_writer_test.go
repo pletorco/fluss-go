@@ -38,8 +38,8 @@ type fakeUpsertWriterBackend struct {
 	calls       []putKVCall
 }
 
-func (b *fakeUpsertWriterBackend) metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error) {
-	return b.physicalID, b.locations, b.metadataErr
+func (b *fakeUpsertWriterBackend) metadata(context.Context, PhysicalTablePath) (bucketLayout, error) {
+	return bucketLayout{physicalID: b.physicalID, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeUpsertWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
