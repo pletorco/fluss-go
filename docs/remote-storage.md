@@ -97,8 +97,11 @@ stable.
 
 Every request includes `MaxBytes`, `ExpectedSize`, `Offset`, and `Length`.
 Streaming adapters must validate the object metadata and return exactly the
-requested range; the client also rejects short and overlong streams and always
-closes the body. The built-in local reader uses `io.SectionReader` over an open
+requested range; the client requires EOF after the expected bytes, preserves
+errors reported with the final bytes, and always closes the body. An empty
+read without EOF does not mark the stream complete. Repeated empty reads
+fail with `io.ErrNoProgress` after a bounded number of attempts.
+The built-in local reader uses `io.SectionReader` over an open
 file and checks the actual file size before exposing the range.
 
 Remote logs allocate only their final aggregate result buffer. Prefetch workers

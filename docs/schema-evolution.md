@@ -31,7 +31,8 @@ Rows are mapped to the schema passed when the reader was created. Stable Fluss
 field IDs define column identity, so a rename preserves values. Dropped writer
 columns are ignored, and nullable columns added after a record was written are
 returned as `nil`. A newly required column, a nullable-to-required transition
-containing null, or a physical/logical type change returns `ErrInvalidSchema`.
+containing null, or a physical/logical type change returns `ErrInvalidSchema`
+for both row and Arrow results.
 The client does not guess defaults or perform numeric or temporal coercion.
 
 ## Reader lifecycle

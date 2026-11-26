@@ -86,6 +86,8 @@ func advancedRebalanceResponse(
 		status := int32(1)
 		if call == 2 {
 			status = 0
+		} else if call >= 4 {
+			status = 3
 		}
 		item := response.Message().(*fmsg.ListRebalanceProgressResponse)
 		item.RebalanceId, item.RebalanceStatus = proto.String("rebalance-1"), proto.Int32(status)
@@ -387,7 +389,7 @@ func exerciseRebalance(t *testing.T, ctx context.Context, client *Client, progre
 		t.Fatalf("ListRebalanceProgress() = %#v, %v", progress, err)
 	}
 	waited, err := client.WaitRebalance(ctx, id, time.Millisecond)
-	if err != nil || waited.Status != 1 || progressCalls.Load() != 3 {
+	if err != nil || waited.Status != 3 || progressCalls.Load() != 4 {
 		t.Fatalf("WaitRebalance() = %#v, %v, calls=%d", waited, err, progressCalls.Load())
 	}
 	if err := client.CancelRebalance(ctx, id); err != nil {
