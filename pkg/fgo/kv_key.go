@@ -10,7 +10,7 @@ import (
 type kvKeyLayout struct {
 	primary   []string
 	bucket    []string
-	partition []kvPartitionColumn
+	partition []physicalPartitionColumn
 }
 
 func newKVKeyLayout(schema Schema, partition string) (kvKeyLayout, error) {

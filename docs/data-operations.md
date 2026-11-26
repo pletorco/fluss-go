@@ -70,8 +70,9 @@ do not change an existing writer; create a new writer for a changed schema.
 Admission still validates every row's shape, nullability, and value types.
 `Append` snapshots the row and its bucket key before returning, including mutable
 byte slices, nested arrays/maps/rows, and decimal values. Inputs may be reused
-after that return. `AppendArrow` instead requires the caller to retain and keep
-the record batch unchanged until its future completes.
+after that return. `AppendArrow` rejects actual nulls in required fields,
+including nested fields under valid parent values. The caller must retain and
+keep the record batch unchanged until its future completes.
 `WithAppendRequest` and `WithUpsertRequest` set one timeout for both the server
 operation and its client-side network call. The timeout is therefore also the
 upper bound for an accepted request when the backend stays responsive at the
@@ -104,7 +105,10 @@ write failures are not retried and poison only the affected bucket. See
 ## Log formats and bounded scans
 
 Select an explicit format only when it agrees with the table's advertised
-`table.log.format` property. Auto mode derives the compatible format.
+`table.log.format` property. Auto mode uses the advertised format: call
+`Append` for COMPACTED or INDEXED and `AppendArrow` for ARROW. If metadata
+omits the property, Auto still accepts both methods and encodes row appends
+as COMPACTED. An unrecognized advertised format fails when opening the writer.
 
 <!-- go-source: internal/docexamples/snippets_test.go logFormat -->
 ```go

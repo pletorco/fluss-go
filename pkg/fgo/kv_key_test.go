@@ -167,7 +167,7 @@ func TestKVPartitionColumnValueMatching(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			column := kvPartitionColumn{kind: test.kind, value: value}
+			column := physicalPartitionColumn{kind: test.kind, value: value}
 			if !column.matches(test.match) || column.matches(test.mismatch) || column.matches([]int{1}) {
 				t.Errorf("unexpected comparison against %v", value)
 			}
