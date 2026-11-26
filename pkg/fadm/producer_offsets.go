@@ -38,9 +38,10 @@ type ProducerOffsets struct {
 	Tables []ProducerTableOffsets
 }
 
-// RegisterProducerOffsets creates or replaces offsets for producerID. The
-// boolean result is true only when the Fluss 1.0 protocol result code is
-// zero; callers must handle a false result even when err is nil.
+// RegisterProducerOffsets attempts to create a registration for producerID.
+// It returns true only on CREATED. If a live registration exists, Fluss
+// leaves it unchanged and returns false, nil. Fluss may replace an expired
+// registration; this method never deletes a registration to force replacement.
 func (c *Client) RegisterProducerOffsets(
 	ctx context.Context,
 	producerID string,
@@ -71,7 +72,17 @@ func (c *Client) RegisterProducerOffsets(
 	if !ok {
 		return false, unexpected("register producer offsets", response)
 	}
-	return registered.GetResult() == 0, nil
+	if registered.Result == nil {
+		return false, fmt.Errorf("%w: producer offset registration omitted result", fgo.ErrValidation)
+	}
+	switch result := registered.GetResult(); result {
+	case 0: // CREATED
+		return true, nil
+	case 1: // ALREADY_EXISTS
+		return false, nil
+	default:
+		return false, fmt.Errorf("%w: unknown producer offset registration result %d", fgo.ErrValidation, result)
+	}
 }
 
 func producerTableOffsetsMessage(table ProducerTableOffsets) (*fmsg.PbProducerTableOffsets, error) {

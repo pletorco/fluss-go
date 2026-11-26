@@ -96,14 +96,14 @@ writer session. A registration contains:
 - bucket offsets with `PartitionID == -1` for unpartitioned tables; and
 - a positive TTL controlling server-side expiration.
 
-`RegisterProducerOffsets` creates or replaces the registration. Its boolean
-result is true only when the Fluss protocol result code is zero. A nil error
-with false must still be handled as a rejected registration. Read the
-registration back with `GetProducerOffsets` and inspect `ExpiresAt` when
-confirmation matters.
+`RegisterProducerOffsets` creates a registration atomically. It returns true
+only for CREATED. A live registration is left unchanged (ALREADY_EXISTS,
+returned as false, nil); Fluss may replace an expired registration. Read the
+existing registration back with `GetProducerOffsets` and inspect `ExpiresAt`
+when confirmation matters.
 
-Use a producer ID that is unique to the durable progress owner. Refresh the
-registration before its TTL expires, and call `DeleteProducerOffsets` when the
+Use a producer ID that is unique to the durable progress owner. Registration
+does not extend the TTL of a live entry. Call `DeleteProducerOffsets` when the
 owner is permanently retired. After an ambiguous register or delete failure,
 query the ID before mutating it again.
 
