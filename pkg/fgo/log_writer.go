@@ -314,6 +314,10 @@ func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arro
 		future.complete(WriteResult{Err: fmt.Errorf("%w: invalid Arrow bucket or change count", ErrInvalidRow)})
 		return future
 	}
+	if err := validateArrowBatchNullability(expected, batch); err != nil {
+		future.complete(WriteResult{Err: err})
+		return future
+	}
 	for _, change := range changes {
 		if err := change.Validate(); err != nil {
 			future.complete(WriteResult{Err: err})

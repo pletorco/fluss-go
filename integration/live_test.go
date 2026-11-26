@@ -1090,15 +1090,22 @@ func appendArrowFormatRow(t *testing.T, writer *fgo.AppendWriter, table fgo.Tabl
 		t.Fatal(err)
 	}
 	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	defer builder.Release()
+	builder.Field(0).AppendNull() // The batch still declares id NOT NULL.
+	builder.Field(1).AppendNull()
+	invalid := builder.NewRecordBatch()
+	defer invalid.Release()
+	if got := writer.AppendArrow(t.Context(), 0, invalid, []fgo.ChangeType{fgo.Append}).Await(t.Context()); !errors.Is(got.Err, fgo.ErrInvalidRow) {
+		t.Fatalf("append Arrow null under NOT NULL = %+v, want ErrInvalidRow", got)
+	}
 	builder.Field(0).(*array.Int32Builder).Append(1)
 	builder.Field(1).(*array.StringBuilder).Append("arrow")
 	record := builder.NewRecordBatch()
-	builder.Release()
 	defer record.Release()
 	result := writer.AppendArrow(context.Background(), 0, record, []fgo.ChangeType{fgo.Append}).
 		Await(context.Background())
-	if result.Err != nil {
-		t.Fatalf("append Arrow row: %v", result.Err)
+	if result.Err != nil || !result.OffsetKnown || result.BaseOffset != 0 {
+		t.Fatalf("first valid Arrow append = %+v, want offset 0", result)
 	}
 }
 
