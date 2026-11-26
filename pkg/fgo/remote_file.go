@@ -324,10 +324,7 @@ func readRemoteFileStreamAttempt(
 	if err != nil {
 		return 0, err
 	}
-	read, readErr := io.ReadFull(stream, destination)
-	if readErr == nil {
-		readErr = validateRemoteStreamEnd(stream)
-	}
+	read, readErr := readExactRemoteStream(ctx, stream, destination)
 	closeErr := stream.Close()
 	if readErr != nil {
 		return read, readErr
@@ -338,16 +335,51 @@ func readRemoteFileStreamAttempt(
 	return read, nil
 }
 
-func validateRemoteStreamEnd(stream io.Reader) error {
+func readExactRemoteStream(ctx context.Context, stream io.Reader, dst []byte) (int, error) {
+	read := 0
+	for read < len(dst) {
+		n, err := readRemoteStreamProgress(ctx, stream, dst[read:])
+		read += n
+		if err == io.EOF && read == len(dst) {
+			return read, ctx.Err()
+		}
+		if err == io.EOF && read > 0 {
+			return read, io.ErrUnexpectedEOF
+		}
+		if err != nil {
+			return read, err
+		}
+	}
+	// Validate the actual end even when the last data read filled dst.
 	var extra [1]byte
-	extraRead, err := stream.Read(extra[:])
-	if extraRead != 0 {
-		return fmt.Errorf("%w: remote range exceeds expected size", ErrValidation)
+	n, err := readRemoteStreamProgress(ctx, stream, extra[:])
+	if n != 0 {
+		if err != nil && err != io.EOF {
+			return read, fmt.Errorf("%w: remote range exceeds expected size: %w", ErrValidation, err)
+		}
+		return read, fmt.Errorf("%w: remote range exceeds expected size", ErrValidation)
 	}
-	if err != nil && !errors.Is(err, io.EOF) {
-		return err
+	if err == io.EOF {
+		return read, ctx.Err()
 	}
-	return nil
+	return read, err
+}
+
+func readRemoteStreamProgress(ctx context.Context, stream io.Reader, dst []byte) (int, error) {
+	const maxEmptyReads = 100
+	for range maxEmptyReads {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		n, err := stream.Read(dst)
+		if n < 0 || n > len(dst) {
+			return 0, fmt.Errorf("%w: invalid remote stream read count %d", ErrValidation, n)
+		}
+		if n != 0 || err != nil {
+			return n, err
+		}
+	}
+	return 0, io.ErrNoProgress
 }
 
 func readRemoteFileLegacyAttempt(

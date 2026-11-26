@@ -92,7 +92,8 @@ func WithAuthenticator(factory AuthenticatorFactory) Option {
 	}
 }
 
-// WithConnectTimeout bounds each connection attempt.
+// WithConnectTimeout bounds each shared connection attempt from dial through
+// TLS, protocol negotiation, and authentication. It defaults to 10 seconds.
 func WithConnectTimeout(timeout time.Duration) Option {
 	return func(c *config) error {
 		if timeout <= 0 {
