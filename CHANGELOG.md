@@ -12,6 +12,8 @@ breaking changes.
 
 - Reloaded schemas for recreated tables even when the path and schema ID
   match the dropped table.
+- Prevented canceled table and partition refreshes from overwriting newer
+  routing metadata after their last waiter left.
 - Kept caller-supplied reader schemas from replacing shared server metadata
   used by subsequent table lookups and record decoding.
 - Preserved the server's filtered progress when a bounded log scan delivers
