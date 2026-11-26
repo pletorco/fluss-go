@@ -10,6 +10,8 @@ breaking changes.
 
 ### Fixed
 
+- Refreshed a stale leader route when a single-bucket `ListOffsets` reply
+  reports a routing error in its response body.
 - Canceled schema waits during point and prefix lookup decoding when the
   lookuper closes, without interrupting other readers of the shared schema.
 - Kept partition metadata tied to its parent table ID, rejecting stale table
@@ -37,6 +39,8 @@ breaking changes.
 
 ### Changed
 
+- Reduced metadata refresh and invalidation work by updating only the affected
+  cache entry, without copying unrelated tables and partitions.
 - Reused schema mappings across decoded rows in log batches and KV pages,
   reducing allocation and repeated column compatibility checks.
 

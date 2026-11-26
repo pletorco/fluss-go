@@ -169,7 +169,7 @@ func (c *Client) requestBucket(ctx context.Context, path PhysicalTablePath, buck
 	}
 	setRoutingBucketCount(request, bucketCount)
 	response, err := c.RequestTo(ctx, node, request)
-	if !errors.Is(err, ErrMetadata) {
+	if !errors.Is(err, ErrMetadata) && !staleListOffsetsReply(request, response, bucket) {
 		if shouldReplaceConnection(err) {
 			// A failed tablet connection may be the old leader after failover.
 			// Invalidate the route for the caller's next attempt, but do not replay
@@ -186,7 +186,13 @@ func (c *Client) requestBucket(ctx context.Context, path PhysicalTablePath, buck
 	if layoutCount <= 0 {
 		setRoutingBucketCount(request, bucketCount)
 	}
-	return c.RequestTo(ctx, node, request)
+	response, err = c.RequestTo(ctx, node, request)
+	if staleListOffsetsReply(request, response, bucket) {
+		// Preserve the final bucket-local error for the caller, but do not
+		// leave a known stale route cached for the next ListOffsets call.
+		c.router.InvalidatePhysical(path)
+	}
+	return response, err
 }
 
 func (c *Client) request(ctx context.Context, request fmsg.Request) (fmsg.Response, error) {

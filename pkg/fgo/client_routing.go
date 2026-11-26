@@ -13,6 +13,29 @@ func (c *Client) invalidatePhysicalOnMetadataError(path PhysicalTablePath, err e
 	}
 }
 
+// ListOffsets can report a moved leader in its response body rather than an
+// RPC error. Reuse the bounded reroute only for a matching single-bucket read.
+func staleListOffsetsReply(request fmsg.Request, response fmsg.Response, bucket int32) bool {
+	if response == nil || request.APIKey() != fmsg.APIKeyListOffsets {
+		return false
+	}
+	typed, ok := request.(*fmsg.MessageRequest)
+	if !ok {
+		return false
+	}
+	input, ok := typed.Message().(*fmsg.ListOffsetsRequest)
+	if !ok || len(input.GetBucketId()) != 1 || input.GetBucketId()[0] != bucket {
+		return false
+	}
+	offsets, ok := response.Message().(*fmsg.ListOffsetsResponse)
+	if !ok || len(offsets.GetBucketsResp()) != 1 {
+		return false
+	}
+	result := offsets.GetBucketsResp()[0]
+	return result != nil && result.BucketId != nil && result.GetBucketId() == bucket &&
+		errorCategory(fmsg.ErrorCode(result.GetErrorCode())) == ErrMetadata
+}
+
 func setRoutingBucketCount(request fmsg.Request, count int32) {
 	if request == nil || count <= 0 {
 		return

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 )
 
@@ -111,7 +112,7 @@ type PartitionMetadata struct {
 	tablets            map[int32]ServerNode
 }
 
-// Metadata is an immutable snapshot of coordinator, tablet, and table routing.
+// Metadata describes a snapshot of coordinator, tablet, and table routing.
 type Metadata struct {
 	// Coordinator is the current coordinator node.
 	Coordinator ServerNode
@@ -132,7 +133,7 @@ type PhysicalMetadataFetcher func(context.Context, PhysicalTablePath) (Partition
 // A Router is safe for concurrent use.
 type Router struct {
 	mu               sync.RWMutex
-	metadata         Metadata
+	metadata         Metadata // Owned by the router; cache map access requires mu.
 	fetch            MetadataFetcher
 	fetchPartition   PhysicalMetadataFetcher
 	flights          *coalescer[TablePath, struct{}]
@@ -275,18 +276,19 @@ func (r *Router) refresh(ctx context.Context, path TablePath, force bool) error 
 		if fetchErr != nil {
 			return struct{}{}, fetchErr
 		}
+		if err := workCtx.Err(); err != nil {
+			return struct{}{}, err
+		}
+		table = cloneTableMetadata(table)
 		r.mu.Lock()
+		defer r.mu.Unlock()
 		// An abandoned flight may return after its replacement has already
 		// published. Check cancellation while holding the publication lock.
 		if err := workCtx.Err(); err != nil {
-			r.mu.Unlock()
 			return struct{}{}, err
 		}
-		next := cloneMetadata(r.metadata)
-		applyTableServers(&next, table)
-		next.Tables[path] = cloneTableMetadata(table)
-		r.metadata = next
-		r.mu.Unlock()
+		r.metadata.Tables[path] = table
+		r.setServersLocked(table.coordinator, table.tablets)
 		return struct{}{}, nil
 	}, nil)
 	return err
@@ -338,30 +340,41 @@ func (r *Router) refreshPhysicalOnce(
 ) error {
 	if !force {
 		r.mu.RLock()
-		cached := r.hasPartition(path)
+		cached := r.hasPartitionLocked(path)
 		r.mu.RUnlock()
 		if cached {
 			return nil
 		}
 	}
 	partition, fetchUsed, err := r.fetchPhysicalMetadata(ctx, path, key)
-	if err == nil && fetchUsed && partition.parentTableIDKnown && !r.hasTableID(path.TablePath, partition.parentTableID) {
-		// The cached table may have been recreated. Refresh at most once;
-		// publication still checks the current parent under the lock.
-		err = r.Refresh(ctx, path.TablePath)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if fetchUsed {
+		if partition.parentTableIDKnown && !r.hasTableID(path.TablePath, partition.parentTableID) {
+			// The cached table may have been recreated. Refresh at most once;
+			// publication still checks the current parent under the lock.
+			if err := r.Refresh(ctx, path.TablePath); err != nil {
+				return err
+			}
+		}
+		partition = clonePartitionMetadata(partition)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err == nil {
-		err = ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if err == nil && fetchUsed {
-		err = r.applyPhysicalMetadata(path, key, partition)
+	if fetchUsed {
+		return r.publishPartitionLocked(path, key, partition)
 	}
-	if err == nil && !r.hasPartition(path) {
-		err = fmt.Errorf("%w: %s", ErrUnknownPartition, path)
+	if !r.hasPartitionLocked(path) {
+		return fmt.Errorf("%w: %s", ErrUnknownPartition, path)
 	}
-	return err
+	return nil
 }
 
 func (r *Router) fetchPhysicalMetadata(
@@ -380,7 +393,8 @@ func (r *Router) fetchPhysicalMetadata(
 	return partition, true, err
 }
 
-func (r *Router) applyPhysicalMetadata(path PhysicalTablePath, key string, partition PartitionMetadata) error {
+// publishPartitionLocked inserts an owned partition snapshot while holding mu.
+func (r *Router) publishPartitionLocked(path PhysicalTablePath, key string, partition PartitionMetadata) error {
 	table, ok := r.metadata.Tables[path.TablePath]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnknownTable, path.TablePath)
@@ -388,24 +402,15 @@ func (r *Router) applyPhysicalMetadata(path PhysicalTablePath, key string, parti
 	if partition.parentTableIDKnown && partition.parentTableID != table.ID {
 		return fmt.Errorf("%w: %s belongs to table ID %d, cached parent is %d", ErrMetadata, path, partition.parentTableID, table.ID)
 	}
-	next := cloneMetadata(r.metadata)
-	table = next.Tables[path.TablePath]
-	if table.Partitions == nil {
-		table.Partitions = make(map[string]PartitionMetadata)
-	}
-	table.Partitions[key] = clonePartitionMetadata(partition)
-	next.Tables[path.TablePath] = table
-	applyPartitionServers(&next, partition)
-	r.metadata = next
+	table.Partitions[key] = partition
+	r.setServersLocked(partition.coordinator, partition.tablets)
 	return nil
 }
 
 // Invalidate removes cached metadata for path.
 func (r *Router) Invalidate(path TablePath) {
 	r.mu.Lock()
-	next := cloneMetadata(r.metadata)
-	delete(next.Tables, path)
-	r.metadata = next
+	delete(r.metadata.Tables, path)
 	r.mu.Unlock()
 }
 
@@ -416,11 +421,8 @@ func (r *Router) InvalidatePhysical(path PhysicalTablePath) {
 		return
 	}
 	r.mu.Lock()
-	next := cloneMetadata(r.metadata)
-	if table, ok := next.Tables[path.TablePath]; ok {
+	if table, ok := r.metadata.Tables[path.TablePath]; ok {
 		delete(table.Partitions, physicalTableKey(path))
-		next.Tables[path.TablePath] = table
-		r.metadata = next
 	}
 	r.mu.Unlock()
 }
@@ -435,7 +437,7 @@ func (r *Router) RouteAfterMetadataError(ctx context.Context, path TablePath, bu
 	return r.Route(ctx, path, bucket)
 }
 
-func (r *Router) hasPartition(path PhysicalTablePath) bool {
+func (r *Router) hasPartitionLocked(path PhysicalTablePath) bool {
 	table, ok := r.metadata.Tables[path.TablePath]
 	if !ok {
 		return false
@@ -462,22 +464,12 @@ func physicalTableKey(path PhysicalTablePath) string {
 	return path.String()
 }
 
-func cloneMetadata(metadata Metadata) Metadata {
-	next := Metadata{Coordinator: metadata.Coordinator, Tablets: make(map[int32]ServerNode, len(metadata.Tablets)), Tables: make(map[TablePath]TableMetadata, len(metadata.Tables))}
-	for id, node := range metadata.Tablets {
-		next.Tablets[id] = node
-	}
-	for path, table := range metadata.Tables {
-		next.Tables[path] = cloneTableMetadata(table)
-	}
-	return next
-}
-
 func cloneTableMetadata(table TableMetadata) TableMetadata {
-	next := TableMetadata{Path: table.Path, ID: table.ID, SchemaID: table.SchemaID, Buckets: make(map[int32]ServerNode, len(table.Buckets)), BucketDetails: cloneBucketDetails(table.BucketDetails), BucketCount: table.BucketCount, BucketCountEpoch: table.BucketCountEpoch, BucketCountEpochKnown: table.BucketCountEpochKnown, RemoteDataDirectory: table.RemoteDataDirectory, Partitions: make(map[string]PartitionMetadata, len(table.Partitions)), coordinator: table.coordinator, tablets: cloneNodes(table.tablets)}
-	for bucket, node := range table.Buckets {
-		next.Buckets[bucket] = node
-	}
+	next := table
+	next.Buckets = maps.Clone(table.Buckets)
+	next.BucketDetails = cloneBucketDetails(table.BucketDetails)
+	next.tablets = maps.Clone(table.tablets)
+	next.Partitions = make(map[string]PartitionMetadata, len(table.Partitions))
 	for name, partition := range table.Partitions {
 		next.Partitions[name] = clonePartitionMetadata(partition)
 	}
@@ -485,16 +477,10 @@ func cloneTableMetadata(table TableMetadata) TableMetadata {
 }
 
 func clonePartitionMetadata(partition PartitionMetadata) PartitionMetadata {
-	next := PartitionMetadata{
-		Path: partition.Path, ID: partition.ID, BucketCount: partition.BucketCount,
-		Buckets: make(map[int32]ServerNode, len(partition.Buckets)), BucketDetails: cloneBucketDetails(partition.BucketDetails),
-		parentTableID: partition.parentTableID, parentTableIDKnown: partition.parentTableIDKnown,
-		coordinator: partition.coordinator, tablets: cloneNodes(partition.tablets),
-	}
-	for bucket, node := range partition.Buckets {
-		next.Buckets[bucket] = node
-	}
-	return next
+	partition.Buckets = maps.Clone(partition.Buckets)
+	partition.BucketDetails = cloneBucketDetails(partition.BucketDetails)
+	partition.tablets = maps.Clone(partition.tablets)
+	return partition
 }
 
 func cloneBucketDetails(details map[int32]BucketMetadata) map[int32]BucketMetadata {
@@ -515,31 +501,13 @@ func cloneBucketDetails(details map[int32]BucketMetadata) map[int32]BucketMetada
 	return next
 }
 
-func applyTableServers(metadata *Metadata, table TableMetadata) {
-	if table.coordinator.Address != "" {
-		metadata.Coordinator = table.coordinator
+// setServersLocked publishes server metadata from an owned snapshot. The
+// tablets map is read-only once copied and may be shared with that snapshot.
+func (r *Router) setServersLocked(coordinator ServerNode, tablets map[int32]ServerNode) {
+	if coordinator.Address != "" {
+		r.metadata.Coordinator = coordinator
 	}
-	if table.tablets != nil {
-		metadata.Tablets = cloneNodes(table.tablets)
+	if tablets != nil {
+		r.metadata.Tablets = tablets
 	}
-}
-
-func applyPartitionServers(metadata *Metadata, partition PartitionMetadata) {
-	if partition.coordinator.Address != "" {
-		metadata.Coordinator = partition.coordinator
-	}
-	if partition.tablets != nil {
-		metadata.Tablets = cloneNodes(partition.tablets)
-	}
-}
-
-func cloneNodes(nodes map[int32]ServerNode) map[int32]ServerNode {
-	if nodes == nil {
-		return nil
-	}
-	next := make(map[int32]ServerNode, len(nodes))
-	for id, node := range nodes {
-		next[id] = node
-	}
-	return next
 }
