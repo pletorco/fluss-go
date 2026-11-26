@@ -102,6 +102,16 @@ func awaitPartitionReady(
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
+	buckets, err := waitForPartitionReady(ctx, client, admin, table, path, count)
+	if err != nil {
+		t.Fatalf("partition %s did not become ready: %v", path, err)
+	}
+	return buckets
+}
+
+func waitForPartitionReady(
+	ctx context.Context, client *fgo.Client, admin *fadm.Client, table fgo.Table, path fgo.PhysicalTablePath, count int,
+) ([]fgo.TableBucket, error) {
 	var buckets []fgo.TableBucket
 	err := awaitTableReadiness(ctx, func(ctx context.Context) error {
 		var err error
@@ -118,8 +128,5 @@ func awaitPartitionReady(
 		}
 		return tableOffsetReadinessError(count, admin.ListOffsets(ctx, table, path, buckets[0].PartitionID, ids, fgo.Earliest()))
 	})
-	if err != nil {
-		t.Fatalf("partition %s did not become ready: %v", path, err)
-	}
-	return buckets
+	return buckets, err
 }

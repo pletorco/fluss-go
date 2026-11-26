@@ -898,7 +898,7 @@ func waitForSchemaChange(
 
 func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, database string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
 	path := fgo.TablePath{Database: database, Table: "partitioned_events"}
 	schema := fgo.Schema{
@@ -927,28 +927,25 @@ func testDynamicPartition(t *testing.T, address string, admin *fadm.Client, data
 		ctx, table, fgo.WithAppendPartitionSpec(table.Schema, spec), fgo.WithAppendBatchTimeout(0),
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create dynamic partition through NewAppendWriter: %v", err)
 	}
-	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil {
-		t.Fatal(result.Err)
-	}
-	if err := writer.Close(ctx); err != nil {
+	defer writer.Close(ctx)
+	// The writer creates the partition, but the coordinator can advertise its
+	// leader before the tablet is ready. Probe the tablet through the same
+	// client before sending the first write.
+	partitionAdmin, err := fadm.New(client)
+	if err != nil {
 		t.Fatal(err)
 	}
 	partitionPath := fgo.PhysicalTablePath{TablePath: path, Partition: "kr"}
-	if err := waitForCondition(ctx, 100*time.Millisecond, func() (bool, error) {
-		_, resolveErr := client.ResolveTableBuckets(ctx, partitionPath)
-		if resolveErr == nil {
-			return true, nil
-		}
-		if errors.Is(resolveErr, fgo.ErrUnknownPartition) ||
-			errors.Is(resolveErr, fgo.ErrNoBucketLeader) ||
-			errors.Is(resolveErr, fgo.ErrMetadata) {
-			return false, nil
-		}
-		return false, resolveErr
-	}); err != nil {
-		t.Fatalf("dynamic partition did not become routable: %v", err)
+	if _, err := waitForPartitionReady(ctx, client, partitionAdmin, table, partitionPath, 1); err != nil {
+		t.Fatalf("dynamic partition did not become ready: %v", err)
+	}
+	if result := writer.Append(ctx, fgo.Row{int32(1), "kr", "created"}).Await(ctx); result.Err != nil {
+		t.Fatalf("append to dynamic partition: %v", result.Err)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
 	}
 	scanner, err := client.NewLogScanner(
 		ctx, table, fgo.Earliest(),
