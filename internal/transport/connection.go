@@ -125,6 +125,9 @@ func (c *Connection) Request(ctx context.Context, request fmsg.Request) (fmsg.Re
 		}
 		return nil, err
 	}
+	// Each registered request has a single terminal result: either its reply
+	// or a failure delivered to that request by fail. The global done signal
+	// is only for admission; it must not race with an already delivered reply.
 	select {
 	case outcome := <-resultCh:
 		if outcome.err != nil {
@@ -140,8 +143,6 @@ func (c *Connection) Request(ctx context.Context, request fmsg.Request) (fmsg.Re
 		return response, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-c.done:
-		return nil, c.err()
 	}
 }
 
@@ -225,6 +226,13 @@ func (c *Connection) writeRequest(
 	written, writeErr := c.writeFrame(ctx, frame)
 	finishErr := finish()
 	if finishErr != nil {
+		if writeErr == nil {
+			// The frame was sent. Retire the connection, but let the request
+			// collect its result: the peer may have replied before deadline
+			// cleanup failed (for example, if it closed just after replying).
+			c.fail(fmt.Errorf("transport: connection discarded: %w: %w", ErrClosed, finishErr))
+			return false, nil
+		}
 		return true, errors.Join(writeErr, finishErr)
 	}
 	if writeErr == nil {
@@ -379,10 +387,10 @@ func (c *Connection) fail(err error) {
 	c.pending = make(map[int32]chan result)
 	close(c.done)
 	c.mu.Unlock()
-	_ = c.conn.Close()
 	for _, ch := range pending {
 		complete(ch, result{err: err})
 	}
+	_ = c.conn.Close()
 }
 
 func complete(ch chan result, outcome result) {

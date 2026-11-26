@@ -40,6 +40,8 @@ breaking changes.
   instead of letting them replace a live cached connection.
 - Applied the connection timeout through TLS, API negotiation, and
   authentication, so a silent coordinator seed cannot starve later seeds.
+- Preserved completed RPC responses when a peer disconnects immediately after
+  replying, so a known acknowledgment is not mistaken for a connection failure.
 - Canceled schema waits during point and prefix lookup decoding when the
   lookuper closes, without interrupting other readers of the shared schema.
 - Kept partition metadata tied to its parent table ID, rejecting stale table
