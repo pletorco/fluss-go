@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestPublicWriterPreservesResponseOffsetPresence(t *testing.T) {
+func TestPublicWriterReportsOffsetsOnlyForLogAppends(t *testing.T) {
 	for _, table := range []Table{appendWriterTable(), upsertWriterTable()} {
 		for _, known := range []bool{false, true} {
 			label := table.Path.Table + "/absent"
@@ -41,12 +41,13 @@ func TestPublicWriterPreservesResponseOffsetPresence(t *testing.T) {
 				}
 				for index, future := range []*WriteFuture{first, second} {
 					result := future.Await(ctx)
+					wantKnown := known && table.Kind == LogTable
 					want := int64(0)
-					if known {
+					if wantKnown {
 						want = int64(index)
 					}
-					if result.Err != nil || result.OffsetKnown != known || result.BaseOffset != want || result.Records != 1 {
-						t.Errorf("record %d = %+v; want known=%v offset=%d", index, result, known, want)
+					if result.Err != nil || result.OffsetKnown != wantKnown || result.BaseOffset != want || result.Records != 1 {
+						t.Errorf("record %d = %+v; want known=%v offset=%d", index, result, wantKnown, want)
 					}
 				}
 			})

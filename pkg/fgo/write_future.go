@@ -12,8 +12,9 @@ type WriteResult struct {
 	Bucket int32
 	// BaseOffset is the first assigned offset when OffsetKnown is true.
 	BaseOffset int64
-	// OffsetKnown reports whether the successful response included an offset.
-	// A recovered duplicate-sequence acknowledgement can succeed without one.
+	// OffsetKnown reports whether the server identified this mutation's first offset.
+	// KV responses only report a bucket-wide log end, so KV results leave this false.
+	// A recovered duplicate-sequence acknowledgment can also succeed without an offset.
 	OffsetKnown bool
 	// Records is the number of records completed by this result.
 	Records int

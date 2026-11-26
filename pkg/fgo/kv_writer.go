@@ -75,8 +75,6 @@ type upsertWriterLoop struct {
 type kvBatchCompletion struct {
 	bucket        int32
 	batch         *kvPendingBatch
-	logEnd        int64
-	offsetKnown   bool
 	pressure      float32
 	pressureKnown bool
 	bytes         int
@@ -493,7 +491,7 @@ func (l *upsertWriterLoop) flushBucket(bucket int32) {
 	delete(l.batches, bucket)
 	if err := l.poisoned[bucket]; err != nil {
 		poisoned := fmt.Errorf("%w: bucket %d: %w", ErrWriterState, bucket, err)
-		l.writer.completeKVBatch(batch, bucket, 0, false, 0, false, poisoned)
+		l.writer.completeKVBatch(batch, bucket, 0, false, poisoned)
 		return
 	}
 	l.pending[bucket] = append(l.pending[bucket], batch)
@@ -567,14 +565,16 @@ func (l *upsertWriterLoop) executeBatch(bucket int32, batch *kvPendingBatch, seq
 				if err == nil {
 					pressure, pressureKnown = put.pressure, put.pressureKnown
 				}
-				return put.logEnd, put.offsetKnown, err
+				// PutKv reports a bucket-wide log end, not the start offset
+				// of any mutation. A mutation can emit zero, one, or two events.
+				return 0, false, err
 			},
 		)
 	} else {
 		result.err = err
 	}
 	l.completions <- kvBatchCompletion{
-		bucket: bucket, batch: batch, logEnd: result.offset, offsetKnown: result.offsetKnown,
+		bucket: bucket, batch: batch,
 		pressure: pressure, pressureKnown: pressureKnown,
 		bytes: len(encoded), started: started, err: result.err,
 	}
@@ -595,12 +595,12 @@ func (l *upsertWriterLoop) handleCompletion(completion kvBatchCompletion) {
 	})
 	if completion.err != nil {
 		l.poisoned[completion.bucket] = completion.err
-		l.writer.completeKVBatch(completion.batch, completion.bucket, 0, false, 0, false, completion.err)
+		l.writer.completeKVBatch(completion.batch, completion.bucket, 0, false, completion.err)
 		for _, batch := range l.pending[completion.bucket] {
 			poisoned := fmt.Errorf(
 				"%w: bucket %d: %w", ErrWriterState, completion.bucket, completion.err,
 			)
-			l.writer.completeKVBatch(batch, completion.bucket, 0, false, 0, false, poisoned)
+			l.writer.completeKVBatch(batch, completion.bucket, 0, false, poisoned)
 		}
 		delete(l.pending, completion.bucket)
 	} else {
@@ -612,8 +612,7 @@ func (l *upsertWriterLoop) handleCompletion(completion kvBatchCompletion) {
 		}
 		l.sequences[completion.bucket]++
 		l.writer.completeKVBatch(
-			completion.batch, completion.bucket, completion.logEnd, completion.offsetKnown,
-			completion.pressure, completion.pressureKnown, nil,
+			completion.batch, completion.bucket, completion.pressure, completion.pressureKnown, nil,
 		)
 	}
 	l.dispatch()
@@ -670,24 +669,15 @@ func (l *upsertWriterLoop) stopTimer() {
 func (w *UpsertWriter) completeKVBatch(
 	batch *kvPendingBatch,
 	bucket int32,
-	logEnd int64,
-	offsetKnown bool,
 	pressure float32,
 	pressureKnown bool,
 	err error,
 ) {
-	first := int64(0)
-	if offsetKnown {
-		first = logEnd - int64(len(batch.items))
-	}
 	for _, item := range batch.items {
 		item.future.complete(WriteResult{
-			Bucket: bucket, BaseOffset: first, OffsetKnown: offsetKnown,
+			Bucket:  bucket,
 			Records: 1, Pressure: pressure, PressureKnown: pressureKnown, Err: err,
 		})
-		if offsetKnown {
-			first++
-		}
 	}
 }
 

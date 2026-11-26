@@ -137,6 +137,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})
+	t.Run("KV acknowledgments do not claim mutation offsets", func(t *testing.T) {
+		testKVMutationOffsets(t, client, admin, database)
+	})
 	t.Run("partitioned KV physical key compatibility", func(t *testing.T) {
 		testPartitionedKVWireKeys(t, client, admin, database)
 	})
@@ -2206,7 +2209,7 @@ func seedFailoverKVRows(
 	for index := 0; len(keys) < table.BucketCount && index < 100; index++ {
 		key := fgo.PrimaryKey{fmt.Sprintf("failover-%03d", index), int32(1)}
 		result := writer.Upsert(ctx, fgo.Row{key[0], key[1], "before"}).Await(ctx)
-		if result.Err != nil || !result.OffsetKnown || result.Records != 1 {
+		if result.Err != nil || result.OffsetKnown || result.Records != 1 {
 			t.Fatalf("seed failover KV row %d = %#v", index, result)
 		}
 		if _, exists := keys[result.Bucket]; !exists {
