@@ -68,7 +68,31 @@ func testPartitionBucketRescale(t *testing.T, client *fgo.Client, admin *fadm.Cl
 			if len(written) != len(buckets) {
 				t.Fatalf("sample keys used %d buckets, expected %d", len(written), len(buckets))
 			}
+			for _, bucket := range buckets {
+				assertRescaledLogBucket(t, ctx, client, table, bucket, test.partition, written[bucket.BucketID])
+			}
 		})
+	}
+}
+
+func assertRescaledLogBucket(
+	t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table, bucket fgo.TableBucket, partition string, ids []int32,
+) {
+	t.Helper()
+	scanner, err := client.NewBatchScanner(ctx, table, bucket, fgo.WithBatchLimit(len(ids)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	result, err := scanner.Poll(ctx)
+	defer result.Release()
+	if err != nil || !result.Done || len(result.Rows) != len(ids) {
+		t.Fatalf("partition %s bucket %d: scan returned %+v, want %d rows: %v", partition, bucket.BucketID, result, len(ids), err)
+	}
+	for index, row := range result.Rows {
+		if len(row) != 2 || row[0] != ids[index] || row[1] != partition {
+			t.Fatalf("partition %s bucket %d: row %d = %v, want [%d %s]", partition, bucket.BucketID, index, row, ids[index], partition)
+		}
 	}
 }
 

@@ -12,6 +12,8 @@ breaking changes.
 
 - Opened append writers using the target partition's actual bucket count, so
   partitions created before and after a change to the table default remain writable.
+- Included the resolved routing bucket count in log-table batch scans, so
+  `LIMIT_SCAN` works for both existing and new partitions after rescaling.
 - Routed primary-key reads and writes by the table or partition's actual
   bucket count, even when a bucket temporarily has no leader.
 - Returned an explicit error when a scan cannot resolve all bucket leaders,

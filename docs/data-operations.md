@@ -311,8 +311,10 @@ without fetching another page, even if the server already ended the session.
 Permanent decoding errors require closing the scanner rather than skipping
 the failed page. `Close` releases any retained page and explicitly closes an
 unfinished server session. An empty bucket may complete without allocating a
-scanner ID. Log-table current-state scans
-continue to use one bounded `LIMIT_SCAN` request. Snapshot scans use
+scanner ID. Log-table current-state scans use one bounded `LIMIT_SCAN` request.
+Use `ResolveTableBuckets` for a partition so the request carries that partition's
+routing bucket count, which may differ from the current table default.
+Snapshot scans use
 `NewSnapshotBatchScanner` and require a `SnapshotBatchProvider` configured when
 the client is opened. A provider can return full rows in table order or apply
 a projection that selects fewer columns and return them in requested order.
