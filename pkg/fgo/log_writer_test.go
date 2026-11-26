@@ -59,12 +59,12 @@ func (b *fakeAppendWriterBackend) initWriter(context.Context, PhysicalTablePath,
 func (b *fakeAppendWriterBackend) produce(
 	ctx context.Context,
 	input logProduceRequest,
-) (int64, error) {
+) (int64, bool, error) {
 	if b.block != nil {
 		select {
 		case <-b.block:
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return 0, false, ctx.Err()
 		}
 	}
 	b.mu.Lock()
@@ -77,13 +77,13 @@ func (b *fakeAppendWriterBackend) produce(
 		err := b.produceErrs[0]
 		b.produceErrs = b.produceErrs[1:]
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
 	if b.produceErr != nil {
-		return 0, b.produceErr
+		return 0, false, b.produceErr
 	}
-	return int64(len(b.calls) * 10), nil
+	return int64(len(b.calls) * 10), true, nil
 }
 
 func (b *fakeAppendWriterBackend) produced() []producedLog {
@@ -753,13 +753,13 @@ func TestClientAppendWriterBackendResponseErrors(t *testing.T) {
 		},
 	)
 	backend := clientAppendWriterBackend{client: client}
-	if _, err := backend.produce(context.Background(), logProduceRequest{
+	if _, _, err := backend.produce(context.Background(), logProduceRequest{
 		path: path, tableID: 9, partitionID: -1, records: []byte{1}, timeout: time.Second, acks: 1,
 	}); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("server error = %v", err)
 	}
 	requirePhysicalRouteInvalidated(t, client, path)
-	if _, err := backend.produce(context.Background(), logProduceRequest{
+	if _, _, err := backend.produce(context.Background(), logProduceRequest{
 		path: path, tableID: 9, partitionID: -1,
 		timeout: time.Duration(int64(^uint32(0))) * time.Millisecond, acks: 1,
 	}); !errors.Is(err, ErrInvalidConfig) {
@@ -774,7 +774,7 @@ func TestClientAppendWriterBackendResponseErrors(t *testing.T) {
 	if _, err := backend.initWriter(context.Background(), path, 0); err == nil {
 		t.Fatal("unexpected init response succeeded")
 	}
-	if _, err := backend.produce(context.Background(), logProduceRequest{
+	if _, _, err := backend.produce(context.Background(), logProduceRequest{
 		path: path, tableID: 9, partitionID: -1, timeout: time.Second, acks: 1,
 	}); err == nil {
 		t.Fatal("unexpected produce response succeeded")
@@ -785,7 +785,7 @@ func TestClientAppendWriterBackendResponseErrors(t *testing.T) {
 		response.Message().(*fmsg.ProduceLogResponse).BucketsResp = []*fmsg.PbProduceLogRespForBucket{}
 		return response, nil
 	})
-	if _, err := backend.produce(context.Background(), logProduceRequest{
+	if _, _, err := backend.produce(context.Background(), logProduceRequest{
 		path: path, tableID: 9, partitionID: -1, timeout: time.Second, acks: 1,
 	}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("omitted bucket error = %v", err)

@@ -13,7 +13,7 @@ import (
 type appendWriterBackend interface {
 	metadata(context.Context, PhysicalTablePath) (bucketLayout, error)
 	initWriter(context.Context, PhysicalTablePath, int32) (int64, error)
-	produce(context.Context, logProduceRequest) (int64, error)
+	produce(context.Context, logProduceRequest) (int64, bool, error)
 }
 
 type clientAppendWriterBackend struct{ client *Client }
@@ -61,13 +61,13 @@ func (b clientAppendWriterBackend) initWriter(ctx context.Context, path Physical
 func (b clientAppendWriterBackend) produce(
 	ctx context.Context,
 	input logProduceRequest,
-) (int64, error) {
+) (int64, bool, error) {
 	request, err := fmsg.NewRequest(fmsg.APIKeyProduceLog, 0)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if input.timeout/time.Millisecond > math.MaxInt32 {
-		return 0, fmt.Errorf("%w: log timeout exceeds protocol range", ErrInvalidConfig)
+		return 0, false, fmt.Errorf("%w: log timeout exceeds protocol range", ErrInvalidConfig)
 	}
 	message := request.Message().(*fmsg.ProduceLogRequest)
 	message.Acks = proto.Int32(input.acks)
@@ -80,19 +80,19 @@ func (b clientAppendWriterBackend) produce(
 	message.BucketsReq = []*fmsg.PbProduceLogReqForBucket{bucketRequest}
 	response, err := b.client.requestBucket(ctx, input.path, input.bucket, request, input.bucketCount)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	produced, ok := response.Message().(*fmsg.ProduceLogResponse)
 	if !ok {
-		return 0, fmt.Errorf("fgo: produce log: unexpected response %T", response.Message())
+		return 0, false, fmt.Errorf("fgo: produce log: unexpected response %T", response.Message())
 	}
 	if len(produced.GetBucketsResp()) != 1 || produced.GetBucketsResp()[0].GetBucketId() != input.bucket {
-		return 0, fmt.Errorf("%w: produce response omitted bucket %d", ErrValidation, input.bucket)
+		return 0, false, fmt.Errorf("%w: produce response omitted bucket %d", ErrValidation, input.bucket)
 	}
 	result := produced.GetBucketsResp()[0]
 	if err := responseServerError(result.GetErrorCode(), result.GetErrorMessage(), fmsg.APIKeyProduceLog); err != nil {
 		b.client.invalidatePhysicalOnMetadataError(input.path, err)
-		return 0, err
+		return 0, false, err
 	}
-	return result.GetBaseOffset(), nil
+	return result.GetBaseOffset(), result.BaseOffset != nil, nil
 }
