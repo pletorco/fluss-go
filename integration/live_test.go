@@ -140,6 +140,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("partitioned KV physical key compatibility", func(t *testing.T) {
 		testPartitionedKVWireKeys(t, client, admin, database)
 	})
+	t.Run("wide decimal KV key compatibility", func(t *testing.T) {
+		testWideDecimalKVWireKeys(t, client, admin, database)
+	})
 
 	t.Run("KV scan interruption preserves undelivered pages", func(t *testing.T) {
 		testInterruptedKVPage(t, plainAddress, client, admin, database)

@@ -235,11 +235,17 @@ Fluss receives only the prefix for tenant `7` and a separate partition ID.
 
 ### KV key compatibility
 
-Earlier fluss-go clients included partition columns in stored KV keys. The
-corrected client neither reads those old keys as a fallback nor rewrites them.
-On an affected table, point lookups can miss old rows and a write under the
-corrected key can create a second entry for the same logical primary key.
-Deleting via the corrected client only addresses the corrected key.
+Earlier fluss-go clients included partition columns in stored KV keys. They
+also emitted an extra sign byte for wide DECIMAL (precision greater than 18)
+at negative signed-width boundaries, such as unscaled `-128` or `-32768`.
+For scale 2, those values are `-1.28` and `-327.68`. This can change both the
+stored key and bucket routing if an affected decimal participates in them.
+Previously stored decimal **row values** still decode.
+
+The corrected client neither reads old keys as a fallback nor rewrites them.
+Point lookups can miss old rows, and writing under the corrected key can
+create a second entry for the same logical primary key. Deleting via the
+corrected client only addresses the corrected key.
 
 Before changing clients on a table that may contain affected keys:
 
@@ -249,9 +255,9 @@ Before changing clients on a table that may contain affected keys:
    duplicate logical keys using an authoritative source or an explicit conflict
    rule; scan order alone does not identify the winning row.
 3. Write the reconciled rows into a fresh table with the corrected client.
-   Verify counts and representative point/prefix lookups from both Go and
-   another Fluss 1.0 client before switching traffic. Keep the source table
-   and backup until verification and rollback are no longer needed.
+   Verify counts and representative point and supported prefix lookups from
+   both Go and another Fluss 1.0 client before switching traffic. Keep the
+   source table and backup until verification and rollback are no longer needed.
 
 ## KV merge and insert-if-missing
 

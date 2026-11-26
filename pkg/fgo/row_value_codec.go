@@ -492,18 +492,14 @@ func signedBigEndian(value *big.Int) []byte {
 		}
 		return bytes
 	}
-	width := (value.BitLen() + 8) / 8
-	modulus := new(big.Int).Lsh(big.NewInt(1), uint(width*8))
-	bytes := new(big.Int).Add(modulus, value).Bytes()
-	if len(bytes) < width {
-		bytes = append(make([]byte, width-len(bytes)), bytes...)
+	// Match Java BigInteger.toByteArray: size the magnitude of the
+	// complement plus one sign bit, then invert every output byte.
+	complement := new(big.Int).Not(value)
+	encoded := complement.FillBytes(make([]byte, (complement.BitLen()+8)/8))
+	for i := range encoded {
+		encoded[i] = ^encoded[i]
 	}
-	if bytes[0]&0x80 == 0 {
-		width++
-		modulus.Lsh(big.NewInt(1), uint(width*8))
-		bytes = new(big.Int).Add(modulus, value).Bytes()
-	}
-	return bytes
+	return encoded
 }
 
 func signedBigInt(value []byte) *big.Int {

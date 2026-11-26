@@ -173,7 +173,7 @@ tasks:
       - go test ./pkg/fmsg -run '^TestProtocolGoldenBytes$'
       - >-
         go test ./pkg/fgo
-        -run '^Test(CompactedPrimaryKeyMatchesJavaFixture|RowsMatchJava091Fixtures|KVAndLogBatchesMatchJava091Fixtures|LogBatchEncodesV0AndV1Headers|ArrowLogBatchDecodesJava091Fixture|FlussBucketMatchesJava091)$'
+        -run '^Test(CompactedPrimaryKeyMatchesJavaFixture|RowsMatchJava091Fixtures|KVAndLogBatchesMatchJava091Fixtures|LogBatchEncodesV0AndV1Headers|ArrowLogBatchDecodesJava091Fixture|FlussBucketMatchesJava091|WideDecimalKeyMatchesJavaFixture)$'
 
   test:race:
     desc: Run unit tests with the race detector

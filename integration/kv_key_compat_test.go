@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"testing"
 	"time"
 
@@ -65,6 +66,53 @@ func testPartitionedKVWireKeys(t *testing.T, client *fgo.Client, admin *fadm.Cli
 		t.Fatalf("Go prefix lookup: %#v", prefix)
 	}
 	if result := writer.Delete(ctx, goKey).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	wire.wantFound(t, ctx, second, false)
+}
+
+func testWideDecimalKVWireKeys(t *testing.T, client *fgo.Client, admin *fadm.Client, database string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	path := fgo.TablePath{Database: database, Table: "decimal_key_compat"}
+	schema := fgo.Schema{
+		Columns: []fgo.Column{
+			{Name: "amount", Type: fgo.DecimalType, LogicalType: &fgo.LogicalType{Root: "DECIMAL", Precision: 20, Scale: 2}},
+			{Name: "name", Type: fgo.StringType, Nullable: true},
+		},
+		PrimaryKey: []string{"amount"},
+	}
+	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{Schema: schema, BucketCount: 1}, false); err != nil {
+		t.Fatal(err)
+	}
+	wire := readyWireKV(t, ctx, client, admin, fgo.PhysicalTablePath{TablePath: path})
+	writer, err := client.NewUpsertWriter(ctx, wire.table, fgo.WithUpsertBatchTimeout(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close(ctx)
+	lookup, err := client.NewLookuper(ctx, wire.table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lookup.Close()
+
+	// Use Java's minimal two's-complement form for the unscaled values.
+	first, second := []byte{0x01, 0x80}, []byte{0x02, 0x80, 0x00}
+	if result := writer.Upsert(ctx, fgo.Row{big.NewRat(-128, 100), "go"}).Await(ctx); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	wire.wantFound(t, ctx, first, true)
+	wire.wantFound(t, ctx, []byte{0x02, 0xff, 0x80}, false)
+
+	amount := big.NewRat(-32768, 100)
+	wire.put(t, ctx, second, fgo.Row{amount, "wire"})
+	key := fgo.PrimaryKey{amount}
+	if result := lookup.Lookup(ctx, key)[0]; result.Err != nil || !result.Found || result.Row[1] != "wire" {
+		t.Fatalf("Go lookup of wire-written decimal key: %#v", result)
+	}
+	if result := writer.Delete(ctx, key).Await(ctx); result.Err != nil {
 		t.Fatal(result.Err)
 	}
 	wire.wantFound(t, ctx, second, false)
