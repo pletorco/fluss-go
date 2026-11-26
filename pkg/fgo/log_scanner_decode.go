@@ -106,12 +106,13 @@ func decodeEvolvedFetchedBatch(
 		return offset, nil, nil, err
 	}
 	schemaID := int32(int16(binary.LittleEndian.Uint16(payload[schemaOffset:])))
+	lastOffsetDelta := int32(binary.LittleEndian.Uint32(payload[schemaOffset+3:]))
 	writerSchema, err := resolver.resolveSchema(ctx, table.Path, table.ID, schemaID)
 	if err != nil {
 		return offset, nil, nil, fmt.Errorf("fgo: resolve log schema %d: %w", schemaID, err)
 	}
 	next, rows, arrowBatch, err := decodeFetchedBatch(
-		writerSchema, bucket, offset, payload, compacted,
+		writerSchema, bucket, offset, payload, compacted, lastOffsetDelta,
 	)
 	if err != nil {
 		return offset, nil, nil, err
@@ -261,10 +262,11 @@ func decodeFetchedBatch(
 	current int64,
 	payload []byte,
 	compacted bool,
+	lastOffsetDelta int32,
 ) (int64, []ScanRecord, *ScanArrowBatch, error) {
 	batch, rowErr := DecodeLogBatchRows(schema, payload, compacted)
 	if rowErr == nil {
-		start, next, err := fetchedBatchOffsets(batch.BaseOffset, int64(len(batch.Records)), current)
+		start, next, err := fetchedBatchOffsets(batch.BaseOffset, int64(len(batch.Records)), current, lastOffsetDelta)
 		if err != nil {
 			return current, nil, nil, err
 		}
@@ -284,7 +286,7 @@ func decodeFetchedBatch(
 		return current, nil, nil, errors.Join(rowErr, err)
 	}
 	count := arrowBatch.Record.NumRows()
-	start, next, err := fetchedBatchOffsets(arrowBatch.BaseOffset, count, current)
+	start, next, err := fetchedBatchOffsets(arrowBatch.BaseOffset, count, current, lastOffsetDelta)
 	if err != nil {
 		arrowBatch.Release()
 		return current, nil, nil, err
@@ -302,12 +304,17 @@ func decodeFetchedBatch(
 	return next, nil, result, nil
 }
 
-func fetchedBatchOffsets(base, count, current int64) (int64, int64, error) {
+func fetchedBatchOffsets(base, count, current int64, lastOffsetDelta int32) (int64, int64, error) {
 	if count < 0 {
 		return 0, current, fmt.Errorf("%w: negative log batch record count", ErrMalformedRecordBatch)
 	}
 	if count == 0 {
-		return 0, current, nil
+		// Fluss 1.0 persists empty KV WAL batches to record writer sequence
+		// progress. Their inclusive last offset is the base (delta zero).
+		if lastOffsetDelta != 0 || base < 0 || base == math.MaxInt64 {
+			return 0, current, fmt.Errorf("%w: invalid empty log batch offset range", ErrMalformedRecordBatch)
+		}
+		return 0, max(current, base+1), nil
 	}
 	if base > math.MaxInt64-count {
 		return 0, current, fmt.Errorf("%w: log batch offset overflow", ErrMalformedRecordBatch)

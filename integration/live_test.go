@@ -140,6 +140,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("KV acknowledgments do not claim mutation offsets", func(t *testing.T) {
 		testKVMutationOffsets(t, client, admin, database)
 	})
+	t.Run("bounded CDC across an empty KV batch", func(t *testing.T) {
+		testEmptyKVLogBatch(t, client, admin, database)
+	})
 	t.Run("partitioned KV physical key compatibility", func(t *testing.T) {
 		testPartitionedKVWireKeys(t, client, admin, database)
 	})
