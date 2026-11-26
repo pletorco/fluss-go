@@ -19,7 +19,10 @@ Enable coordinator-backed token acquisition with
 `WithFileSystemSecurityTokenRefresh`. A zero config applies the documented
 defaults: refresh at 75% of token lifetime, retry after one minute with
 exponential backoff capped at one hour, and treat a token as expiring 30
-seconds early.
+seconds early. Jitter cannot extend retry backoff beyond its configured
+maximum or schedule renewal past a usable deadline. If no useful renewal
+interval remains (at most 1 ms), the client uses bounded retry backoff
+instead of spinning on immediate refreshes.
 
 <!-- go-source: internal/docexamples/snippets_test.go tokenRefresh -->
 ```go

@@ -71,3 +71,36 @@ func TestRevokedSecurityTokenStaysClearedOnShutdown(t *testing.T) {
 		}
 	})
 }
+
+func TestSecurityTokenSchedulingClampsFinalJitter(t *testing.T) {
+	clock := &fakeSecurityTokenClock{now: time.Unix(100, 0)}
+	expiresAt := clock.Now().Add(101 * time.Second)
+	cfg := tokenTestConfig(clock)
+	cfg.RenewalTimeRatio, cfg.Jitter = 0.75, 1
+	cfg.random = func() float64 { return 0.99 }
+	manager := newSecurityTokenManager(nil, cfg, nil)
+	if delay := manager.renewalDelay(expiresAt); delay != 100*time.Second-time.Nanosecond {
+		t.Fatalf("upper renewal delay = %v", delay)
+	}
+	manager.failedDelay()
+	manager.failedDelay()
+	if delay := manager.failedDelay(); delay != 40*time.Second {
+		t.Fatalf("upper retry delay = %v", delay)
+	}
+	manager.config.random = func() float64 { return 0 }
+	if delay := manager.renewalDelay(expiresAt); delay != minSecurityTokenDelay {
+		t.Fatalf("lower renewal delay = %v", delay)
+	}
+	if delay := manager.failedDelay(); delay != minSecurityTokenDelay {
+		t.Fatalf("lower retry delay = %v", delay)
+	}
+	clock.Advance(100*time.Second - time.Nanosecond)
+	manager.config.random = func() float64 { return 0.5 }
+	if delay := manager.renewalDelay(expiresAt); delay != cfg.RenewalRetryBackoff {
+		t.Fatalf("too-short renewal delay = %v", delay)
+	}
+	clock.Advance(time.Nanosecond)
+	if delay := manager.renewalDelay(expiresAt); delay != cfg.RenewalRetryBackoff {
+		t.Fatalf("expired renewal delay = %v", delay)
+	}
+}
