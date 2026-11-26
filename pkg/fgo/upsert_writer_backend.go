@@ -18,6 +18,7 @@ type upsertWriterBackend interface {
 
 type kvPutResult struct {
 	logEnd        int64
+	offsetKnown   bool
 	pressure      float32
 	pressureKnown bool
 }
@@ -93,6 +94,7 @@ func (b clientUpsertWriterBackend) put(
 		return kvPutResult{}, fmt.Errorf("%w: invalid KV pressure %v", ErrValidation, pressure)
 	}
 	return kvPutResult{
-		logEnd: result.GetLogEndOffset(), pressure: pressure, pressureKnown: result.Pressure != nil,
+		logEnd: result.GetLogEndOffset(), offsetKnown: result.LogEndOffset != nil,
+		pressure: pressure, pressureKnown: result.Pressure != nil,
 	}, nil
 }

@@ -215,11 +215,11 @@ func TestSecurityTokenManagerBackoffRevocationAndDisable(t *testing.T) {
 	}
 	manager.config.Jitter = 0.2
 	manager.config.random = func() float64 { return 0 }
-	if got := manager.jitter(10 * time.Second); got != 8*time.Second {
+	if got := manager.retryDelay(10 * time.Second); got != 8*time.Second {
 		t.Fatalf("lower jitter = %v", got)
 	}
 	manager.config.random = func() float64 { return 1 }
-	if got := manager.jitter(10 * time.Second); got != 12*time.Second {
+	if got := manager.retryDelay(10 * time.Second); got != 12*time.Second {
 		t.Fatalf("upper jitter = %v", got)
 	}
 

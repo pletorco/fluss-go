@@ -44,8 +44,8 @@ type logicalTypeJSON struct {
 	Root      string         `json:"type"`
 	Nullable  *bool          `json:"nullable,omitempty"`
 	Length    int            `json:"length,omitempty"`
-	Precision int            `json:"precision,omitempty"`
-	Scale     int            `json:"scale,omitempty"`
+	Precision *int           `json:"precision,omitempty"`
+	Scale     *int           `json:"scale,omitempty"`
 	Element   *LogicalType   `json:"element_type,omitempty"`
 	Key       *LogicalType   `json:"key_type,omitempty"`
 	Value     *LogicalType   `json:"value_type,omitempty"`
@@ -55,13 +55,28 @@ type logicalTypeJSON struct {
 // MarshalJSON encodes the Fluss logical-type JSON representation.
 func (t LogicalType) MarshalJSON() ([]byte, error) {
 	encoded := logicalTypeJSON{
-		Root: t.Root, Length: t.Length, Precision: t.Precision, Scale: t.Scale,
+		Root: t.Root, Length: t.Length,
 		Element: t.Element, Key: t.Key, Value: t.Value, Fields: t.Fields,
+	}
+	if t.Precision != 0 || hasRequiredTypePrecision(t.Root) {
+		encoded.Precision = &t.Precision
+	}
+	if t.Scale != 0 || t.Root == "DECIMAL" {
+		encoded.Scale = &t.Scale
 	}
 	if !t.Nullable {
 		encoded.Nullable = new(bool)
 	}
 	return json.Marshal(encoded)
+}
+
+func hasRequiredTypePrecision(root string) bool {
+	switch root {
+	case "DECIMAL", "TIME_WITHOUT_TIME_ZONE", "TIMESTAMP_WITHOUT_TIME_ZONE", "TIMESTAMP_WITH_LOCAL_TIME_ZONE":
+		return true
+	default:
+		return false
+	}
 }
 
 // UnmarshalJSON decodes the Fluss logical-type JSON representation.
@@ -76,8 +91,13 @@ func (t *LogicalType) UnmarshalJSON(data []byte) error {
 	}
 	*t = LogicalType{
 		Root: encoded.Root, Nullable: nullable, Length: encoded.Length,
-		Precision: encoded.Precision, Scale: encoded.Scale,
 		Element: encoded.Element, Key: encoded.Key, Value: encoded.Value, Fields: encoded.Fields,
+	}
+	if encoded.Precision != nil {
+		t.Precision = *encoded.Precision
+	}
+	if encoded.Scale != nil {
+		t.Scale = *encoded.Scale
 	}
 	return nil
 }

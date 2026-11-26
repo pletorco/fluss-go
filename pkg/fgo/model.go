@@ -150,6 +150,7 @@ func (s Schema) JSON() ([]byte, error) {
 		if assignIDs {
 			id = nextID
 			nextID++
+			logicalType = snapshotLogicalType(logicalType)
 			assignLogicalFieldIDs(&logicalType, &nextID)
 		}
 		columns[i] = schemaColumnJSON{Name: column.Name, DataType: logicalType, Comment: column.Description, ID: id}

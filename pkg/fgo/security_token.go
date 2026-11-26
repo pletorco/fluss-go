@@ -77,7 +77,8 @@ func (f FileSystemSecurityTokenProviderFunc) AcquireFileSystemSecurityToken(
 // acquisition.
 type FileSystemSecurityTokenReceiver interface {
 	// ReceiveFileSystemSecurityToken receives a deep clone after acquisition.
-	// Returning an error rejects publication and schedules a bounded retry.
+	// Returning an error rejects normal publication and schedules a bounded retry.
+	// A revocation is already effective locally when receivers are notified.
 	// Receivers run sequentially and should return promptly. A receiver may
 	// close the client; shutdown stops waiting for the callback but cannot
 	// forcibly stop callback code that remains blocked.
@@ -127,7 +128,8 @@ func (c FileSystemSecurityTokenRefreshConfig) normalized() (FileSystemSecurityTo
 	if c.ClockSkew == 0 {
 		c.ClockSkew = 30 * time.Second
 	}
-	if c.RenewalTimeRatio <= 0 || c.RenewalTimeRatio >= 1 || c.RenewalRetryBackoff <= 0 ||
+	if math.IsNaN(c.RenewalTimeRatio) || math.IsNaN(c.Jitter) ||
+		c.RenewalTimeRatio <= 0 || c.RenewalTimeRatio >= 1 || c.RenewalRetryBackoff <= 0 ||
 		c.MaxRenewalRetryBackoff < c.RenewalRetryBackoff || c.ClockSkew < 0 ||
 		c.Jitter < 0 || c.Jitter > 1 {
 		return FileSystemSecurityTokenRefreshConfig{}, fmt.Errorf(
@@ -303,7 +305,7 @@ func (m *securityTokenManager) refreshOnce(ctx context.Context) (time.Duration, 
 	m.failures = 0
 	m.mu.Unlock()
 	if token.Revoked {
-		return m.jitter(m.config.RenewalRetryBackoff), false
+		return m.retryDelay(m.config.RenewalRetryBackoff), false
 	}
 	if token.ExpiresAt.IsZero() {
 		return 0, true
@@ -315,24 +317,38 @@ func (m *securityTokenManager) publish(
 	ctx context.Context,
 	token FileSystemSecurityToken,
 ) error {
+	if token.Revoked {
+		m.mu.Lock()
+		clear(m.current.Token)
+		m.current = FileSystemSecurityToken{}
+		m.available = false
+		m.mu.Unlock()
+	}
 	published := token.Clone()
+	var failure error
 	for _, receiver := range m.receivers {
 		if err := callSecurityTokenReceiver(ctx, receiver, published.Clone()); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return ErrFileSystemSecurityToken
+			// Notify later receivers of a revocation too. Keep the failure
+			// classified without exposing an arbitrary credential error.
+			failure = ErrFileSystemSecurityToken
+			if !token.Revoked {
+				return failure
+			}
 		}
 	}
-	m.mu.Lock()
 	if token.Revoked {
-		m.current = FileSystemSecurityToken{}
-		m.available = false
-	} else {
-		m.current = published
-		m.available = true
+		return failure
 	}
-	m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.current = published
+	m.available = true
 	return nil
 }
 
@@ -349,36 +365,50 @@ func (m *securityTokenManager) failedDelay() time.Duration {
 	m.failures++
 	failures := m.failures
 	m.mu.Unlock()
-	exponent := failures - 1
-	if exponent > 30 {
-		exponent = 30
+	maximum := m.config.MaxRenewalRetryBackoff
+	delay := m.config.RenewalRetryBackoff
+	for range min(failures-1, 30) {
+		if delay > maximum/2 {
+			delay = maximum
+			break
+		}
+		delay *= 2
 	}
-	delay := time.Duration(float64(m.config.RenewalRetryBackoff) * math.Pow(2, float64(exponent)))
-	if delay > m.config.MaxRenewalRetryBackoff || delay < 0 {
-		delay = m.config.MaxRenewalRetryBackoff
-	}
-	return m.jitter(delay)
+	return m.retryDelay(delay)
 }
+
+const minSecurityTokenDelay = time.Millisecond
 
 func (m *securityTokenManager) renewalDelay(expiresAt time.Time) time.Duration {
 	now := m.config.clock.Now()
 	lifetime := expiresAt.Add(-m.config.ClockSkew).Sub(now)
-	if lifetime <= 0 {
-		return m.jitter(m.config.RenewalRetryBackoff)
+	if lifetime <= minSecurityTokenDelay {
+		// No useful positive renewal interval remains. Back off rather than
+		// repeatedly acquiring already-expired or nearly expired credentials.
+		return m.retryDelay(m.config.RenewalRetryBackoff)
 	}
-	return m.jitter(time.Duration(float64(lifetime) * m.config.RenewalTimeRatio))
+	return m.boundedJitter(time.Duration(float64(lifetime)*m.config.RenewalTimeRatio),
+		minSecurityTokenDelay, lifetime-time.Nanosecond)
 }
 
-func (m *securityTokenManager) jitter(delay time.Duration) time.Duration {
+func (m *securityTokenManager) retryDelay(delay time.Duration) time.Duration {
+	maximum := m.config.MaxRenewalRetryBackoff
+	return m.boundedJitter(delay, min(minSecurityTokenDelay, maximum), maximum)
+}
+
+func (m *securityTokenManager) boundedJitter(delay, minimum, maximum time.Duration) time.Duration {
 	if m.config.Jitter == 0 {
-		return delay
+		return max(minimum, min(delay, maximum))
 	}
 	factor := 1 + (m.config.random()*2-1)*m.config.Jitter
-	jittered := time.Duration(float64(delay) * factor)
-	if jittered < 0 {
-		return 0
+	jittered := float64(delay) * factor
+	if jittered >= float64(maximum) {
+		return maximum
 	}
-	return jittered
+	if jittered <= float64(minimum) {
+		return minimum
+	}
+	return time.Duration(jittered)
 }
 
 func validateSecurityToken(token FileSystemSecurityToken, now time.Time, skew time.Duration) error {
