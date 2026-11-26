@@ -33,6 +33,8 @@ breaking changes.
   handles after drop and recreation instead of combining old and new IDs.
 - Opened append writers using the target partition's actual bucket count, so
   partitions created before and after a change to the table default remain writable.
+- Left write offsets unknown when a successful Append or Upsert reply omits
+  its offset, rather than deriving offsets from protobuf's default zero.
 - Included the resolved routing bucket count in log-table batch scans, so
   `LIMIT_SCAN` works for both existing and new partitions after rescaling.
 - Routed primary-key reads and writes by the table or partition's actual
