@@ -56,6 +56,8 @@ breaking changes.
 
 - Reduced metadata refresh and invalidation work by updating only the affected
   cache entry, without copying unrelated tables and partitions.
+- Released completed batch references from Append and Upsert queues so their
+  encoded data can be reclaimed.
 - Reused schema mappings across decoded rows in log batches and KV pages,
   reducing allocation and repeated column compatibility checks.
 

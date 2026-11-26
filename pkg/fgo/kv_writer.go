@@ -502,8 +502,7 @@ func (l *upsertWriterLoop) dispatch() {
 			if l.active[bucket] || len(l.pending[bucket]) == 0 {
 				continue
 			}
-			batch := l.pending[bucket][0]
-			l.pending[bucket] = l.pending[bucket][1:]
+			batch := popWriterBatch(l.pending, bucket)
 			l.active[bucket] = true
 			l.inFlight++
 			sequence := l.sequences[bucket]
