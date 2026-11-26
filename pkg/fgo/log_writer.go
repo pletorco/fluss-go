@@ -108,6 +108,7 @@ type logBatchCompletion struct {
 
 // NewAppendWriter creates an append writer for a log table. It snapshots table
 // schema metadata; later changes to the caller's table do not affect this writer.
+// Automatic row routing is unsupported for lake-bound tables with a bucket key.
 func (c *Client) NewAppendWriter(ctx context.Context, table Table, options ...AppendWriterOption) (*AppendWriter, error) {
 	if err := c.ensureOpen(); err != nil {
 		return nil, err
@@ -130,6 +131,14 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	}
 	if err := resolveAppendWriterFormat(table, &config); err != nil {
 		return nil, err
+	}
+	if config.Format != LogFormatArrow && len(table.Schema.BucketKey) != 0 {
+		// The row writer uses Fluss's default key encoding and hash. A lake
+		// binding can change both even before tiering is enabled.
+		if lakeFormat := strings.TrimSpace(table.Properties["table.datalake.format"]); lakeFormat != "" {
+			return nil, fmt.Errorf("%w: automatic append bucket routing for %s with table.datalake.format=%q is not supported",
+				ErrUnsupportedAPI, table.Path, lakeFormat)
+		}
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
 	partitionColumns, err := physicalPartitionColumns(table.Schema, path.Partition)

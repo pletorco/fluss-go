@@ -54,6 +54,8 @@ breaking changes.
   require tables explicitly configured for COMPACTED or INDEXED.
 - Validated every Arrow row against the selected log partition before
   accepting the batch, preventing writes to the wrong partition.
+- Rejected automatic row routing on lake-bound log tables with a bucket key,
+  preventing Go and Java from placing the same key in different buckets.
 - Rejected insert-if-missing lookups on partitioned tables up front because
   Fluss 1.0 cannot insert using the canonical physical lookup key.
 - Left write offsets unknown when a successful Append or Upsert reply omits

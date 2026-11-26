@@ -1140,6 +1140,9 @@ func testLogFormats(
 	t.Run("Arrow partition batch validation", func(t *testing.T) {
 		testArrowPartitionAppend(t, client, admin, database)
 	})
+	t.Run("lake-bound log routing", func(t *testing.T) {
+		testLakeBoundLogRouting(t, client, admin, database)
+	})
 	t.Run("TIMESTAMP row and key precision", func(t *testing.T) {
 		testTimestampPrecision(t, client, admin, database)
 	})
