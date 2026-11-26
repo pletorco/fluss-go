@@ -151,6 +151,7 @@ type LogScanner struct {
 }
 
 // NewLogScanner creates a scanner subscribed to all current buckets at start.
+// It returns [ErrNoBucketLeader] if the bucket layout has unavailable leaders.
 func (c *Client) NewLogScanner(ctx context.Context, table Table, start ScanOffset, options ...LogScannerOption) (*LogScanner, error) {
 	if err := c.ensureOpen(); err != nil {
 		return nil, err
@@ -184,16 +185,16 @@ func newLogScanner(
 		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
-	physicalID, locations, err := backend.metadata(ctx, path)
+	layout, err := backend.metadata(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, physicalID, table.ID)
+	if path.Partition == "" && layout.physicalID != table.ID {
+		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
 	}
-	buckets, err := sortedBuckets(locations)
+	buckets, err := completeScanBuckets(layout.count, layout.leaders)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fgo: open log scanner for %s: %w", path, err)
 	}
 	scanner := &LogScanner{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
@@ -211,7 +212,7 @@ func newLogScanner(
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
 	if path.Partition != "" {
-		scanner.partitionID = physicalID
+		scanner.partitionID = layout.physicalID
 	}
 	if err := scanner.configureProjection(); err != nil {
 		return nil, err

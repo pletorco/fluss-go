@@ -78,23 +78,36 @@ func TestResolvedTableBucketsAreOrdered(t *testing.T) {
 	buckets, err := resolvedTableBuckets(10, 20, 3, map[int32]ServerNode{
 		2: {ID: 12, Address: "two:9123", ServerType: TabletServer},
 		0: {ID: 10, Address: "zero:9123", ServerType: TabletServer},
+		1: {ID: 11, Address: "one:9123", ServerType: TabletServer},
 	})
-	if err != nil || len(buckets) != 2 ||
-		buckets[0].BucketID != 0 || buckets[1].BucketID != 2 ||
-		buckets[0].TableID != 10 || buckets[0].PartitionID != 20 ||
-		buckets[0].BucketCount != 3 || buckets[1].BucketCount != 3 {
+	if err != nil || len(buckets) != 3 {
 		t.Fatalf("resolvedTableBuckets() = %#v, %v", buckets, err)
+	}
+	for index, bucket := range buckets {
+		if bucket.BucketID != int32(index) || bucket.TableID != 10 || bucket.PartitionID != 20 ||
+			bucket.BucketCount != 3 || bucket.Leader.ID != int32(10+index) {
+			t.Fatalf("bucket %d = %#v", index, bucket)
+		}
 	}
 	if _, err := resolvedTableBuckets(1, -1, 0, nil); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("empty buckets error = %v", err)
+	}
+	if _, err := resolvedTableBuckets(1, -1, 1, map[int32]ServerNode{1: {ID: 12}}); !errors.Is(err, ErrMetadata) {
+		t.Fatalf("out-of-range bucket error = %v", err)
 	}
 }
 
 func TestClientResolvesTableAndPartitionBuckets(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}
+	metadata := metadataResponse(path)
+	metadata.PartitionMetadata[0].BucketMetadata = []*fmsg.PbBucketMetadata{
+		{BucketId: proto.Int32(2), LeaderId: proto.Int32(2)},
+		{BucketId: proto.Int32(0), LeaderId: proto.Int32(2)},
+		{BucketId: proto.Int32(1), LeaderId: proto.Int32(2)},
+	}
 	client := newClient(requesterFunc(func(_ context.Context, request fmsg.Request) (fmsg.Response, error) {
 		response, _ := fmsg.NewResponse(request.APIKey(), request.Version())
-		*response.Message().(*fmsg.MetadataResponse) = *metadataResponse(path)
+		proto.Merge(response.Message(), metadata)
 		return response, nil
 	}), nil)
 	client.versions[fmsg.APIKeyGetMetadata] = 0
@@ -109,8 +122,8 @@ func TestClientResolvesTableAndPartitionBuckets(t *testing.T) {
 	partitionBuckets, err := client.ResolveTableBuckets(context.Background(), PhysicalTablePath{
 		TablePath: path, Partition: "day=2026-07-30",
 	})
-	if err != nil || len(partitionBuckets) != 1 || partitionBuckets[0].TableID != 9 ||
-		partitionBuckets[0].PartitionID != 10 || partitionBuckets[0].BucketID != 1 {
+	if err != nil || len(partitionBuckets) != 3 || partitionBuckets[1].TableID != 9 ||
+		partitionBuckets[1].PartitionID != 10 || partitionBuckets[1].BucketID != 1 {
 		t.Fatalf("partition buckets = %#v, %v", partitionBuckets, err)
 	}
 	if _, err := client.ResolveTableBuckets(context.Background(), PhysicalTablePath{}); !errors.Is(err, ErrInvalidConfig) {

@@ -31,7 +31,8 @@ func (b clientBatchScanBackend) schemaResolver() schemaResolver {
 	return b.client
 }
 
-// ResolveTableBuckets returns a stable bucket-ID ordered snapshot of current tablet leaders.
+// ResolveTableBuckets returns every bucket in bucket-ID order with its current
+// tablet leader. It returns [ErrNoBucketLeader] instead of an incomplete list.
 func (c *Client) ResolveTableBuckets(
 	ctx context.Context,
 	path PhysicalTablePath,
@@ -65,7 +66,7 @@ func resolvedTableBuckets(
 	bucketCount int32,
 	locations map[int32]ServerNode,
 ) ([]TableBucket, error) {
-	buckets, err := sortedBuckets(locations)
+	buckets, err := completeScanBuckets(bucketCount, locations)
 	if err != nil {
 		return nil, err
 	}

@@ -22,6 +22,26 @@ func sortedBuckets(buckets map[int32]ServerNode) ([]int32, error) {
 	return ids, nil
 }
 
+// completeScanBuckets prevents an all-bucket scan from silently accepting a
+// subset of the physical layout. The size check bounds allocation by metadata
+// actually received, not by the advertised count alone.
+func completeScanBuckets(count int32, leaders map[int32]ServerNode) ([]int32, error) {
+	if count <= 0 || len(leaders) > int(count) {
+		return nil, fmt.Errorf("%w: %d leaders for %d buckets", ErrMetadata, len(leaders), count)
+	}
+	if len(leaders) < int(count) {
+		return nil, fmt.Errorf("%w: %d of %d buckets have a tablet leader", ErrNoBucketLeader, len(leaders), count)
+	}
+	buckets := make([]int32, count)
+	for bucket := range count {
+		if _, ok := leaders[bucket]; !ok {
+			return nil, fmt.Errorf("%w: no entry for bucket %d in a %d-bucket layout", ErrMetadata, bucket, count)
+		}
+		buckets[bucket] = bucket
+	}
+	return buckets, nil
+}
+
 // flussBucket implements FlussBucketingFunction from Fluss 1.0. Its first hash is the
 // little-endian, seed-42 Murmur3 variant used by MurmurHashUtils.hashUnsafeBytes.
 func flussBucket(key []byte, bucketCount int) (int32, error) {

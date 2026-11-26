@@ -18,7 +18,7 @@ type scannerFetch struct {
 }
 
 type logScannerBackend interface {
-	metadata(context.Context, PhysicalTablePath) (int64, map[int32]ServerNode, error)
+	metadata(context.Context, PhysicalTablePath) (bucketLayout, error)
 	listOffset(context.Context, PhysicalTablePath, int32, int64, int64, ScanOffset) (int64, error)
 	fetch(context.Context, logFetchRequest) (scannerFetch, error)
 }
@@ -43,13 +43,8 @@ type logFetchRequest struct {
 	config      LogScannerConfig
 }
 
-func (b clientLogScannerBackend) metadata(ctx context.Context, path PhysicalTablePath) (int64, map[int32]ServerNode, error) {
-	if path.Partition == "" {
-		table, err := b.client.fetchTableMetadata(ctx, path.TablePath)
-		return table.ID, table.Buckets, err
-	}
-	partition, err := b.client.fetchPartitionMetadata(ctx, path)
-	return partition.ID, partition.Buckets, err
+func (b clientLogScannerBackend) metadata(ctx context.Context, path PhysicalTablePath) (bucketLayout, error) {
+	return b.client.fetchBucketLayout(ctx, path)
 }
 
 func (b clientLogScannerBackend) listOffset(

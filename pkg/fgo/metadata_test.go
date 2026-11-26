@@ -197,6 +197,60 @@ func TestRouterUsesPhysicalPartitionBucketCount(t *testing.T) {
 	}
 }
 
+func TestRouterRecoversCachedUnavailableLeader(t *testing.T) {
+	for _, partition := range []string{"", "day=2026-07-30"} {
+		t.Run("partition="+partition, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := context.Background()
+				table := TablePath{Database: "db", Table: "events"}
+				path := PhysicalTablePath{TablePath: table, Partition: partition}
+				leader := ServerNode{ID: 4, Address: "tablet:9123", ServerType: TabletServer}
+				fetches := 0
+				fetchLeaders := func(ctx context.Context) (map[int32]ServerNode, error) {
+					fetches++
+					switch fetches {
+					case 1, 2:
+						// The bucket count is reported before a leader appears.
+						return nil, nil
+					case 3:
+						<-ctx.Done()
+						return nil, ctx.Err()
+					default:
+						return map[int32]ServerNode{0: leader}, nil
+					}
+				}
+				router := NewRouter(ServerNode{}, func(ctx context.Context, _ TablePath) (TableMetadata, error) {
+					if partition != "" {
+						return TableMetadata{Path: table}, nil
+					}
+					leaders, err := fetchLeaders(ctx)
+					return TableMetadata{Path: table, BucketCount: 1, Buckets: leaders}, err
+				}).WithPhysicalMetadataFetcher(func(ctx context.Context, _ PhysicalTablePath) (PartitionMetadata, error) {
+					leaders, err := fetchLeaders(ctx)
+					return PartitionMetadata{Path: path, BucketCount: 1, Buckets: leaders}, err
+				})
+				for want := 1; want <= 2; want++ {
+					got, err := router.RoutePhysical(ctx, path, 0)
+					if !errors.Is(err, ErrNoBucketLeader) || got != (ServerNode{}) || fetches != want {
+						t.Fatalf("route %d = %v, %v; metadata fetches=%d", want, got, err, fetches)
+					}
+				}
+				deadline, cancel := context.WithTimeout(ctx, time.Second)
+				defer cancel()
+				if _, err := router.RoutePhysical(deadline, path, 0); !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("route during blocked refresh = %v, want deadline exceeded", err)
+				}
+				synctest.Wait()
+				for range 2 {
+					if got, err := router.RoutePhysical(ctx, path, 0); err != nil || got != leader || fetches != 4 {
+						t.Fatalf("route after recovery = %v, %v; metadata fetches=%d, want 4", got, err, fetches)
+					}
+				}
+			})
+		})
+	}
+}
+
 func TestRouterPhysicalAndTableFailuresAreTyped(t *testing.T) {
 	table := TablePath{Database: "db", Table: "missing"}
 	missing := NewRouter(ServerNode{}, nil)
