@@ -73,10 +73,10 @@ cancellation. Goal IDs and status values are raw protocol codes because Fluss
 1.0 does not expose a stable named enum through this client.
 
 `ListRebalanceProgress` performs one query. `WaitRebalance` polls at the requested
-positive interval until the top-level status is not zero, where zero means
-running. A nonzero status is terminal but is not necessarily success; inspect
-the top-level and per-bucket status codes according to the target cluster's
-Fluss 1.0 operational definitions.
+positive interval through NOT_STARTED (0) and REBALANCING (1). It returns
+FAILED (2), COMPLETED (3), CANCELED (4), or TIMEOUT (5) as terminal outcomes.
+Only COMPLETED means success. Missing status is a validation error, and
+`WaitRebalance` also rejects unknown status codes.
 
 Canceling the wait context stops only local polling. It does not cancel the
 server operation. On timeout, shutdown, or another abandoned wait, call
