@@ -4,12 +4,31 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fadm"
 	"github.com/pletorco/fluss-go/pkg/fgo"
 )
+
+func testDDLNullabilityContract(t *testing.T, admin *fadm.Client, database string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	path := fgo.TablePath{Database: database, Table: "column_nullability"}
+	typ := fgo.LogicalType{Root: "STRING"}
+	desc := fadm.TableDescriptor{BucketCount: 1, Schema: fgo.Schema{Columns: []fgo.Column{{
+		Name: "label", Type: fgo.StringType, Nullable: true, LogicalType: &typ,
+	}}}}
+	if err := admin.CreateTable(ctx, path, desc, false); !errors.Is(err, fgo.ErrInvalidSchema) {
+		t.Fatalf("CreateTable with conflicting nullability = %v, want ErrInvalidSchema", err)
+	}
+	typ.Nullable = true
+	if err := admin.CreateTable(ctx, path, desc, false); err != nil {
+		t.Fatalf("CreateTable with coherent nullability failed (invalid request must not have created it): %v", err)
+	}
+}
 
 func testDDLZeroParameters(t *testing.T, admin *fadm.Client, database string) {
 	t.Helper()

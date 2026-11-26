@@ -147,6 +147,7 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 	if err != nil {
 		return nil, err
 	}
+	table = snapshotTable(table)
 	writer := &UpsertWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: layout.partitionID, writerID: writerID, bucketCount: layout.count, keys: keys,

@@ -82,6 +82,7 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 	if layout.count <= 0 {
 		return nil, fmt.Errorf("%w: %s has no routing bucket count", ErrMetadata, path)
 	}
+	table = snapshotTable(table)
 	client := &Lookuper{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
 		partitionID: layout.partitionID, bucketCount: layout.count, keys: keys, resolver: resolverFor(backend, table),

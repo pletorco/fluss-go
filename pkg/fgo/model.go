@@ -63,7 +63,8 @@ type Column struct {
 	Name string
 	// Type is the physical Fluss data type.
 	Type DataType
-	// Nullable reports whether nil is a valid column value.
+	// Nullable reports whether nil is valid. It must match LogicalType.Nullable
+	// when LogicalType is provided; nested fields use their own nullability.
 	Nullable bool
 	// LogicalType carries nested and precision metadata.
 	LogicalType *LogicalType
@@ -116,6 +117,9 @@ func (s Schema) validateColumns() (map[string]Column, error) {
 			return nil, fmt.Errorf("%w: duplicate column %q", ErrInvalidSchema, column.Name)
 		}
 		if column.LogicalType != nil {
+			if column.Nullable != column.LogicalType.Nullable {
+				return nil, fmt.Errorf("%w: column %q has conflicting Nullable and LogicalType.Nullable", ErrInvalidSchema, column.Name)
+			}
 			if err := column.LogicalType.Validate(); err != nil {
 				return nil, err
 			}

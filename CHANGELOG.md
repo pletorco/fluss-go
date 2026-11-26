@@ -40,6 +40,8 @@ breaking changes.
   instead of letting them replace a live cached connection.
 - Applied the connection timeout through TLS, API negotiation, and
   authentication, so a silent coordinator seed cannot starve later seeds.
+- Preserved completed RPC responses when a peer disconnects immediately after
+  replying, so a known acknowledgment is not mistaken for a connection failure.
 - Canceled schema waits during point and prefix lookup decoding when the
   lookuper closes, without interrupting other readers of the shared schema.
 - Kept partition metadata tied to its parent table ID, rejecting stale table
@@ -66,6 +68,8 @@ breaking changes.
   match the dropped table.
 - Kept required zero precision and scale fields in Fluss schema JSON so DDL
   accepts types such as `TIME(0)`, `TIMESTAMP(0)`, and `DECIMAL(20,0)`.
+- Rejected conflicting column and logical-type nullability before row or
+  Arrow encoding and DDL. Set both flags consistently on typed columns.
 - Assigned missing field IDs without mutating nested caller schemas, allowing
   the same descriptor to be serialized or used for multiple DDL calls.
 - Prevented canceled table and partition refreshes from overwriting newer
@@ -74,6 +78,8 @@ breaking changes.
   to finish.
 - Kept caller-supplied reader schemas from replacing shared server metadata
   used by subsequent table lookups and record decoding.
+- Detached active reader and upsert metadata from caller-owned tables, and
+  made log scanner schema results safe to mutate without affecting the scan.
 - Rejected null values in historical Arrow columns mapped to a required
   target, matching row schema evolution.
 - Preserved the server's filtered progress when a bounded log scan delivers

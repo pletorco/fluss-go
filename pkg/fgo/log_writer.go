@@ -123,7 +123,7 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	if err := validateAppendWriterTable(table); err != nil {
 		return nil, err
 	}
-	table = snapshotAppendTable(table)
+	table = snapshotTable(table)
 	config, err := appendWriterConfig(options)
 	if err != nil {
 		return nil, err
