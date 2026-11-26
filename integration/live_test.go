@@ -137,6 +137,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})
+	t.Run("partitioned KV physical key compatibility", func(t *testing.T) {
+		testPartitionedKVWireKeys(t, client, admin, database)
+	})
 
 	t.Run("KV scan interruption preserves undelivered pages", func(t *testing.T) {
 		testInterruptedKVPage(t, plainAddress, client, admin, database)

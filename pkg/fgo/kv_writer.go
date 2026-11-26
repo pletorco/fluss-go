@@ -22,6 +22,7 @@ type UpsertWriter struct {
 	partitionID int64
 	writerID    int64
 	bucketCount int32
+	keys        kvKeyLayout
 	commands    chan upsertWriterCommand
 	slots       chan struct{}
 	done        chan struct{}
@@ -109,6 +110,10 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 		)
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
+	keys, err := newKVKeyLayout(table.Schema, path.Partition)
+	if err != nil {
+		return nil, err
+	}
 	if backend, ok := backend.(interface {
 		ensurePartition(context.Context, PhysicalTablePath, []string) error
 	}); ok {
@@ -139,7 +144,7 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 	}
 	writer := &UpsertWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: layout.partitionID, writerID: writerID, bucketCount: layout.count,
+		partitionID: layout.partitionID, writerID: writerID, bucketCount: layout.count, keys: keys,
 		commands: make(chan upsertWriterCommand, config.MaxBuffered),
 		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), closing: make(chan struct{}),
 		admission: newWriterAdmission(),
@@ -157,18 +162,6 @@ func validateUpsertWriterTable(table Table) error {
 	}
 	if table.SchemaID < 0 || table.SchemaID > math.MaxInt16 {
 		return fmt.Errorf("%w: schema ID exceeds KV batch range", ErrInvalidSchema)
-	}
-	if len(table.Schema.PrimaryKey) == 0 {
-		return fmt.Errorf("%w: primary-key table has no primary key", ErrInvalidSchema)
-	}
-	primary := make(map[string]bool, len(table.Schema.PrimaryKey))
-	for _, name := range table.Schema.PrimaryKey {
-		primary[name] = true
-	}
-	for _, name := range table.Schema.BucketKey {
-		if !primary[name] {
-			return fmt.Errorf("%w: bucket key %q is not part of the primary key", ErrInvalidSchema, name)
-		}
 	}
 	return nil
 }
@@ -259,11 +252,7 @@ func (w *UpsertWriter) Delete(ctx context.Context, key PrimaryKey) *WriteFuture 
 		future.complete(WriteResult{Err: err})
 		return future
 	}
-	values := make(map[string]any, len(key))
-	for index, name := range w.table.Schema.PrimaryKey {
-		values[name] = key[index]
-	}
-	w.enqueueMutation(ctx, values, nil, nil, future)
+	w.enqueueMutation(ctx, rowValues(w.table.Schema, Row(key), w.table.Schema.PrimaryKey), nil, nil, future)
 	return future
 }
 
@@ -274,29 +263,7 @@ func (w *UpsertWriter) enqueueMutation(
 	targets []int32,
 	future *WriteFuture,
 ) {
-	keyValues := make(PrimaryKey, len(w.table.Schema.PrimaryKey))
-	for index, name := range w.table.Schema.PrimaryKey {
-		keyValues[index] = values[name]
-	}
-	key, err := EncodePrimaryKey(w.table.Schema, keyValues)
-	if err != nil {
-		future.complete(WriteResult{Err: err})
-		return
-	}
-	bucketNames := w.table.Schema.BucketKey
-	if len(bucketNames) == 0 {
-		bucketNames = w.table.Schema.PrimaryKey
-	}
-	bucketValues := make(PrimaryKey, len(bucketNames))
-	for index, name := range bucketNames {
-		bucketValues[index] = values[name]
-	}
-	bucketKey, err := encodeKeyColumns(w.table.Schema, bucketNames, bucketValues)
-	if err != nil {
-		future.complete(WriteResult{Err: err})
-		return
-	}
-	bucket, err := flussBucket(bucketKey, int(w.bucketCount))
+	key, bucket, err := w.keys.encodePoint(w.table.Schema, values, w.bucketCount)
 	if err != nil {
 		future.complete(WriteResult{Err: err})
 		return
@@ -355,17 +322,6 @@ func (w *UpsertWriter) validatePartialSelection(selected map[string]bool) error 
 		}
 	}
 	return nil
-}
-
-func rowValues(schema Schema, row Row, columns []string) map[string]any {
-	if len(columns) == 0 {
-		columns = schema.selectedColumns(nil)
-	}
-	values := make(map[string]any, len(columns))
-	for index, name := range columns {
-		values[name] = row[index]
-	}
-	return values
 }
 
 func (w *UpsertWriter) enqueue(ctx context.Context, item *pendingKVWrite) {

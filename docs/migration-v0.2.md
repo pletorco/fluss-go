@@ -19,6 +19,12 @@ go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.4
 go mod tidy
 ```
 
+## Unreleased KV key correction
+
+Before deploying a client with the partitioned KV key correction, review
+[KV key compatibility](data-operations.md#kv-key-compatibility). Existing
+keys written with the previous encoding are not converted automatically.
+
 ## Upgrading from v0.2.0-beta.3
 
 `v0.2.0-beta.4` adds no exported API and keeps the same Fluss 1.0 wire formats
