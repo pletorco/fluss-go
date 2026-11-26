@@ -1,5 +1,10 @@
 # Schema evolution
 
+When defining a column, set `Column.Nullable` and `LogicalType.Nullable` to
+the same value if you supply both. A mismatch returns `ErrInvalidSchema`
+before encoding a row, constructing an Arrow schema, or sending DDL. Nested
+fields use the nullability on their own logical types.
+
 `fgo.Client` resolves the writer schema identified by each Fluss 1.0 record
 or batch schema ID. Resolved schemas are shared by all readers on the client,
 coalesced while a lookup is in flight, and retained in a 256-entry LRU cache.

@@ -431,6 +431,9 @@ func testCatalog(t *testing.T, admin *fadm.Client, database string, logPath, kvP
 	t.Run("reused nested DDL schema", func(t *testing.T) {
 		testDDLReusesNestedSchema(t, admin, database)
 	})
+	t.Run("column nullability contract", func(t *testing.T) {
+		testDDLNullabilityContract(t, admin, database)
+	})
 }
 
 func requireEnvironment(t *testing.T) {
