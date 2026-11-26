@@ -140,6 +140,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("upsert delete lookup and prefix lookup", func(t *testing.T) {
 		testKVData(t, client, kvPath)
 	})
+	t.Run("lake-bound KV key guard", func(t *testing.T) {
+		testLakeBoundKVKeyGuard(t, client, admin, database)
+	})
 	t.Run("KV acknowledgments do not claim mutation offsets", func(t *testing.T) {
 		testKVMutationOffsets(t, client, admin, database)
 	})

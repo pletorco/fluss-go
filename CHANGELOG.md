@@ -21,6 +21,8 @@ breaking changes.
   excluding partition columns from stored keys and default bucket routing.
   See [KV key compatibility](docs/data-operations.md#kv-key-compatibility)
   before upgrading a table written by an older fluss-go client.
+- Rejected keyed KV reads and writes on lake-bound tables before using an
+  incompatible physical key, including Paimon tables with tiering disabled.
 - Encoded wide DECIMAL values in Java's minimal signed form at negative
   byte-width boundaries, fixing interoperability for affected primary and
   bucket keys. Existing row values still decode; review the
@@ -88,6 +90,8 @@ breaking changes.
   target, matching row schema evolution.
 - Preserved the server's filtered progress when a bounded log scan delivers
   every eligible record, so it can finish at its stopping offset.
+- Corrected Fluss 1.0 log-batch framing for magic 1 (optional statistics)
+  and magic 2 (statistics and leader epoch) in the row and Arrow codecs.
 - Accepted narrower projections returned by snapshot providers and reported
   inconsistent row widths as validation errors.
 - Rejected nil snapshot readers during open, rather than panicking on the

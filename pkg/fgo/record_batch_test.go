@@ -2,6 +2,7 @@ package fgo
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"reflect"
@@ -83,18 +84,23 @@ func TestKVBatchRejectsCorruption(t *testing.T) {
 	}
 }
 
-func TestLogBatchEncodesV0AndV1Headers(t *testing.T) {
+func TestLogBatchEncodesFluss100Headers(t *testing.T) {
 	schema := Schema{Columns: []Column{{Name: "id", Type: IntType}}}
-	for _, magic := range []byte{0, 1} {
+	for _, magic := range []byte{0, 1, 2} {
 		encoded, err := (LogBatch{Magic: magic, BaseOffset: -1, LeaderEpoch: 5, SchemaID: 2, WriterID: 3, BatchSequence: 4, Records: []Record{{Value: Row{int32(1)}, Change: Append}}}).EncodeRows(schema, true)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if encoded[12] != magic || len(encoded) != map[byte]int{0: logBatchV0HeaderSize + 7, 1: logBatchV1HeaderSize + 7}[magic] {
+		start := [...]int{48, 52, 56}[magic]
+		if encoded[12] != magic || len(encoded) != start+7 {
 			t.Fatalf("magic %d batch = %x", magic, encoded)
 		}
+		if magic != 0 && binary.LittleEndian.Uint32(encoded[start-4:]) != 0 {
+			t.Fatalf("magic %d encoded nonempty statistics", magic)
+		}
 		decoded, err := DecodeLogBatchRows(schema, encoded, true)
-		if err != nil || decoded.Magic != magic || decoded.Records[0].Value[0] != int32(1) {
+		if err != nil || decoded.Magic != magic || decoded.LeaderEpoch != [...]int32{0, 0, 5}[magic] ||
+			len(decoded.Records) != 1 || decoded.Records[0].Value[0] != int32(1) {
 			t.Fatalf("DecodeLogBatchRows() = %#v, %v", decoded, err)
 		}
 	}

@@ -99,6 +99,9 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 	if err := validateUpsertWriterTable(table); err != nil {
 		return nil, err
 	}
+	if err := validateKVKeyFormat(table); err != nil {
+		return nil, err
+	}
 	valueEncoding, err := kvValueEncoding(table)
 	if err != nil {
 		return nil, err

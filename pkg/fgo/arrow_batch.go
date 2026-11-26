@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -27,13 +26,13 @@ const (
 // Record for the duration of the call. DecodeArrowLogBatch returns an owned Record that remains
 // valid until Release is called.
 type ArrowLogBatch struct {
-	// Magic selects the Fluss v0 or v1 batch header.
+	// Magic selects the Fluss v0, v1, or v2 batch header.
 	Magic byte
 	// BaseOffset is the first row offset.
 	BaseOffset int64
 	// CommitTime is the server commit time in Unix milliseconds.
 	CommitTime int64
-	// LeaderEpoch is present only for magic 1.
+	// LeaderEpoch is present only for magic 2.
 	LeaderEpoch int32
 	// SchemaID identifies the Arrow schema.
 	SchemaID int16
@@ -68,7 +67,8 @@ func (b *ArrowLogBatch) Release() {
 // EncodeArrowLogBatch encodes an Arrow-backed Fluss log batch.
 // The function borrows batch.Record only for the duration of the call.
 func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompressionType, allocator memory.Allocator) ([]byte, error) {
-	if batch.Magic != 0 && batch.Magic != 1 {
+	layout, ok := logLayout(batch.Magic)
+	if !ok {
 		return nil, fmt.Errorf("%w: unsupported log magic %d", ErrMalformedRecordBatch, batch.Magic)
 	}
 	if allocator == nil {
@@ -89,16 +89,19 @@ func EncodeArrowLogBatch(batch ArrowLogBatch, compression ArrowCompressionType, 
 	if count == 0 && len(payload) != 0 {
 		return nil, fmt.Errorf("%w: empty Arrow batch has payload", ErrMalformedRecordBatch)
 	}
-	headerSize := arrowHeaderSize(batch.Magic)
+	headerSize := layout.size
 	if len(payload) > maxRowBytes-headerSize-len(changes) {
 		return nil, fmt.Errorf("%w: Arrow batch exceeds limit", ErrMalformedRecordBatch)
 	}
 	encoded := make([]byte, headerSize, headerSize+len(changes)+len(payload))
-	crcOffset, schemaOffset := writeArrowHeader(encoded, batch, count)
+	writeLogBatchHeader(encoded, layout, LogBatch{
+		Magic: batch.Magic, BaseOffset: batch.BaseOffset, CommitTime: batch.CommitTime,
+		LeaderEpoch: batch.LeaderEpoch, SchemaID: batch.SchemaID, AppendOnly: batch.AppendOnly,
+		WriterID: batch.WriterID, BatchSequence: batch.BatchSequence,
+	}, count)
 	encoded = append(encoded, changes...)
 	encoded = append(encoded, payload...)
-	binary.LittleEndian.PutUint32(encoded[8:], uint32(len(encoded)-12))
-	binary.LittleEndian.PutUint32(encoded[crcOffset:], crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli)))
+	finishLogBatch(encoded, layout)
 	return encoded, nil
 }
 
@@ -112,45 +115,6 @@ func arrowRecordCount(record arrow.RecordBatch) (int, error) {
 	return int(record.NumRows()), nil
 }
 
-func arrowHeaderSize(magic byte) int {
-	if magic == 1 {
-		return logBatchV1HeaderSize
-	}
-	return logBatchV0HeaderSize
-}
-
-func writeArrowHeader(encoded []byte, batch ArrowLogBatch, count int) (int, int) {
-	// Arrow batches share the row-oriented log v0/v1 header documented in
-	// record_batch.go. The header is followed by one change byte per row for
-	// non-append-only batches and then by the Arrow IPC payload. Batch length
-	// excludes the first 12 bytes; CRC32C starts at schemaOffset and therefore
-	// covers the common tail, changes, and payload.
-	//
-	// The layout is pinned to Apache Fluss 0.9.1 commit
-	// 6bf969f71af8d6f9cc37383ab89ae46a58b0e227 and byte-locked by
-	// TestArrowLogBatchDecodesJava091Fixture.
-	binary.LittleEndian.PutUint64(encoded, uint64(batch.BaseOffset))
-	encoded[12] = batch.Magic
-	binary.LittleEndian.PutUint64(encoded[13:], uint64(batch.CommitTime))
-	crcOffset, schemaOffset := 21, 25
-	if batch.Magic == 1 {
-		binary.LittleEndian.PutUint32(encoded[21:], uint32(batch.LeaderEpoch))
-		crcOffset, schemaOffset = 25, 29
-	}
-	binary.LittleEndian.PutUint16(encoded[schemaOffset:], uint16(batch.SchemaID))
-	if batch.AppendOnly {
-		encoded[schemaOffset+2] = 1
-	}
-	lastOffset := schemaOffset + 3
-	if count > 0 {
-		binary.LittleEndian.PutUint32(encoded[lastOffset:], uint32(count-1))
-	}
-	binary.LittleEndian.PutUint64(encoded[lastOffset+4:], uint64(batch.WriterID))
-	binary.LittleEndian.PutUint32(encoded[lastOffset+12:], uint32(batch.BatchSequence))
-	binary.LittleEndian.PutUint32(encoded[lastOffset+16:], uint32(count))
-	return crcOffset, schemaOffset
-}
-
 // DecodeArrowLogBatch decodes a Fluss Arrow log batch.
 // The caller owns the returned batch and must call [ArrowLogBatch.Release].
 func DecodeArrowLogBatch(schema *arrow.Schema, encoded []byte, allocator memory.Allocator) (*ArrowLogBatch, error) {
@@ -160,25 +124,25 @@ func DecodeArrowLogBatch(schema *arrow.Schema, encoded []byte, allocator memory.
 	if allocator == nil {
 		allocator = memory.DefaultAllocator
 	}
-	magic, headerSize, crcOffset, schemaOffset, err := arrowHeader(encoded)
+	magic, recordsOffset, schemaOffset, err := logBatchHeader(encoded)
 	if err != nil {
 		return nil, err
 	}
-	if int(binary.LittleEndian.Uint32(encoded[8:])) != len(encoded)-12 ||
-		binary.LittleEndian.Uint32(encoded[crcOffset:]) != crc32.Checksum(encoded[schemaOffset:], crc32.MakeTable(crc32.Castagnoli)) {
-		return nil, fmt.Errorf("%w: invalid Arrow batch length or checksum", ErrMalformedRecordBatch)
-	}
 	lastOffset := schemaOffset + 3
-	count := int(binary.LittleEndian.Uint32(encoded[lastOffset+16:]))
+	rawCount := binary.LittleEndian.Uint32(encoded[lastOffset+16:])
+	if rawCount > maxRowBytes {
+		return nil, fmt.Errorf("%w: invalid Arrow record count", ErrMalformedRecordBatch)
+	}
+	count := int(rawCount)
 	appendOnly := encoded[schemaOffset+2]&1 != 0
 	changeBytes := 0
 	if !appendOnly {
 		changeBytes = count
 	}
-	if count > maxRowBytes || changeBytes > len(encoded)-headerSize {
+	if changeBytes > len(encoded)-recordsOffset {
 		return nil, fmt.Errorf("%w: invalid Arrow record count", ErrMalformedRecordBatch)
 	}
-	changes, position, err := decodeArrowChanges(encoded, headerSize, count, appendOnly)
+	changes, position, err := decodeArrowChanges(encoded, recordsOffset, count, appendOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +158,8 @@ func DecodeArrowLogBatch(schema *arrow.Schema, encoded []byte, allocator memory.
 		BatchSequence: int32(binary.LittleEndian.Uint32(encoded[lastOffset+12:])),
 		Record:        record, Changes: changes, owned: record != nil, release: &sync.Once{},
 	}
-	if magic == 1 {
-		batch.LeaderEpoch = int32(binary.LittleEndian.Uint32(encoded[21:]))
+	if magic == 2 {
+		batch.LeaderEpoch = int32(binary.LittleEndian.Uint32(encoded[logBatchEpochOffset:]))
 	}
 	return batch, nil
 }
@@ -263,25 +227,6 @@ func arrowChanges(batch ArrowLogBatch, count int) ([]byte, error) {
 		changes[i] = byte(change)
 	}
 	return changes, nil
-}
-
-func arrowHeader(encoded []byte) (byte, int, int, int, error) {
-	if len(encoded) < 13 || len(encoded) > maxRowBytes {
-		return 0, 0, 0, 0, fmt.Errorf("%w: invalid Arrow batch length", ErrMalformedRecordBatch)
-	}
-	switch encoded[12] {
-	case 0:
-		if len(encoded) < logBatchV0HeaderSize {
-			break
-		}
-		return 0, logBatchV0HeaderSize, 21, 25, nil
-	case 1:
-		if len(encoded) < logBatchV1HeaderSize {
-			break
-		}
-		return 1, logBatchV1HeaderSize, 25, 29, nil
-	}
-	return 0, 0, 0, 0, fmt.Errorf("%w: invalid Arrow batch header", ErrMalformedRecordBatch)
 }
 
 type arrowPayloadCapture struct {

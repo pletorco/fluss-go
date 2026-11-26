@@ -3,7 +3,17 @@ package fgo
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
+
+// Keyed operations must agree with Fluss on both the stored key and bucket.
+// A lake binding can change that layout even when lake tiering is disabled.
+func validateKVKeyFormat(table Table) error {
+	if format := strings.TrimSpace(table.Properties["table.datalake.format"]); format != "" {
+		return fmt.Errorf("%w: keyed KV operations on %s with table.datalake.format=%q are not supported", ErrUnsupportedAPI, table.Path, format)
+	}
+	return nil
+}
 
 // kvKeyLayout derives wire keys without changing the application's logical
 // primary key or the row schema. Fluss addresses a partition separately.
