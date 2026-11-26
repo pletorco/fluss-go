@@ -25,36 +25,57 @@ breaking changes.
   byte-width boundaries, fixing interoperability for affected primary and
   bucket keys. Existing row values still decode; review the
   [key cutover guidance](docs/data-operations.md#kv-key-compatibility).
+- Rejected sub-millisecond `TIME` values in compacted and indexed rows and
+  keys rather than silently truncating them. Native Arrow retains its
+  precision-specific time representation.
 - Waited for a canceled snapshot read to return before closing its provider
   resources, preventing cleanup from racing with an active read.
+- Preserved failures reported with the final bytes of remote log and snapshot
+  reads, and rejected overlong or stalled streams without a confirmed EOF.
 - Retained in-flight KV scan requests across caller cancellation or deadlines,
   so the next poll resumes without replaying a sequence or reopening a session.
 - Refreshed a stale leader route when a single-bucket `ListOffsets` reply
   reports a routing error in its response body.
+- Closed connections that finish after their shared setup was abandoned
+  instead of letting them replace a live cached connection.
+- Applied the connection timeout through TLS, API negotiation, and
+  authentication, so a silent coordinator seed cannot starve later seeds.
 - Canceled schema waits during point and prefix lookup decoding when the
   lookuper closes, without interrupting other readers of the shared schema.
 - Kept partition metadata tied to its parent table ID, rejecting stale table
   handles after drop and recreation instead of combining old and new IDs.
 - Opened append writers using the target partition's actual bucket count, so
   partitions created before and after a change to the table default remain writable.
+- Left write offsets unknown when a successful Append or Upsert reply omits
+  its offset, rather than deriving offsets from protobuf's default zero.
 - Included the resolved routing bucket count in log-table batch scans, so
   `LIMIT_SCAN` works for both existing and new partitions after rescaling.
+- Continued waiting for Fluss rebalance operations through the active move
+  state, returning only a defined terminal status.
 - Routed primary-key reads and writes by the table or partition's actual
   bucket count, even when a bucket temporarily has no leader.
 - Returned an explicit error when a scan cannot resolve all bucket leaders,
   and refreshed cached leaderless routes so they can recover after election.
 - Reloaded schemas for recreated tables even when the path and schema ID
   match the dropped table.
+- Kept required zero precision and scale fields in Fluss schema JSON so DDL
+  accepts types such as `TIME(0)`, `TIMESTAMP(0)`, and `DECIMAL(20,0)`.
+- Assigned missing field IDs without mutating nested caller schemas, allowing
+  the same descriptor to be serialized or used for multiple DDL calls.
 - Prevented canceled table and partition refreshes from overwriting newer
   routing metadata after their last waiter left.
 - Honored caller deadlines while log and batch polls wait for an active poll
   to finish.
 - Kept caller-supplied reader schemas from replacing shared server metadata
   used by subsequent table lookups and record decoding.
+- Rejected null values in historical Arrow columns mapped to a required
+  target, matching row schema evolution.
 - Preserved the server's filtered progress when a bounded log scan delivers
   every eligible record, so it can finish at its stopping offset.
 - Accepted narrower projections returned by snapshot providers and reported
   inconsistent row widths as validation errors.
+- Required an explicit producer offset registration result and documented
+  that a live registration is left unchanged.
 
 ### Changed
 

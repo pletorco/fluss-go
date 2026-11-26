@@ -367,7 +367,7 @@ func ExampleClient_RegisterProducerOffsets() {
 		log.Fatal(err)
 	}
 	if !registered {
-		log.Fatal("producer offset registration was rejected")
+		log.Print("the live producer offset registration was left unchanged")
 	}
 
 	offsets, err := admin.GetProducerOffsets(ctx, producerID)

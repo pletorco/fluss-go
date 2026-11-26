@@ -187,6 +187,9 @@ func (c *Client) ListRebalanceProgress(ctx context.Context, id string) (Rebalanc
 	if !ok {
 		return RebalanceProgress{}, unexpected("rebalance progress", response)
 	}
+	if message.RebalanceStatus == nil {
+		return RebalanceProgress{}, fmt.Errorf("%w: rebalance progress omitted status", fgo.ErrValidation)
+	}
 	progress := RebalanceProgress{ID: message.GetRebalanceId(), Status: message.GetRebalanceStatus()}
 	for _, table := range message.GetTableProgress() {
 		tableProgress := RebalanceTableProgress{TableID: table.GetTableId()}
@@ -205,15 +208,23 @@ func (c *Client) ListRebalanceProgress(ctx context.Context, id string) (Rebalanc
 	return progress, nil
 }
 
-// WaitRebalance polls until status is no longer zero (running), or the context is canceled.
+// WaitRebalance polls through NOT_STARTED and REBALANCING until the coordinator
+// reports a terminal status. Canceling ctx only stops the local wait.
 func (c *Client) WaitRebalance(ctx context.Context, id string, interval time.Duration) (RebalanceProgress, error) {
 	if interval <= 0 {
 		return RebalanceProgress{}, fmt.Errorf("%w: rebalance poll interval must be positive", fgo.ErrInvalidConfig)
 	}
 	for {
 		progress, err := c.ListRebalanceProgress(ctx, id)
-		if err != nil || progress.Status != 0 {
+		if err != nil {
 			return progress, err
+		}
+		switch progress.Status {
+		case 0, 1: // Fluss 1.0 NOT_STARTED or REBALANCING.
+		case 2, 3, 4, 5: // FAILED, COMPLETED, CANCELED, or TIMEOUT.
+			return progress, nil
+		default:
+			return progress, fmt.Errorf("%w: unknown rebalance status %d", fgo.ErrValidation, progress.Status)
 		}
 		timer := time.NewTimer(interval)
 		select {

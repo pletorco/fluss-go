@@ -44,7 +44,11 @@ func appendCompactedValue(dst []byte, logicalType LogicalType, value any) ([]byt
 	case BytesType, BinaryType:
 		return appendLengthBytes(dst, value.([]byte))
 	case DateType, TimeType:
-		return appendVar32(dst, uint32(temporalInt(dataTypeForLogicalType(logicalType), value.(time.Time)))), nil
+		encoded, err := rowTemporalInt(dataTypeForLogicalType(logicalType), value.(time.Time))
+		if err != nil {
+			return nil, err
+		}
+		return appendVar32(dst, uint32(encoded)), nil
 	case TimestampType, TimestampLTZType:
 		millis, nanos := timestampParts(dataTypeForLogicalType(logicalType), value.(time.Time))
 		dst = appendVar64(dst, uint64(millis))
@@ -226,7 +230,11 @@ func appendIndexedValue(dst []byte, logicalType LogicalType, value any) ([]byte,
 	case BigIntType:
 		return appendLittle(dst, uint64(value.(int64)), 8), nil
 	case DateType, TimeType:
-		return appendLittle(dst, uint64(uint32(temporalInt(kind, value.(time.Time)))), 4), nil
+		encoded, err := rowTemporalInt(kind, value.(time.Time))
+		if err != nil {
+			return nil, err
+		}
+		return appendLittle(dst, uint64(uint32(encoded)), 4), nil
 	case TimestampType, TimestampLTZType:
 		millis, nanos := timestampParts(kind, value.(time.Time))
 		dst = appendLittle(dst, uint64(millis), 8)
@@ -410,6 +418,13 @@ func trimZero(value []byte) []byte {
 		value = value[:len(value)-1]
 	}
 	return value
+}
+
+func rowTemporalInt(kind DataType, value time.Time) (int32, error) {
+	if kind == TimeType && value.Nanosecond()%int(time.Millisecond) != 0 {
+		return 0, fmt.Errorf("%w: TIME row encoding cannot represent sub-millisecond precision", ErrInvalidRow)
+	}
+	return temporalInt(kind, value), nil
 }
 
 func temporalInt(kind DataType, value time.Time) int32 {

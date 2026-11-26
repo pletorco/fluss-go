@@ -61,11 +61,11 @@ func (b *schedulingLogBackend) initWriter(
 func (b *schedulingLogBackend) produce(
 	ctx context.Context,
 	request logProduceRequest,
-) (int64, error) {
+) (int64, bool, error) {
 	b.calls.Add(1)
 	control, err := b.controlFor(request.records)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if control != nil && control.started != nil {
 		control.once.Do(func() { close(control.started) })
@@ -74,7 +74,7 @@ func (b *schedulingLogBackend) produce(
 		select {
 		case <-control.block:
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return 0, false, ctx.Err()
 		}
 	}
 	delay := b.delay
@@ -84,16 +84,16 @@ func (b *schedulingLogBackend) produce(
 		select {
 		case <-timer.C:
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return 0, false, ctx.Err()
 		}
 	}
 	if control != nil && control.err != nil {
-		return 0, control.err
+		return 0, false, control.err
 	}
 	if b.err != nil {
-		return 0, b.err
+		return 0, false, b.err
 	}
-	return b.calls.Load(), nil
+	return b.calls.Load(), true, nil
 }
 
 func (b *schedulingLogBackend) controlFor(records []byte) (*schedulingBackendControl, error) {
@@ -227,12 +227,13 @@ func (bucketIsolationLogBackend) initWriter(
 func (b bucketIsolationLogBackend) produce(
 	ctx context.Context,
 	request logProduceRequest,
-) (int64, error) {
+) (int64, bool, error) {
 	batch, err := DecodeLogBatchRows(appendWriterTable().Schema, request.records, true)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	return b.probe.execute(ctx, request.bucket, batch.BatchSequence)
+	offset, err := b.probe.execute(ctx, request.bucket, batch.BatchSequence)
+	return offset, err == nil, err
 }
 
 type bucketIsolationKVBackend struct {

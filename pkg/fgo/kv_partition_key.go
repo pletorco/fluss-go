@@ -132,8 +132,11 @@ func (p kvPartitionColumn) matches(value any) bool {
 
 func kvPartitionTimeMatches(kind DataType, actual, expected time.Time) bool {
 	switch kind {
-	case DateType, TimeType:
+	case DateType:
 		return temporalInt(kind, actual) == temporalInt(kind, expected)
+	case TimeType:
+		encoded, err := rowTemporalInt(kind, actual)
+		return err == nil && encoded == temporalInt(kind, expected)
 	default:
 		millis, nanos := timestampParts(kind, actual)
 		wantMillis, wantNanos := timestampParts(kind, expected)

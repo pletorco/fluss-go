@@ -48,8 +48,9 @@ type barrierAppendBackend struct {
 	*barrierBackend
 }
 
-func (b barrierAppendBackend) produce(ctx context.Context, input logProduceRequest) (int64, error) {
-	return 0, b.attempt(ctx, input.bucket)
+func (b barrierAppendBackend) produce(ctx context.Context, input logProduceRequest) (int64, bool, error) {
+	err := b.attempt(ctx, input.bucket)
+	return 0, err == nil, err
 }
 
 type barrierUpsertBackend struct {

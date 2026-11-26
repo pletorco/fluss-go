@@ -151,7 +151,11 @@ func writeArrayElement(encoded []byte, slot int, logicalType LogicalType, value 
 	case IntType:
 		binary.LittleEndian.PutUint32(encoded[slot:], uint32(value.(int32)))
 	case DateType, TimeType:
-		binary.LittleEndian.PutUint32(encoded[slot:], uint32(temporalInt(kind, value.(time.Time))))
+		temporal, err := rowTemporalInt(kind, value.(time.Time))
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint32(encoded[slot:], uint32(temporal))
 	case FloatType:
 		binary.LittleEndian.PutUint32(encoded[slot:], math.Float32bits(value.(float32)))
 	case BigIntType:
