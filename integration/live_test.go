@@ -532,30 +532,58 @@ func createTables(t *testing.T, admin *fadm.Client, logPath, kvPath fgo.TablePat
 func waitForTableReady(t *testing.T, admin *fadm.Client, path fgo.TablePath) {
 	t.Helper()
 	deadline := time.Now().Add(90 * time.Second)
-	var last []fadm.OffsetResult
+	var lastErr error
 	for time.Now().Before(deadline) {
 		table, err := admin.GetTableInfo(context.Background(), path)
-		if err == nil {
+		if err != nil {
+			lastErr = fmt.Errorf("GetTableInfo: %w", err)
+		} else {
 			buckets := make([]int32, table.BucketCount)
 			for index := range buckets {
 				buckets[index] = int32(index)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			last = admin.ListOffsets(
+			results := admin.ListOffsets(
 				ctx, table, fgo.PhysicalTablePath{TablePath: path}, -1, buckets, fgo.Earliest(),
 			)
 			cancel()
-			ready := len(last) == table.BucketCount
-			for _, result := range last {
-				ready = ready && result.Err == nil
-			}
-			if ready {
+			lastErr = tableOffsetReadinessError(table.BucketCount, results)
+			if lastErr == nil {
 				return
 			}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("table %s did not become ready: %#v", path, last)
+	t.Fatalf("table %s did not become ready: %v", path, lastErr)
+}
+
+func tableOffsetReadinessError(bucketCount int, results []fadm.OffsetResult) error {
+	var failures []error
+	if len(results) != bucketCount {
+		failures = append(failures, fmt.Errorf("ListOffsets returned %d results for %d buckets", len(results), bucketCount))
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			failures = append(failures, fmt.Errorf("ListOffsets bucket %d: %w", result.Bucket, result.Err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func TestTableOffsetReadinessError(t *testing.T) {
+	results := []fadm.OffsetResult{
+		{Bucket: 0, Offset: 42},
+		{Bucket: 1, Err: fmt.Errorf("resolve leader: %w", context.DeadlineExceeded)},
+	}
+	err := tableOffsetReadinessError(3, results)
+	if !errors.Is(err, context.DeadlineExceeded) ||
+		!strings.Contains(err.Error(), "ListOffsets bucket 1: resolve leader: context deadline exceeded") ||
+		!strings.Contains(err.Error(), "ListOffsets returned 2 results for 3 buckets") {
+		t.Fatalf("readiness error = %v", err)
+	}
+	if err := tableOffsetReadinessError(1, results[:1]); err != nil {
+		t.Fatalf("ready bucket returned error: %v", err)
+	}
 }
 
 func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {
