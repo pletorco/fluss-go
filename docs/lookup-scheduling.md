@@ -19,8 +19,11 @@ bounds every scheduling dimension:
 Callers retain their own result ordering and context. Canceling one caller
 stops only that caller's wait and does not cancel a shared request needed by
 other callers. Tasks canceled before dispatch are omitted. `Close` rejects new
-keys, cancels active requests, completes queued tasks, joins the fixed workers,
-and can be called repeatedly.
+keys, cancels active requests and result decoding, completes queued tasks,
+joins the fixed workers, and can be called repeatedly. Rows already decoded
+are retained in partial results. A schema lookup interrupted by `Close`
+returns `ErrClosed` for the affected result; other readers can still await
+the same client-wide schema fetch.
 
 Read-only point and prefix requests retry only typed retriable server failures
 and connection failures. Insert-if-not-exists clients reject retry policies

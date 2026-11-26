@@ -188,7 +188,7 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return BatchResult{}, err
 	}
-	pollCtx, cancel := batchPollContext(ctx, life)
+	pollCtx, cancel := contextForLifetime(ctx, life)
 	defer cancel()
 
 	if s.snapshot != nil {
@@ -272,15 +272,6 @@ func (s *BatchScanner) fetchKVSession(ctx context.Context, backend kvSessionScan
 	s.scannerID = append(s.scannerID[:0], batch.scannerID...)
 	s.sequence++
 	return &batch, nil
-}
-
-func batchPollContext(caller, life context.Context) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(caller)
-	stop := context.AfterFunc(life, cancel)
-	return ctx, func() {
-		stop()
-		cancel()
-	}
 }
 
 func (s *BatchScanner) pollSnapshot(ctx context.Context) (BatchResult, error) {

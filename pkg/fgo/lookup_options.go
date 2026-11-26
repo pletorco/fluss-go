@@ -122,7 +122,8 @@ type LookupResult struct {
 type PrefixLookupResult struct {
 	// Prefix is the requested leading primary-key prefix.
 	Prefix PrimaryKey
-	// Rows contains all decoded matches when Err is nil.
+	// Rows contains all matches when Err is nil, or the matches decoded before
+	// a failure interrupted decoding.
 	Rows []Row
 	// Bucket is the routed bucket when routing succeeded.
 	Bucket int32

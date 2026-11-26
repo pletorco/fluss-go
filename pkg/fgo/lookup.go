@@ -198,6 +198,8 @@ func (c *Lookuper) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupResul
 		results[index].Bucket = bucket
 		tasks[index], results[index].Err = c.enqueueLookup(ctx, pointLookupMode, bucket, encoded)
 	}
+	decodeCtx, cancelDecode := contextForLifetime(ctx, c.life)
+	defer cancelDecode()
 	for index, task := range tasks {
 		if task == nil {
 			continue
@@ -209,9 +211,7 @@ func (c *Lookuper) Lookup(ctx context.Context, keys ...PrimaryKey) []LookupResul
 			} else if raw.value == nil {
 				results[index].Err = ErrNotFound
 			} else {
-				results[index].Row, results[index].Err = decodeLookupValueWithResolver(
-					ctx, c.resolver, c.table, raw.value,
-				)
+				results[index].Row, results[index].Err = c.decodeResult(ctx, decodeCtx, raw.value)
 				results[index].Found = results[index].Err == nil
 			}
 		case <-ctx.Done():
@@ -254,17 +254,19 @@ func (c *Lookuper) PrefixLookup(ctx context.Context, prefixes ...PrimaryKey) []P
 		results[index].Bucket = bucket
 		tasks[index], results[index].Err = c.enqueueLookup(ctx, prefixLookupMode, bucket, encoded)
 	}
+	decodeCtx, cancelDecode := contextForLifetime(ctx, c.life)
+	defer cancelDecode()
 	for index, task := range tasks {
 		if task == nil {
 			continue
 		}
-		c.awaitPrefixLookup(ctx, task, &results[index])
+		c.awaitPrefixLookup(ctx, decodeCtx, task, &results[index])
 	}
 	return results
 }
 
 func (c *Lookuper) awaitPrefixLookup(
-	ctx context.Context,
+	ctx, decodeCtx context.Context,
 	task *lookupTask,
 	result *PrefixLookupResult,
 ) {
@@ -275,7 +277,7 @@ func (c *Lookuper) awaitPrefixLookup(
 			return
 		}
 		for _, value := range raw.rows {
-			row, err := decodeLookupValueWithResolver(ctx, c.resolver, c.table, value)
+			row, err := c.decodeResult(ctx, decodeCtx, value)
 			if err != nil {
 				result.Err = err
 				return
@@ -285,6 +287,29 @@ func (c *Lookuper) awaitPrefixLookup(
 	case <-ctx.Done():
 		result.Err = ctx.Err()
 	}
+}
+
+func (c *Lookuper) decodeResult(caller, decodeCtx context.Context, value []byte) (Row, error) {
+	if err := c.decodeContextError(caller); err != nil {
+		return nil, err
+	}
+	row, err := decodeLookupValueWithResolver(decodeCtx, c.resolver, c.table, value)
+	// Cache hits and other synchronous decoders may not observe cancellation.
+	// Do not deliver a row from an interrupted decode.
+	if stop := c.decodeContextError(caller); stop != nil {
+		return nil, stop
+	}
+	return row, err
+}
+
+func (c *Lookuper) decodeContextError(caller context.Context) error {
+	if err := caller.Err(); err != nil {
+		return err
+	}
+	if c.life.Err() != nil {
+		return ErrClosed
+	}
+	return nil
 }
 
 func (c *Lookuper) lookupContextError(ctx context.Context) error {
@@ -415,7 +440,8 @@ func decodeLookupValueWithResolver(
 	return evolveRow(schema, table.Schema, row)
 }
 
-// Close cancels active requests and rejects new lookups.
+// Close cancels active requests and result decoding, and rejects new lookups.
+// A schema fetch shared with other readers is not canceled by this Close.
 // Close is idempotent.
 func (c *Lookuper) Close() error {
 	c.mu.Lock()

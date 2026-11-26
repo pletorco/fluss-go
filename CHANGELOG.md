@@ -10,6 +10,8 @@ breaking changes.
 
 ### Fixed
 
+- Canceled schema waits during point and prefix lookup decoding when the
+  lookuper closes, without interrupting other readers of the shared schema.
 - Kept partition metadata tied to its parent table ID, rejecting stale table
   handles after drop and recreation instead of combining old and new IDs.
 - Opened append writers using the target partition's actual bucket count, so
