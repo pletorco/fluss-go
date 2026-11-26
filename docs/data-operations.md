@@ -114,6 +114,10 @@ A writer option cannot override the table's format, and an unrecognized
 advertised format fails when opening the writer. This check cannot repair
 incompatible batches already written to a table.
 
+For a partitioned Arrow log, every row in a batch must match the partition
+selected by `WithAppendPartition`. A mismatched or null partition value
+rejects the entire batch with `fgo.ErrInvalidRow` before it is queued.
+
 <!-- go-source: internal/docexamples/snippets_test.go logFormat -->
 ```go
 writer, err := client.NewAppendWriter(

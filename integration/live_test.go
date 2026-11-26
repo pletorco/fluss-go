@@ -1134,6 +1134,9 @@ func testLogFormats(
 	t.Run("TIME row precision", func(t *testing.T) {
 		testTimeRowPrecision(t, client, admin, database)
 	})
+	t.Run("Arrow partition batch validation", func(t *testing.T) {
+		testArrowPartitionAppend(t, client, admin, database)
+	})
 	t.Run("TIMESTAMP row and key precision", func(t *testing.T) {
 		testTimestampPrecision(t, client, admin, database)
 	})

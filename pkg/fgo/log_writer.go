@@ -287,8 +287,9 @@ func (w *AppendWriter) Append(ctx context.Context, row Row) *WriteFuture {
 	return future
 }
 
-// AppendArrow queues one Arrow record batch for an explicit bucket. The caller must retain the
-// record batch until the returned future completes.
+// AppendArrow queues one Arrow record batch for an explicit bucket. Every row
+// must match the selected partition. The caller must retain the record batch
+// until the returned future completes.
 func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arrow.RecordBatch, changes []ChangeType) *WriteFuture {
 	future := newWriteFuture()
 	if ctx == nil || batch == nil {
@@ -315,6 +316,10 @@ func (w *AppendWriter) AppendArrow(ctx context.Context, bucket int32, batch arro
 		return future
 	}
 	if err := validateArrowBatchNullability(expected, batch); err != nil {
+		future.complete(WriteResult{Err: err})
+		return future
+	}
+	if err := validateArrowPartition(batch, w.partitionColumns); err != nil {
 		future.complete(WriteResult{Err: err})
 		return future
 	}
