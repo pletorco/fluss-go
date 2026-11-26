@@ -120,8 +120,8 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && layout.physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
+	if err := layout.validateTableID(path, table.ID); err != nil {
+		return nil, err
 	}
 	if layout.count <= 0 {
 		return nil, fmt.Errorf("%w: %s has no routing bucket count", ErrMetadata, path)
@@ -139,13 +139,10 @@ func newUpsertWriter(ctx context.Context, backend upsertWriterBackend, table Tab
 	}
 	writer := &UpsertWriter{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: -1, writerID: writerID, bucketCount: layout.count,
+		partitionID: layout.partitionID, writerID: writerID, bucketCount: layout.count,
 		commands: make(chan upsertWriterCommand, config.MaxBuffered),
 		slots:    make(chan struct{}, config.MaxBuffered), done: make(chan struct{}), closing: make(chan struct{}),
 		admission: newWriterAdmission(),
-	}
-	if path.Partition != "" {
-		writer.partitionID = layout.physicalID
 	}
 	go writer.run()
 	return writer, nil

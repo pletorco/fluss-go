@@ -44,7 +44,7 @@ func (b *schedulingLogBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
 ) (bucketLayout, error) {
-	return bucketLayout{physicalID: appendWriterTable().ID, count: int32(len(b.locations)), leaders: b.locations}, nil
+	return bucketLayout{tableID: appendWriterTable().ID, partitionID: -1, count: int32(len(b.locations)), leaders: b.locations}, nil
 }
 
 func (b *schedulingLogBackend) initWriter(
@@ -126,7 +126,7 @@ func (b schedulingKVBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
 ) (bucketLayout, error) {
-	return bucketLayout{physicalID: upsertWriterTable().ID, count: int32(len(b.schedule.locations)), leaders: b.schedule.locations}, nil
+	return bucketLayout{tableID: upsertWriterTable().ID, partitionID: -1, count: int32(len(b.schedule.locations)), leaders: b.schedule.locations}, nil
 }
 
 func (b schedulingKVBackend) initWriter(
@@ -213,7 +213,7 @@ func (b bucketIsolationLogBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
 ) (bucketLayout, error) {
-	return bucketLayout{physicalID: appendWriterTable().ID, count: int32(len(b.locations)), leaders: b.locations}, nil
+	return bucketLayout{tableID: appendWriterTable().ID, partitionID: -1, count: int32(len(b.locations)), leaders: b.locations}, nil
 }
 
 func (bucketIsolationLogBackend) initWriter(
@@ -244,7 +244,7 @@ func (b bucketIsolationKVBackend) metadata(
 	context.Context,
 	PhysicalTablePath,
 ) (bucketLayout, error) {
-	return bucketLayout{physicalID: upsertWriterTable().ID, count: int32(len(b.locations)), leaders: b.locations}, nil
+	return bucketLayout{tableID: upsertWriterTable().ID, partitionID: -1, count: int32(len(b.locations)), leaders: b.locations}, nil
 }
 
 func (bucketIsolationKVBackend) initWriter(

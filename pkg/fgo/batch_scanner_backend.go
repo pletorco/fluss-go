@@ -43,22 +43,11 @@ func (c *Client) ResolveTableBuckets(
 	if err := path.Validate(); err != nil {
 		return nil, err
 	}
-	if path.Partition == "" {
-		table, err := c.fetchTableMetadata(ctx, path.TablePath)
-		if err != nil {
-			return nil, err
-		}
-		return resolvedTableBuckets(table.ID, -1, table.BucketCount, table.Buckets)
-	}
-	partition, err := c.fetchPartitionMetadata(ctx, path)
+	layout, err := c.fetchBucketLayout(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	table, err := c.fetchTableMetadata(ctx, path.TablePath)
-	if err != nil {
-		return nil, err
-	}
-	return resolvedTableBuckets(table.ID, partition.ID, partition.BucketCount, partition.Buckets)
+	return resolvedTableBuckets(layout.tableID, layout.partitionID, layout.count, layout.leaders)
 }
 
 func resolvedTableBuckets(

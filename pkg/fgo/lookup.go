@@ -66,22 +66,19 @@ func newLookuper(ctx context.Context, backend lookupBackend, table Table, option
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && layout.physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
+	if err := layout.validateTableID(path, table.ID); err != nil {
+		return nil, err
 	}
 	if layout.count <= 0 {
 		return nil, fmt.Errorf("%w: %s has no routing bucket count", ErrMetadata, path)
 	}
 	client := &Lookuper{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: -1, bucketCount: layout.count, resolver: resolverFor(backend, table),
+		partitionID: layout.partitionID, bucketCount: layout.count, resolver: resolverFor(backend, table),
 		queue: make(chan *lookupTask, config.MaxQueuedKeys),
 		jobs:  make(chan lookupBatch, config.MaxInFlightRequests),
 		slots: make(chan struct{}, config.MaxQueuedKeys),
 		done:  make(chan struct{}),
-	}
-	if path.Partition != "" {
-		client.partitionID = layout.physicalID
 	}
 	client.life, client.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the lookuper lifecycle.
 	go client.runScheduler()

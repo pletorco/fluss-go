@@ -27,13 +27,36 @@ func TestMetadataResponseConversion(t *testing.T) {
 		t.Fatalf("bucket metadata = %#v", detail)
 	}
 	partition, ok := table.Partitions[physicalTableKey(PhysicalTablePath{TablePath: path, Partition: "day=2026-07-30"})]
-	if !ok || partition.ID != 10 || partition.Buckets[1].ID != 2 || partition.BucketCount != 3 {
+	if !ok || partition.ID != 10 || !partition.parentTableIDKnown || partition.parentTableID != table.ID ||
+		partition.Buckets[1].ID != 2 || partition.BucketCount != 3 {
 		t.Fatalf("partition metadata = %#v", table.Partitions)
 	}
 
 	got, err := partitionMetadataFromResponse(response, PhysicalTablePath{TablePath: path, Partition: "day=2026-07-30"})
-	if err != nil || got.ID != 10 {
+	if err != nil || got.ID != 10 || !got.parentTableIDKnown || got.parentTableID != table.ID {
 		t.Fatalf("partitionMetadataFromResponse() = %#v, %v", got, err)
+	}
+}
+
+func TestMetadataRejectsMissingOrInvalidPartitionIdentity(t *testing.T) {
+	path := PhysicalTablePath{TablePath: appendWriterTable().Path, Partition: "day=2026-07-30"}
+	for _, test := range []struct {
+		name                 string
+		tableID, partitionID *int64
+	}{
+		{"missing parent", nil, proto.Int64(0)},
+		{"invalid parent", proto.Int64(-1), proto.Int64(0)},
+		{"missing partition", proto.Int64(0), nil},
+		{"invalid partition", proto.Int64(0), proto.Int64(-1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := metadataResponse(path.TablePath)
+			partition := response.PartitionMetadata[0]
+			partition.TableId, partition.PartitionId = test.tableID, test.partitionID
+			if _, err := partitionMetadataFromResponse(response, path); !errors.Is(err, ErrMetadata) {
+				t.Fatalf("parse physical metadata: %v, want ErrMetadata", err)
+			}
+		})
 	}
 }
 

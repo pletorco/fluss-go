@@ -189,8 +189,8 @@ func newLogScanner(
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && layout.physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
+	if err := layout.validateTableID(path, table.ID); err != nil {
+		return nil, err
 	}
 	buckets, err := completeBucketIDs(layout.count, layout.leaders)
 	if err != nil {
@@ -198,7 +198,7 @@ func newLogScanner(
 	}
 	scanner := &LogScanner{
 		table: table, path: path, backend: backend, config: config, tableID: table.ID,
-		partitionID: -1, buckets: buckets, schema: table.Schema, offset: make(map[int32]int64, len(buckets)),
+		partitionID: layout.partitionID, buckets: buckets, schema: table.Schema, offset: make(map[int32]int64, len(buckets)),
 		subEpoch:  make(map[int32]uint64, len(buckets)),
 		compacted: true, resolver: resolverFor(backend, table), filter: filter,
 		pollGate: make(chan struct{}, 1),
@@ -211,9 +211,6 @@ func newLogScanner(
 		scanner.compacted = false
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
-	if path.Partition != "" {
-		scanner.partitionID = layout.physicalID
-	}
 	if err := scanner.configureProjection(); err != nil {
 		return nil, err
 	}

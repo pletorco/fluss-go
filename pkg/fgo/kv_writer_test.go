@@ -26,7 +26,8 @@ type putKVCall struct {
 
 type fakeUpsertWriterBackend struct {
 	mu          sync.Mutex
-	physicalID  int64
+	tableID     int64
+	partitionID int64
 	locations   map[int32]ServerNode
 	writerID    int64
 	metadataErr error
@@ -39,7 +40,7 @@ type fakeUpsertWriterBackend struct {
 }
 
 func (b *fakeUpsertWriterBackend) metadata(context.Context, PhysicalTablePath) (bucketLayout, error) {
-	return bucketLayout{physicalID: b.physicalID, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
+	return bucketLayout{tableID: b.tableID, partitionID: b.partitionID, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeUpsertWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
@@ -112,7 +113,7 @@ func kvBackend(bucketIDs ...int32) *fakeUpsertWriterBackend {
 	for _, id := range bucketIDs {
 		locations[id] = ServerNode{ID: id + 10, Address: "tablet", ServerType: TabletServer}
 	}
-	return &fakeUpsertWriterBackend{physicalID: 11, locations: locations, writerID: 99}
+	return &fakeUpsertWriterBackend{tableID: 11, partitionID: -1, locations: locations, writerID: 99}
 }
 
 func TestUpsertWriterBatchesUpsertsDeletesAndSequences(t *testing.T) {
@@ -341,7 +342,7 @@ func TestUpsertWriterPartitionRoutingAndHash(t *testing.T) {
 	table := upsertWriterTable()
 	table.BucketCount = 3
 	backend := kvBackend(0, 1, 2)
-	backend.physicalID = 55
+	backend.partitionID = 55
 	writer, err := newUpsertWriter(context.Background(), backend, table, WithUpsertPartition("day=1"), WithUpsertBatchTimeout(0))
 	if err != nil {
 		t.Fatal(err)
@@ -590,7 +591,7 @@ func TestUpsertWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"backpressure", table, kvBackend(0), []UpsertWriterOption{WithUpsertBackpressureMaxThrottle(time.Minute + 1)}, ErrInvalidConfig},
 		{"metadata", table, &fakeUpsertWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", table, kvBackend(), nil, ErrMetadata},
-		{"init", table, &fakeUpsertWriterBackend{physicalID: 11, locations: kvBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
+		{"init", table, &fakeUpsertWriterBackend{tableID: 11, partitionID: -1, locations: kvBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := newUpsertWriter(context.Background(), test.backend, test.table, test.options...)

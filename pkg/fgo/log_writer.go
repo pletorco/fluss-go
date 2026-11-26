@@ -138,8 +138,8 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	if err != nil {
 		return nil, err
 	}
-	if path.Partition == "" && layout.physicalID != table.ID {
-		return nil, fmt.Errorf("%w: metadata table ID %d does not match opened table %d", ErrMetadata, layout.physicalID, table.ID)
+	if err := layout.validateTableID(path, table.ID); err != nil {
+		return nil, err
 	}
 	buckets, err := completeBucketIDs(layout.count, layout.leaders)
 	if err != nil {
@@ -150,14 +150,11 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 		return nil, err
 	}
 	writer := &AppendWriter{
-		table: table, path: path, backend: backend, config: config, tableID: table.ID, partitionID: -1,
+		table: table, path: path, backend: backend, config: config, tableID: table.ID, partitionID: layout.partitionID,
 		bucketKeyPositions: appendBucketKeyPositions(table.Schema),
 		writerID:           writerID, buckets: buckets, commands: make(chan writerCommand, config.MaxBuffered),
 		slots: make(chan struct{}, config.MaxBuffered), done: make(chan struct{}),
 		admission: newWriterAdmission(), stickyIndex: -1,
-	}
-	if path.Partition != "" {
-		writer.partitionID = layout.physicalID
 	}
 	go writer.run()
 	return writer, nil

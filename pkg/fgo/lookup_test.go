@@ -26,7 +26,7 @@ type lookupCall struct {
 
 type fakeLookupBackend struct {
 	mu          sync.Mutex
-	physicalID  int64
+	tableID     int64
 	locations   map[int32]ServerNode
 	metadataErr error
 	values      map[string][]byte
@@ -45,7 +45,7 @@ type fakeLookupBackend struct {
 }
 
 func (b *fakeLookupBackend) metadata(context.Context, PhysicalTablePath) (bucketLayout, error) {
-	return bucketLayout{physicalID: b.physicalID, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
+	return bucketLayout{tableID: b.tableID, partitionID: -1, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeLookupBackend) lookup(
@@ -169,7 +169,7 @@ func lookupBackendFor(table Table, bucketIDs ...int32) *fakeLookupBackend {
 		locations[bucket] = ServerNode{ID: bucket + 10, Address: "tablet", ServerType: TabletServer}
 	}
 	return &fakeLookupBackend{
-		physicalID: table.ID, locations: locations,
+		tableID: table.ID, locations: locations,
 		values: make(map[string][]byte), prefixes: make(map[string][][]byte),
 	}
 }

@@ -45,7 +45,7 @@ func testPartitionBucketRescale(t *testing.T, client *fgo.Client, admin *fadm.Cl
 	}{{"old", 1}, {"new", 2}} {
 		t.Run(test.partition, func(t *testing.T) {
 			physical := fgo.PhysicalTablePath{TablePath: path, Partition: test.partition}
-			buckets := awaitRescalePartition(t, client, admin, table, physical, test.count)
+			buckets := awaitPartitionReady(t, client, admin, table, physical, test.count)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			writer, err := client.NewAppendWriter(ctx, table, fgo.WithAppendPartition(test.partition), fgo.WithAppendBatchTimeout(0))
@@ -69,13 +69,13 @@ func testPartitionBucketRescale(t *testing.T, client *fgo.Client, admin *fadm.Cl
 				t.Fatalf("sample keys used %d buckets, expected %d", len(written), len(buckets))
 			}
 			for _, bucket := range buckets {
-				assertRescaledLogBucket(t, ctx, client, table, bucket, test.partition, written[bucket.BucketID])
+				assertLogBucketRows(t, ctx, client, table, bucket, test.partition, written[bucket.BucketID])
 			}
 		})
 	}
 }
 
-func assertRescaledLogBucket(
+func assertLogBucketRows(
 	t *testing.T, ctx context.Context, client *fgo.Client, table fgo.Table, bucket fgo.TableBucket, partition string, ids []int32,
 ) {
 	t.Helper()
@@ -96,7 +96,7 @@ func assertRescaledLogBucket(
 	}
 }
 
-func awaitRescalePartition(
+func awaitPartitionReady(
 	t *testing.T, client *fgo.Client, admin *fadm.Client, table fgo.Table, path fgo.PhysicalTablePath, count int,
 ) []fgo.TableBucket {
 	t.Helper()

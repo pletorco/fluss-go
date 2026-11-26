@@ -27,7 +27,7 @@ type scannerFetchCall struct {
 
 type fakeLogScannerBackend struct {
 	mu          sync.Mutex
-	physicalID  int64
+	tableID     int64
 	locations   map[int32]ServerNode
 	metadataErr error
 	listOffsets map[int32]int64
@@ -48,7 +48,7 @@ type resolvingLogScannerBackend struct {
 func (b resolvingLogScannerBackend) schemaResolver() schemaResolver { return b.resolver }
 
 func (b *fakeLogScannerBackend) metadata(context.Context, PhysicalTablePath) (bucketLayout, error) {
-	return bucketLayout{physicalID: b.physicalID, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
+	return bucketLayout{tableID: b.tableID, partitionID: -1, count: int32(len(b.locations)), leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeLogScannerBackend) listOffset(
@@ -100,7 +100,7 @@ func scannerBackend(bucketIDs ...int32) *fakeLogScannerBackend {
 		locations[bucket] = ServerNode{ID: bucket + 10, Address: "tablet", ServerType: TabletServer}
 	}
 	return &fakeLogScannerBackend{
-		physicalID: 9, locations: locations, listOffsets: map[int32]int64{0: 5},
+		tableID: 9, locations: locations, listOffsets: map[int32]int64{0: 5},
 		fetches: make(map[int32]scannerFetch), fetchErr: make(map[int32]error),
 	}
 }
@@ -1188,7 +1188,7 @@ func TestLogScannerRejectsInvalidConfiguration(t *testing.T) {
 		{"unknown stop", AtOffset(0), scannerBackend(0), []LogScannerOption{WithScanStoppingOffsets(map[int32]int64{0: 1, 1: 1})}, ErrInvalidConfig},
 		{"metadata", AtOffset(0), &fakeLogScannerBackend{metadataErr: context.Canceled}, nil, context.Canceled},
 		{"no buckets", AtOffset(0), scannerBackend(), nil, ErrMetadata},
-		{"list offset", Earliest(), &fakeLogScannerBackend{physicalID: 9, locations: scannerBackend(0).locations, listErr: context.Canceled}, nil, context.Canceled},
+		{"list offset", Earliest(), &fakeLogScannerBackend{tableID: 9, locations: scannerBackend(0).locations, listErr: context.Canceled}, nil, context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := newLogScanner(context.Background(), test.backend, table, test.start, test.options...)

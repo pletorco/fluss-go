@@ -10,6 +10,8 @@ breaking changes.
 
 ### Fixed
 
+- Kept partition metadata tied to its parent table ID, rejecting stale table
+  handles after drop and recreation instead of combining old and new IDs.
 - Opened append writers using the target partition's actual bucket count, so
   partitions created before and after a change to the table default remain writable.
 - Included the resolved routing bucket count in log-table batch scans, so

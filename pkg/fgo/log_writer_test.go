@@ -31,7 +31,8 @@ type producedLog struct {
 
 type fakeAppendWriterBackend struct {
 	mu          sync.Mutex
-	physicalID  int64
+	tableID     int64
+	partitionID int64
 	bucketCount int32
 	locations   map[int32]ServerNode
 	writerID    int64
@@ -48,7 +49,7 @@ func (b *fakeAppendWriterBackend) metadata(context.Context, PhysicalTablePath) (
 	if count == 0 {
 		count = int32(len(b.locations))
 	}
-	return bucketLayout{physicalID: b.physicalID, count: count, leaders: b.locations}, b.metadataErr
+	return bucketLayout{tableID: b.tableID, partitionID: b.partitionID, count: count, leaders: b.locations}, b.metadataErr
 }
 
 func (b *fakeAppendWriterBackend) initWriter(context.Context, PhysicalTablePath, int32) (int64, error) {
@@ -107,7 +108,7 @@ func logBackend(bucketIDs ...int32) *fakeAppendWriterBackend {
 	for _, id := range bucketIDs {
 		locations[id] = ServerNode{ID: id + 10, Address: "tablet", ServerType: TabletServer}
 	}
-	return &fakeAppendWriterBackend{physicalID: 9, locations: locations, writerID: 42}
+	return &fakeAppendWriterBackend{tableID: 9, partitionID: -1, locations: locations, writerID: 42}
 }
 
 func TestFlussBucketMatchesJava091(t *testing.T) {
@@ -368,7 +369,7 @@ func TestAppendWriterArrowAndPartition(t *testing.T) {
 	table := appendWriterTable()
 	table.BucketCount = 2
 	backend := logBackend(0, 1)
-	backend.physicalID = 88
+	backend.partitionID = 88
 	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
 		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: true},
@@ -469,9 +470,9 @@ func TestAppendWriterRejectsInvalidConfiguration(t *testing.T) {
 		{"table format", arrowTable, logBackend(0), []AppendWriterOption{WithAppendLogFormat(LogFormatCompacted)}, ErrInvalidConfig},
 		{"no buckets", table, logBackend(), nil, ErrMetadata},
 		{"invalid bucket IDs", table, logBackend(1), nil, ErrMetadata},
-		{"missing physical leader", table, &fakeAppendWriterBackend{physicalID: 88, bucketCount: 2, locations: logBackend(0).locations}, []AppendWriterOption{WithAppendPartition("old")}, ErrNoBucketLeader},
+		{"missing physical leader", table, &fakeAppendWriterBackend{tableID: 9, partitionID: 88, bucketCount: 2, locations: logBackend(0).locations}, []AppendWriterOption{WithAppendPartition("old")}, ErrNoBucketLeader},
 		{"metadata error", table, &fakeAppendWriterBackend{metadataErr: context.Canceled}, nil, context.Canceled},
-		{"init error", table, &fakeAppendWriterBackend{physicalID: 9, locations: logBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
+		{"init error", table, &fakeAppendWriterBackend{tableID: 9, partitionID: -1, locations: logBackend(0).locations, initErr: context.Canceled}, nil, context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := newAppendWriter(context.Background(), test.backend, test.table, test.options...)
