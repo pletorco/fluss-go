@@ -37,6 +37,11 @@ writer, err := client.NewUpsertWriter(
 creation applies only to log and upsert writers configured with a partition; reads
 never create server state.
 
+Resolved partition buckets carry the parent table ID from the same metadata
+response. If a table is dropped and recreated at the same path, use a fresh
+`GetTable` result to open a writer, log scanner, or lookuper. Using the old
+table with the recreated partition fails with `ErrMetadata`.
+
 Append routing uses the selected partition's own bucket count. Changing the
 table's default count affects only future partitions; existing partitions do
 not need to match the default to open an append writer. If a leader is missing,

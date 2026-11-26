@@ -27,7 +27,7 @@ golden coverage remains required even when live evidence exists.
 
 | Public surface | Live evidence | Boundary |
 | --- | --- | --- |
-| Append writer, row and Arrow append, log scanner | Covered | Appends, explicit formats, bounded scans, schema evolution, isolated returned schema metadata, acknowledged offsets, and post-leader-failure order are checked. |
+| Append writer, row and Arrow append, log scanner | Covered | Appends, explicit formats, bounded scans, schema evolution, isolated returned schema metadata, acknowledged offsets, and post-leader-failure order are checked. A table and partition recreated at the same paths reject old table handles and accept writes and reads with fresh metadata. |
 | upsert writer, delete, partial upsert, merge modes | Covered | Full upsert/delete, full-schema partial-update payloads, preserved nullable fields, `FIRST_ROW`, overwrite bypass, and post-failure updates are checked. |
 | Log scan predicate filters | Covered | A live Arrow-format table scan with `WithScanFilter` must still return the matching row; extra non-matching rows are permitted because Fluss filters whole batches. Predicate wire encoding is unit-tested against the Fluss 1.0 literal layout. |
 | Point and prefix lookup | Covered | Found, missing, deleted, insert-if-missing, concurrent, typed, and post-failure results are checked. |

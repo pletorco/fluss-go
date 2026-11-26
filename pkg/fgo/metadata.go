@@ -104,8 +104,11 @@ type PartitionMetadata struct {
 	// BucketCount is the partition's actual routing bucket count.
 	BucketCount int32
 
-	coordinator ServerNode
-	tablets     map[int32]ServerNode
+	// Custom Router fetchers may not have a wire-provided parent identity.
+	parentTableID      int64
+	parentTableIDKnown bool
+	coordinator        ServerNode
+	tablets            map[int32]ServerNode
 }
 
 // Metadata is an immutable snapshot of coordinator, tablet, and table routing.
@@ -342,6 +345,11 @@ func (r *Router) refreshPhysicalOnce(
 		}
 	}
 	partition, fetchUsed, err := r.fetchPhysicalMetadata(ctx, path, key)
+	if err == nil && fetchUsed && partition.parentTableIDKnown && !r.hasTableID(path.TablePath, partition.parentTableID) {
+		// The cached table may have been recreated. Refresh at most once;
+		// publication still checks the current parent under the lock.
+		err = r.Refresh(ctx, path.TablePath)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err == nil {
@@ -373,11 +381,15 @@ func (r *Router) fetchPhysicalMetadata(
 }
 
 func (r *Router) applyPhysicalMetadata(path PhysicalTablePath, key string, partition PartitionMetadata) error {
-	next := cloneMetadata(r.metadata)
-	table, ok := next.Tables[path.TablePath]
+	table, ok := r.metadata.Tables[path.TablePath]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnknownTable, path.TablePath)
 	}
+	if partition.parentTableIDKnown && partition.parentTableID != table.ID {
+		return fmt.Errorf("%w: %s belongs to table ID %d, cached parent is %d", ErrMetadata, path, partition.parentTableID, table.ID)
+	}
+	next := cloneMetadata(r.metadata)
+	table = next.Tables[path.TablePath]
 	if table.Partitions == nil {
 		table.Partitions = make(map[string]PartitionMetadata)
 	}
@@ -439,6 +451,13 @@ func (r *Router) hasTable(path TablePath) bool {
 	return ok
 }
 
+func (r *Router) hasTableID(path TablePath, tableID int64) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	table, ok := r.metadata.Tables[path]
+	return ok && table.ID == tableID
+}
+
 func physicalTableKey(path PhysicalTablePath) string {
 	return path.String()
 }
@@ -466,7 +485,12 @@ func cloneTableMetadata(table TableMetadata) TableMetadata {
 }
 
 func clonePartitionMetadata(partition PartitionMetadata) PartitionMetadata {
-	next := PartitionMetadata{Path: partition.Path, ID: partition.ID, Buckets: make(map[int32]ServerNode, len(partition.Buckets)), BucketDetails: cloneBucketDetails(partition.BucketDetails), BucketCount: partition.BucketCount, coordinator: partition.coordinator, tablets: cloneNodes(partition.tablets)}
+	next := PartitionMetadata{
+		Path: partition.Path, ID: partition.ID, BucketCount: partition.BucketCount,
+		Buckets: make(map[int32]ServerNode, len(partition.Buckets)), BucketDetails: cloneBucketDetails(partition.BucketDetails),
+		parentTableID: partition.parentTableID, parentTableIDKnown: partition.parentTableIDKnown,
+		coordinator: partition.coordinator, tablets: cloneNodes(partition.tablets),
+	}
 	for bucket, node := range partition.Buckets {
 		next.Buckets[bucket] = node
 	}

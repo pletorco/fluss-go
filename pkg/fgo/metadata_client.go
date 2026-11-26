@@ -10,20 +10,28 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// bucketLayout keeps the routing count independent of leader availability.
+// bucketLayout binds a physical bucket layout to its parent table.
 type bucketLayout struct {
-	physicalID int64
-	count      int32
-	leaders    map[int32]ServerNode
+	tableID     int64
+	partitionID int64
+	count       int32
+	leaders     map[int32]ServerNode
+}
+
+func (l bucketLayout) validateTableID(path PhysicalTablePath, tableID int64) error {
+	if l.tableID != tableID {
+		return fmt.Errorf("%w: %s belongs to table ID %d, expected %d", ErrMetadata, path, l.tableID, tableID)
+	}
+	return nil
 }
 
 func (c *Client) fetchBucketLayout(ctx context.Context, path PhysicalTablePath) (bucketLayout, error) {
 	if path.Partition == "" {
 		table, err := c.fetchTableMetadata(ctx, path.TablePath)
-		return bucketLayout{physicalID: table.ID, count: table.BucketCount, leaders: table.Buckets}, err
+		return bucketLayout{tableID: table.ID, partitionID: -1, count: table.BucketCount, leaders: table.Buckets}, err
 	}
 	partition, err := c.fetchPartitionMetadata(ctx, path)
-	return bucketLayout{physicalID: partition.ID, count: partition.BucketCount, leaders: partition.Buckets}, err
+	return bucketLayout{tableID: partition.parentTableID, partitionID: partition.ID, count: partition.BucketCount, leaders: partition.Buckets}, err
 }
 
 func (c *Client) fetchTableMetadata(ctx context.Context, path TablePath) (TableMetadata, error) {
@@ -75,6 +83,9 @@ func tableMetadataFromResponse(response *fmsg.MetadataResponse, path TablePath) 
 		if item.GetTablePath().GetDatabaseName() != path.Database || item.GetTablePath().GetTableName() != path.Table {
 			continue
 		}
+		if item.TableId == nil || item.GetTableId() < 0 {
+			return TableMetadata{}, fmt.Errorf("%w: missing or invalid table ID for %s", ErrMetadata, path)
+		}
 		buckets, details, err := bucketMetadata(item.GetBucketMetadata(), tablets)
 		if err != nil {
 			return TableMetadata{}, err
@@ -95,15 +106,11 @@ func partitionMetadataForTable(partitions []*fmsg.PbPartitionMetadata, tableID i
 			continue
 		}
 		partitionPath := PhysicalTablePath{TablePath: path, Partition: partition.GetPartitionName()}
-		buckets, details, err := bucketMetadata(partition.GetBucketMetadata(), tablets)
+		metadata, err := partitionMetadataFromProto(partitionPath, partition, coordinator, tablets)
 		if err != nil {
 			return nil, err
 		}
-		count := partition.GetBucketCount()
-		if partition.BucketCount == nil {
-			count = int32(len(details))
-		}
-		result[physicalTableKey(partitionPath)] = PartitionMetadata{Path: partitionPath, ID: partition.GetPartitionId(), Buckets: buckets, BucketDetails: details, BucketCount: count, coordinator: coordinator, tablets: tablets}
+		result[physicalTableKey(partitionPath)] = metadata
 	}
 	return result, nil
 }
@@ -117,17 +124,27 @@ func partitionMetadataFromResponse(response *fmsg.MetadataResponse, path Physica
 		if item.GetPartitionName() != path.Partition {
 			continue
 		}
-		buckets, details, err := bucketMetadata(item.GetBucketMetadata(), tablets)
-		if err != nil {
-			return PartitionMetadata{}, err
-		}
-		count := item.GetBucketCount()
-		if item.BucketCount == nil {
-			count = int32(len(details))
-		}
-		return PartitionMetadata{Path: path, ID: item.GetPartitionId(), Buckets: buckets, BucketDetails: details, BucketCount: count, coordinator: coordinator, tablets: tablets}, nil
+		return partitionMetadataFromProto(path, item, coordinator, tablets)
 	}
 	return PartitionMetadata{}, fmt.Errorf("%w: %s", ErrUnknownPartition, path)
+}
+
+func partitionMetadataFromProto(path PhysicalTablePath, item *fmsg.PbPartitionMetadata, coordinator ServerNode, tablets map[int32]ServerNode) (PartitionMetadata, error) {
+	if item == nil || item.TableId == nil || item.GetTableId() < 0 || item.PartitionId == nil || item.GetPartitionId() < 0 {
+		return PartitionMetadata{}, fmt.Errorf("%w: missing or invalid partition identity for %s", ErrMetadata, path)
+	}
+	buckets, details, err := bucketMetadata(item.GetBucketMetadata(), tablets)
+	if err != nil {
+		return PartitionMetadata{}, err
+	}
+	count := item.GetBucketCount()
+	if item.BucketCount == nil {
+		count = int32(len(details))
+	}
+	return PartitionMetadata{
+		Path: path, ID: item.GetPartitionId(), Buckets: buckets, BucketDetails: details, BucketCount: count,
+		parentTableID: item.GetTableId(), parentTableIDKnown: true, coordinator: coordinator, tablets: tablets,
+	}, nil
 }
 
 func metadataServers(response *fmsg.MetadataResponse) (ServerNode, map[int32]ServerNode, error) {
