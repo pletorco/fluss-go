@@ -19,7 +19,10 @@ Enable coordinator-backed token acquisition with
 `WithFileSystemSecurityTokenRefresh`. A zero config applies the documented
 defaults: refresh at 75% of token lifetime, retry after one minute with
 exponential backoff capped at one hour, and treat a token as expiring 30
-seconds early.
+seconds early. Jitter cannot extend retry backoff beyond its configured
+maximum or schedule renewal past a usable deadline. If no useful renewal
+interval remains (at most 1 ms), the client uses bounded retry backoff
+instead of spinning on immediate refreshes.
 
 <!-- go-source: internal/docexamples/snippets_test.go tokenRefresh -->
 ```go
@@ -48,7 +51,10 @@ receiver contract.
 Published tokens are cloned, and `String` and `GoString` always redact token
 bytes. `CurrentFileSystemSecurityToken` does not return expired or revoked
 tokens; refresh failures retain only a still-valid current token and are retried
-with bounded backoff. Closing the client stops the refresh loop; the last cached
+with bounded backoff. Explicit revocations clear the local cache before
+notifying receivers. A receiver failure does not restore the token or prevent
+the other receivers from being notified while the client remains open.
+Closing the client stops the refresh loop; the last cached
 token remains readable only until it expires.
 
 Receivers run sequentially in registration order. They may call
