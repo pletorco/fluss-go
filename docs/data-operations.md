@@ -310,13 +310,23 @@ defer result.Release()
 
 Primary-key current-state scans use the Fluss 1.0 `SCAN_KV` session API. Each
 new page advances the server-validated call sequence; `WithBatchSizeBytes`
-bounds a response. If decoding or historical-schema lookup fails, `Poll`
-returns no rows and retains that one page. A later poll retries its decoding
-without fetching another page, even if the server already ended the session.
-Permanent decoding errors require closing the scanner rather than skipping
-the failed page. `Close` releases any retained page and explicitly closes an
-unfinished server session. An empty bucket may complete without allocating a
-scanner ID. Log-table current-state scans use one bounded `LIMIT_SCAN` request.
+bounds a response. If a poll is canceled or reaches its deadline while waiting
+for a submitted request, a later poll waits for the same response instead of
+sending the sequence again. Each request has its own 30-second timeout. If the
+request itself fails, subsequent polls return the same wrapped error: the
+server may already have advanced, so the scanner neither retries nor silently
+opens a new session. `Done` remains false on failure.
+
+If decoding or historical-schema lookup fails, `Poll` returns no rows and
+retains that page for local decoding on the next poll, even if it was terminal.
+Close the scanner if the error is permanent rather than skipping the page.
+`Close` cancels any outstanding request, discards undelivered pages, and
+explicitly closes a known unfinished server session. If the opening response
+never arrived, there may be no scanner ID available to close; the server
+expires any session left behind. An empty bucket may complete without a
+scanner ID.
+
+Log-table current-state scans use one bounded `LIMIT_SCAN` request.
 Use `ResolveTableBuckets` for a partition so the request carries that partition's
 routing bucket count, which may differ from the current table default.
 Snapshot scans use
