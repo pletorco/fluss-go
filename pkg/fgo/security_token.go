@@ -77,7 +77,8 @@ func (f FileSystemSecurityTokenProviderFunc) AcquireFileSystemSecurityToken(
 // acquisition.
 type FileSystemSecurityTokenReceiver interface {
 	// ReceiveFileSystemSecurityToken receives a deep clone after acquisition.
-	// Returning an error rejects publication and schedules a bounded retry.
+	// Returning an error rejects normal publication and schedules a bounded retry.
+	// A revocation is already effective locally when receivers are notified.
 	// Receivers run sequentially and should return promptly. A receiver may
 	// close the client; shutdown stops waiting for the callback but cannot
 	// forcibly stop callback code that remains blocked.
@@ -315,24 +316,38 @@ func (m *securityTokenManager) publish(
 	ctx context.Context,
 	token FileSystemSecurityToken,
 ) error {
+	if token.Revoked {
+		m.mu.Lock()
+		clear(m.current.Token)
+		m.current = FileSystemSecurityToken{}
+		m.available = false
+		m.mu.Unlock()
+	}
 	published := token.Clone()
+	var failure error
 	for _, receiver := range m.receivers {
 		if err := callSecurityTokenReceiver(ctx, receiver, published.Clone()); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return ErrFileSystemSecurityToken
+			// Notify later receivers of a revocation too. Keep the failure
+			// classified without exposing an arbitrary credential error.
+			failure = ErrFileSystemSecurityToken
+			if !token.Revoked {
+				return failure
+			}
 		}
 	}
-	m.mu.Lock()
 	if token.Revoked {
-		m.current = FileSystemSecurityToken{}
-		m.available = false
-	} else {
-		m.current = published
-		m.available = true
+		return failure
 	}
-	m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.current = published
+	m.available = true
 	return nil
 }
 

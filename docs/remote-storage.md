@@ -48,7 +48,10 @@ receiver contract.
 Published tokens are cloned, and `String` and `GoString` always redact token
 bytes. `CurrentFileSystemSecurityToken` does not return expired or revoked
 tokens; refresh failures retain only a still-valid current token and are retried
-with bounded backoff. Closing the client stops the refresh loop; the last cached
+with bounded backoff. Explicit revocations clear the local cache before
+notifying receivers. A receiver failure does not restore the token or prevent
+the other receivers from being notified while the client remains open.
+Closing the client stops the refresh loop; the last cached
 token remains readable only until it expires.
 
 Receivers run sequentially in registration order. They may call
