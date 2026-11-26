@@ -1,6 +1,7 @@
 package fgo
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -35,6 +36,39 @@ func TestLogicalTypeJSONWritesRequiredZeroParameters(t *testing.T) {
 			read, err := ParseLogicalTypeJSON(decoded.Element)
 			if err != nil || read.Precision != tc.logical.Precision || read.Scale != tc.logical.Scale {
 				t.Fatalf("round trip = %+v, %v", read, err)
+			}
+		})
+	}
+}
+
+func TestSchemaJSONAssignsIDsWithoutChangingNestedInputs(t *testing.T) {
+	details := LogicalType{Root: "MAP", Key: &LogicalType{Root: "STRING"}, Value: &LogicalType{
+		Root: "ARRAY", Element: &LogicalType{Root: "ROW", Fields: []LogicalField{
+			{Name: "amount", Type: LogicalType{Root: "DECIMAL", Precision: 20}},
+		}},
+	}}
+	schema := Schema{Columns: []Column{{Name: "id", Type: IntType}, logicalColumn("details", details)}}
+	want, err := schema.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := details.Value.Element.Fields[0].ID; got != 0 {
+		t.Fatalf("serializing assigned ID %d in caller metadata", got)
+	}
+	parsed, err := ParseSchemaJSON(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := parsed.Columns[1].LogicalType.Value.Element.Fields[0]
+	if field.ID != 2 || parsed.Columns[1].ID != 1 || parsed.HighestFieldID != field.ID {
+		t.Fatalf("assigned field IDs = %+v; nested ID=%d", parsed, field.ID)
+	}
+	for range 12 {
+		t.Run("serialize shared schema", func(t *testing.T) {
+			t.Parallel()
+			got, err := schema.JSON()
+			if err != nil || !bytes.Equal(got, want) {
+				t.Fatalf("repeat JSON = %s, %v; want %s", got, err, want)
 			}
 		})
 	}
