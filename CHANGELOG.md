@@ -49,6 +49,10 @@ breaking changes.
   and refreshed cached leaderless routes so they can recover after election.
 - Reloaded schemas for recreated tables even when the path and schema ID
   match the dropped table.
+- Kept required zero precision and scale fields in Fluss schema JSON so DDL
+  accepts types such as `TIME(0)`, `TIMESTAMP(0)`, and `DECIMAL(20,0)`.
+- Assigned missing field IDs without mutating nested caller schemas, allowing
+  the same descriptor to be serialized or used for multiple DDL calls.
 - Prevented canceled table and partition refreshes from overwriting newer
   routing metadata after their last waiter left.
 - Honored caller deadlines while log and batch polls wait for an active poll
