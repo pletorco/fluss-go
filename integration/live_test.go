@@ -1022,6 +1022,9 @@ func testLogFormats(
 	} {
 		testLogFormat(t, client, admin, database, schema, format)
 	}
+	t.Run("TIME row precision", func(t *testing.T) {
+		testTimeRowPrecision(t, client, admin, database)
+	})
 }
 
 func testLogFormat(

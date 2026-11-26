@@ -192,7 +192,7 @@ func TestLogicalScalarRowRoundTrip(t *testing.T) {
 		logicalColumn("binary", LogicalType{Root: "BINARY", Length: 4}),
 	}}
 	want := Row{
-		at, at, at, at, big.NewRat(-12345, 1000), "go", []byte{1, 2},
+		at, at.Truncate(time.Millisecond), at, at, big.NewRat(-12345, 1000), "go", []byte{1, 2},
 	}
 	for _, codec := range rowCodecs() {
 		encoded, err := codec.encode(schema, want)
