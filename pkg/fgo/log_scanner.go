@@ -137,7 +137,7 @@ type LogScanner struct {
 	resolver    schemaResolver
 	dynamic     bool
 
-	pollMu      sync.Mutex
+	pollGate    chan struct{}
 	mu          sync.RWMutex
 	offset      map[int32]int64
 	subEpoch    map[int32]uint64
@@ -200,6 +200,7 @@ func newLogScanner(
 		partitionID: -1, buckets: buckets, schema: table.Schema, offset: make(map[int32]int64, len(buckets)),
 		subEpoch:  make(map[int32]uint64, len(buckets)),
 		compacted: true, resolver: resolverFor(backend, table), filter: filter,
+		pollGate: make(chan struct{}, 1),
 	}
 	_, scanner.dynamic = backend.(schemaResolverProvider)
 	if provider, ok := backend.(schemaResolverProvider); ok && provider.schemaResolver() == nil {
@@ -333,8 +334,10 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 	if ctx == nil {
 		return ScanResult{}, fmt.Errorf("%w: nil context", ErrInvalidConfig)
 	}
-	s.pollMu.Lock()
-	defer s.pollMu.Unlock()
+	if err := acquirePoll(ctx, s.life, s.pollGate); err != nil {
+		return ScanResult{}, err
+	}
+	defer func() { <-s.pollGate }()
 	progress, requestCtx, cancel, err := s.beginPoll(ctx)
 	if err != nil {
 		return ScanResult{}, err
@@ -396,6 +399,9 @@ func (s *LogScanner) beginPoll(
 	}
 	if s.done {
 		return nil, nil, nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
 	}
 	if s.wakePending {
 		s.wakePending = false

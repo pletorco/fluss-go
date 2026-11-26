@@ -23,14 +23,14 @@ type BatchScanner struct {
 	resolver   schemaResolver
 	scannerID  []byte
 	sequence   int32
-	pendingKV  *kvSessionBatch // Owned response awaiting successful decoding and delivery; guarded by pollMu.
+	pendingKV  *kvSessionBatch // Owned response awaiting successful decoding and delivery; guarded by pollGate.
 
-	pollMu sync.Mutex
-	mu     sync.RWMutex
-	life   context.Context
-	cancel context.CancelFunc
-	done   bool
-	closed bool
+	pollGate chan struct{}
+	mu       sync.RWMutex
+	life     context.Context
+	cancel   context.CancelFunc
+	done     bool
+	closed   bool
 }
 
 // NewBatchScanner scans the current state of one table bucket with Fluss LIMIT_SCAN.
@@ -76,6 +76,7 @@ func (c *Client) NewSnapshotBatchScanner(
 	}
 	scanner := &BatchScanner{
 		table: table, bucket: bucket, config: config, snapshot: reader, projection: projection,
+		pollGate: make(chan struct{}, 1),
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
 	return scanner, nil
@@ -102,6 +103,7 @@ func newBatchScanner(
 	scanner := &BatchScanner{
 		table: table, bucket: bucket, config: config, backend: backend,
 		snapshot: snapshot, projection: projection, resolver: resolverFor(backend, table),
+		pollGate: make(chan struct{}, 1),
 	}
 	scanner.life, scanner.cancel = context.WithCancel(context.Background()) // NOSONAR: Close owns the scanner lifecycle.
 	return scanner, nil
@@ -162,8 +164,13 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	if s == nil {
 		return BatchResult{}, fmt.Errorf("%w: nil batch scanner", ErrInvalidConfig)
 	}
-	s.pollMu.Lock()
-	defer s.pollMu.Unlock()
+	if ctx == nil {
+		return BatchResult{}, fmt.Errorf("%w: nil context", ErrInvalidConfig)
+	}
+	if err := acquirePoll(ctx, s.life, s.pollGate); err != nil {
+		return BatchResult{}, err
+	}
+	defer func() { <-s.pollGate }()
 	s.mu.RLock()
 	if s.closed {
 		s.mu.RUnlock()
@@ -175,6 +182,9 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	}
 	life := s.life
 	s.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return BatchResult{}, err
+	}
 	pollCtx, cancel := batchPollContext(ctx, life)
 	defer cancel()
 
@@ -347,8 +357,8 @@ func (s *BatchScanner) Close() error {
 	}
 	backend, ok := s.backend.(kvSessionScanBackend)
 	if ok {
-		s.pollMu.Lock()
-		defer s.pollMu.Unlock()
+		s.pollGate <- struct{}{}
+		defer func() { <-s.pollGate }()
 		closeSession := len(s.scannerID) != 0 && !s.done && (s.pendingKV == nil || s.pendingKV.hasMore)
 		s.pendingKV = nil
 		if closeSession {
