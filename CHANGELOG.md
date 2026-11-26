@@ -23,6 +23,8 @@ breaking changes.
   [key cutover guidance](docs/data-operations.md#kv-key-compatibility).
 - Waited for a canceled snapshot read to return before closing its provider
   resources, preventing cleanup from racing with an active read.
+- Preserved failures reported with the final bytes of remote log and snapshot
+  reads, and rejected overlong or stalled streams without a confirmed EOF.
 - Retained in-flight KV scan requests across caller cancellation or deadlines,
   so the next poll resumes without replaying a sequence or reopening a session.
 - Refreshed a stale leader route when a single-bucket `ListOffsets` reply
