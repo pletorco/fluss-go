@@ -22,7 +22,8 @@ type Authenticator interface {
 	// first server challenge.
 	HasInitialResponse() bool
 	// Authenticate consumes one challenge and returns the next response.
-	// Implementations must not retain or expose challenge or response bytes.
+	// Implementations must honor context cancellation and must not retain or
+	// expose challenge or response bytes.
 	Authenticate(context.Context, []byte) ([]byte, error)
 	// Complete reports whether the exchange has reached a terminal success
 	// state.

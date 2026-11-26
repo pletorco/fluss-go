@@ -157,6 +157,11 @@ func evolveArrowBatch(batch *ArrowLogBatch, source, target Schema) error {
 	}
 	columns := make([]arrow.Array, len(mapping))
 	var temporary []arrow.Array
+	defer func() {
+		for _, column := range temporary {
+			column.Release()
+		}
+	}()
 	for index, sourceIndex := range mapping {
 		if sourceIndex < 0 {
 			column := array.MakeArrayOfNull(
@@ -168,12 +173,13 @@ func evolveArrowBatch(batch *ArrowLogBatch, source, target Schema) error {
 			temporary = append(temporary, column)
 			continue
 		}
-		columns[index] = batch.Record.Column(sourceIndex)
+		column := batch.Record.Column(sourceIndex)
+		if !targetSchema.Field(index).Nullable && column.NullN() != 0 {
+			return fmt.Errorf("%w: column %q evolved to NOT NULL", ErrInvalidSchema, targetSchema.Field(index).Name)
+		}
+		columns[index] = column
 	}
 	record := array.NewRecordBatch(targetSchema, columns, batch.Record.NumRows())
-	for _, column := range temporary {
-		column.Release()
-	}
 	batch.Record.Release()
 	batch.Record = record
 	return nil
