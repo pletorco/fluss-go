@@ -23,16 +23,24 @@ breaking changes.
   [key cutover guidance](docs/data-operations.md#kv-key-compatibility).
 - Waited for a canceled snapshot read to return before closing its provider
   resources, preventing cleanup from racing with an active read.
+- Preserved failures reported with the final bytes of remote log and snapshot
+  reads, and rejected overlong or stalled streams without a confirmed EOF.
 - Retained in-flight KV scan requests across caller cancellation or deadlines,
   so the next poll resumes without replaying a sequence or reopening a session.
 - Refreshed a stale leader route when a single-bucket `ListOffsets` reply
   reports a routing error in its response body.
+- Closed connections that finish after their shared setup was abandoned
+  instead of letting them replace a live cached connection.
+- Applied the connection timeout through TLS, API negotiation, and
+  authentication, so a silent coordinator seed cannot starve later seeds.
 - Canceled schema waits during point and prefix lookup decoding when the
   lookuper closes, without interrupting other readers of the shared schema.
 - Kept partition metadata tied to its parent table ID, rejecting stale table
   handles after drop and recreation instead of combining old and new IDs.
 - Opened append writers using the target partition's actual bucket count, so
   partitions created before and after a change to the table default remain writable.
+- Left write offsets unknown when a successful Append or Upsert reply omits
+  its offset, rather than deriving offsets from protobuf's default zero.
 - Included the resolved routing bucket count in log-table batch scans, so
   `LIMIT_SCAN` works for both existing and new partitions after rescaling.
 - Routed primary-key reads and writes by the table or partition's actual

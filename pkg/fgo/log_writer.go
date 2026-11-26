@@ -532,12 +532,11 @@ func (l *appendWriterLoop) executeBatch(bucket int32, batch *bucketBatch, sequen
 		result = executeWriterRequest(
 			l.writer.config.RequestTimeout, l.writer.config.RetryPolicy, l.writer.observer, MetricOperationLogWrite,
 			func(ctx context.Context) (int64, bool, error) {
-				offset, err := l.writer.backend.produce(ctx, logProduceRequest{
+				return l.writer.backend.produce(ctx, logProduceRequest{
 					path: l.writer.path, bucket: bucket, bucketCount: int32(len(l.writer.buckets)),
 					tableID: l.writer.tableID, partitionID: l.writer.partitionID,
 					records: encoded, timeout: l.writer.config.RequestTimeout, acks: l.writer.config.Acks,
 				})
-				return offset, err == nil, err
 			},
 		)
 	} else {
