@@ -66,20 +66,20 @@ func TestSchemaCacheOwnsStoredAndFetchedMetadata(t *testing.T) {
 			input, want := schemaOwnershipFixture(), schemaOwnershipFixture()
 			path := TablePath{Database: "db", Table: "events"}
 			var calls atomic.Int32
-			cache := newSchemaCache(2, func(context.Context, TablePath, int32) (Schema, error) {
+			cache := newSchemaCache(2, func(context.Context, TablePath, int64, int32) (Schema, error) {
 				calls.Add(1)
 				return input, nil
 			})
 			t.Cleanup(cache.close)
 			if mode == "store" {
-				cache.store(path, 1, input)
+				cache.store(path, 9, 1, input)
 			}
-			first, err := cache.resolveSchema(context.Background(), path, 1)
+			first, err := cache.resolveSchema(context.Background(), path, 9, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
 			mutateOwnedSchema(input)
-			second, err := cache.resolveSchema(context.Background(), path, 1)
+			second, err := cache.resolveSchema(context.Background(), path, 9, 1)
 			if err != nil || !reflect.DeepEqual(first, want) || !reflect.DeepEqual(second, want) {
 				t.Fatalf("%s input changed cached metadata: first=%#v second=%#v err=%v", mode, first, second, err)
 			}
@@ -87,7 +87,7 @@ func TestSchemaCacheOwnsStoredAndFetchedMetadata(t *testing.T) {
 				t.Fatal("internal cache reads copied the immutable schema")
 			}
 			allocations := testing.AllocsPerRun(100, func() {
-				if _, err := cache.resolveSchema(context.Background(), path, 1); err != nil {
+				if _, err := cache.resolveSchema(context.Background(), path, 9, 1); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -145,7 +145,7 @@ func TestGetTableOwnsSchemaMetadata(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			borrowed, err := client.resolveSchema(context.Background(), path, 1)
+			borrowed, err := client.resolveSchema(context.Background(), path, 9, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,7 +164,7 @@ func TestGetTableOwnsSchemaMetadata(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(third.Schema, want) || !reflect.DeepEqual(other.Schema, want) {
 				t.Fatalf("public mutation changed other metadata: next=%#v other=%#v err=%v", third.Schema, other.Schema, err)
 			}
-			cached, err := client.resolveSchema(context.Background(), path, 1)
+			cached, err := client.resolveSchema(context.Background(), path, 9, 1)
 			if err != nil || !reflect.DeepEqual(cached, want) || !reflect.DeepEqual(borrowed, want) || calls.Load() != 1 {
 				t.Fatalf("public mutation changed cache or refetched: schema=%#v calls=%d err=%v", cached, calls.Load(), err)
 			}
@@ -262,7 +262,7 @@ func TestGetTableCoalescedResultsOwnSchemaMetadata(t *testing.T) {
 		}()
 	}
 	<-entered
-	waitForCoalescerWaiters(t, client.schemas.flights, schemaCacheKey{path: path, id: 1}, callers)
+	waitForCoalescerWaiters(t, client.schemas.flights, schemaCacheKey{path: path, tableID: 9, id: 1}, callers)
 	unblock.Do(func() { close(release) })
 	var tables []Table
 	for range callers {

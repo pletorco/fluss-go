@@ -7,9 +7,48 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/pletorco/fluss-go/pkg/fadm"
 	"github.com/pletorco/fluss-go/pkg/fgo"
 )
+
+func testSchemaAfterTableRecreation(t *testing.T, client *fgo.Client, admin *fadm.Client, database string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	path := fgo.TablePath{Database: database, Table: "schema_recreated"}
+	create := func(column string) {
+		t.Helper()
+		err := admin.CreateTable(ctx, path, fadm.TableDescriptor{
+			Schema:      fgo.Schema{Columns: []fgo.Column{{Name: column, Type: fgo.IntType}}},
+			BucketCount: 1,
+		}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	create("old_column")
+	old, err := client.GetTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.DropTable(ctx, path, false); err != nil {
+		t.Fatal(err)
+	}
+	create("new_column")
+	current, err := client.GetTable(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.ID == current.ID || old.SchemaID != current.SchemaID {
+		t.Fatalf("expected a new table ID with a reused schema ID, got table %d/%d and schema %d/%d",
+			old.ID, current.ID, old.SchemaID, current.SchemaID)
+	}
+	if got := current.Schema.Columns[0].Name; got != "new_column" {
+		t.Fatalf("recreated table column = %q, want new_column", got)
+	}
+}
 
 func testSchemaMetadataOwnership(t *testing.T, ctx context.Context, client *fgo.Client, path fgo.TablePath) {
 	t.Helper()

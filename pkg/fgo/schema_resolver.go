@@ -11,7 +11,7 @@ const defaultSchemaCacheEntries = 256
 
 type schemaResolver interface {
 	// Resolved schemas are borrowed read-only; mutable callers must snapshot them.
-	resolveSchema(context.Context, TablePath, int32) (Schema, error)
+	resolveSchema(context.Context, TablePath, int64, int32) (Schema, error)
 }
 
 type schemaResolverProvider interface {
@@ -27,6 +27,7 @@ type fixedSchemaResolver struct {
 func (r fixedSchemaResolver) resolveSchema(
 	_ context.Context,
 	path TablePath,
+	_ int64,
 	schemaID int32,
 ) (Schema, error) {
 	if path != r.path || schemaID != r.schemaID {
@@ -50,8 +51,9 @@ func resolverFor(source any, table Table) schemaResolver {
 }
 
 type schemaCacheKey struct {
-	path TablePath
-	id   int32
+	path    TablePath
+	tableID int64
+	id      int32
 }
 
 type schemaCacheEntry struct {
@@ -60,7 +62,7 @@ type schemaCacheEntry struct {
 }
 
 type schemaCache struct {
-	fetch func(context.Context, TablePath, int32) (Schema, error)
+	fetch func(context.Context, TablePath, int64, int32) (Schema, error)
 	max   int
 
 	mu      sync.Mutex
@@ -72,7 +74,7 @@ type schemaCache struct {
 
 func newSchemaCache(
 	maxEntries int,
-	fetch func(context.Context, TablePath, int32) (Schema, error),
+	fetch func(context.Context, TablePath, int64, int32) (Schema, error),
 ) *schemaCache {
 	return &schemaCache{
 		fetch: fetch, max: maxEntries,
@@ -84,6 +86,7 @@ func newSchemaCache(
 func (c *schemaCache) resolveSchema(
 	ctx context.Context,
 	path TablePath,
+	tableID int64,
 	schemaID int32,
 ) (Schema, error) {
 	if ctx == nil {
@@ -95,7 +98,7 @@ func (c *schemaCache) resolveSchema(
 	if schemaID < 0 {
 		return Schema{}, fmt.Errorf("%w: negative schema ID %d", ErrInvalidSchema, schemaID)
 	}
-	key := schemaCacheKey{path: path, id: schemaID}
+	key := schemaCacheKey{path: path, tableID: tableID, id: schemaID}
 	if schema, found, err := c.cached(key); found || err != nil {
 		return schema, err
 	}
@@ -129,7 +132,7 @@ func (c *schemaCache) fetchAndStore(
 	if schema, found, err := c.cached(key); found || err != nil {
 		return schema, err
 	}
-	schema, err := c.fetch(ctx, key.path, key.id)
+	schema, err := c.fetch(ctx, key.path, key.tableID, key.id)
 	if err == nil {
 		err = schema.Validate()
 	}
@@ -148,12 +151,12 @@ func (c *schemaCache) fetchAndStore(
 	return schema, nil
 }
 
-func (c *schemaCache) store(path TablePath, schemaID int32, schema Schema) {
+func (c *schemaCache) store(path TablePath, tableID int64, schemaID int32, schema Schema) {
 	if schemaID < 0 || path.Validate() != nil || schema.Validate() != nil {
 		return
 	}
 	schema = snapshotSchema(schema)
-	key := schemaCacheKey{path: path, id: schemaID}
+	key := schemaCacheKey{path: path, tableID: tableID, id: schemaID}
 	c.mu.Lock()
 	if !c.closed {
 		c.clock++

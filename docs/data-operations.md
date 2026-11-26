@@ -173,6 +173,9 @@ poll returns `fgo.ErrWakeup`; the scanner remains usable. Row and Arrow results
 preserve per-bucket failures rather than replacing a partial result with a
 global success.
 
+Log and batch scanners process one poll at a time. A queued poll observes
+its own deadline and cancellation while waiting for the active poll.
+
 ## Schema evolution on reads
 
 Readers resolve the writer schema ID carried by historical values and batches,

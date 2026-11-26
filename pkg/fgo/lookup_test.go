@@ -754,7 +754,7 @@ func TestClientLookupBackendMessagesAndErrors(t *testing.T) {
 	tablet := client.manager.clients[connectionKey{id: 2, address: "tablet:9123", serverType: TabletServer}]
 	tablet.versions[fmsg.APIKeyLookup], tablet.versions[fmsg.APIKeyPrefixLookup] = 1, 1
 	// Seed the server metadata normally loaded by GetTable.
-	client.schemas.store(path, table.SchemaID, table.Schema)
+	client.schemas.store(path, table.ID, table.SchemaID, table.Schema)
 	lookup, err := client.NewLookuper(context.Background(), table)
 	if err != nil {
 		t.Fatal(err)

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -109,6 +110,10 @@ func TestFluss100Integration(t *testing.T) {
 
 	t.Run("schema evolution", func(t *testing.T) {
 		testSchemaEvolution(t, client, admin, database)
+	})
+
+	t.Run("schema cache after table recreation", func(t *testing.T) {
+		testSchemaAfterTableRecreation(t, client, admin, database)
 	})
 
 	t.Run("log write formats", func(t *testing.T) {
@@ -531,30 +536,43 @@ func createTables(t *testing.T, admin *fadm.Client, logPath, kvPath fgo.TablePat
 
 func waitForTableReady(t *testing.T, admin *fadm.Client, path fgo.TablePath) {
 	t.Helper()
-	deadline := time.Now().Add(90 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		table, err := admin.GetTableInfo(context.Background(), path)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	err := awaitTableReadiness(ctx, func(probeCtx context.Context) error {
+		table, err := admin.GetTableInfo(probeCtx, path)
 		if err != nil {
-			lastErr = fmt.Errorf("GetTableInfo: %w", err)
-		} else {
-			buckets := make([]int32, table.BucketCount)
-			for index := range buckets {
-				buckets[index] = int32(index)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			results := admin.ListOffsets(
-				ctx, table, fgo.PhysicalTablePath{TablePath: path}, -1, buckets, fgo.Earliest(),
-			)
-			cancel()
-			lastErr = tableOffsetReadinessError(table.BucketCount, results)
-			if lastErr == nil {
-				return
-			}
+			return fmt.Errorf("GetTableInfo: %w", err)
 		}
-		time.Sleep(500 * time.Millisecond)
+		buckets := make([]int32, table.BucketCount)
+		for index := range buckets {
+			buckets[index] = int32(index)
+		}
+		results := admin.ListOffsets(
+			probeCtx, table, fgo.PhysicalTablePath{TablePath: path}, -1, buckets, fgo.Earliest(),
+		)
+		return tableOffsetReadinessError(table.BucketCount, results)
+	})
+	if err != nil {
+		t.Fatalf("table %s did not become ready: %v", path, err)
 	}
-	t.Fatalf("table %s did not become ready: %v", path, lastErr)
+}
+
+func awaitTableReadiness(ctx context.Context, probe func(context.Context) error) error {
+	var lastErr error
+	for ctx.Err() == nil {
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		lastErr = probe(probeCtx)
+		cancel()
+		if lastErr == nil {
+			return ctx.Err()
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(ctx.Err(), lastErr)
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return errors.Join(ctx.Err(), lastErr)
 }
 
 func tableOffsetReadinessError(bucketCount int, results []fadm.OffsetResult) error {
@@ -584,6 +602,25 @@ func TestTableOffsetReadinessError(t *testing.T) {
 	if err := tableOffsetReadinessError(1, results[:1]); err != nil {
 		t.Fatalf("ready bucket returned error: %v", err)
 	}
+}
+
+func TestTableReadinessDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+		probes := 0
+		notReady := errors.New("leader unavailable")
+		err := awaitTableReadiness(ctx, func(probeCtx context.Context) error {
+			probes++
+			<-probeCtx.Done()
+			return errors.Join(notReady, probeCtx.Err())
+		})
+		if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, notReady) ||
+			probes != 2 || time.Since(start) != 6*time.Second {
+			t.Fatalf("readiness probes=%d elapsed=%v error=%v", probes, time.Since(start), err)
+		}
+	})
 }
 
 func testLogData(t *testing.T, client *fgo.Client, path fgo.TablePath) {

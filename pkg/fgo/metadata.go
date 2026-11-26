@@ -278,6 +278,12 @@ func (r *Router) refresh(ctx context.Context, path TablePath, force bool) error 
 			return struct{}{}, fetchErr
 		}
 		r.mu.Lock()
+		// An abandoned flight may return after its replacement has already
+		// published. Check cancellation while holding the publication lock.
+		if err := workCtx.Err(); err != nil {
+			r.mu.Unlock()
+			return struct{}{}, err
+		}
 		next := cloneMetadata(r.metadata)
 		applyTableServers(&next, table)
 		next.Tables[path] = cloneTableMetadata(table)
@@ -343,6 +349,9 @@ func (r *Router) refreshPhysicalOnce(
 	partition, fetchUsed, err := r.fetchPhysicalMetadata(ctx, path, key)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err == nil && fetchUsed {
 		err = r.applyPhysicalMetadata(path, key, partition)
 	}

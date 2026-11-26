@@ -16,7 +16,7 @@ type retryKVSessionBackend struct {
 
 func (b *retryKVSessionBackend) schemaResolver() schemaResolver { return b }
 
-func (b *retryKVSessionBackend) resolveSchema(ctx context.Context, _ TablePath, _ int32) (Schema, error) {
+func (b *retryKVSessionBackend) resolveSchema(ctx context.Context, _ TablePath, _ int64, _ int32) (Schema, error) {
 	return b.resolve(ctx)
 }
 

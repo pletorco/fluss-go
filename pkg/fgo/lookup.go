@@ -412,7 +412,7 @@ func decodeLookupValueWithResolver(
 		return nil, fmt.Errorf("%w: lookup value omits schema ID", ErrMalformedRow)
 	}
 	schemaID := int32(int16(binary.LittleEndian.Uint16(value)))
-	schema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
+	schema, err := resolver.resolveSchema(ctx, table.Path, table.ID, schemaID)
 	if err != nil {
 		return nil, fmt.Errorf("fgo: resolve lookup schema %d: %w", schemaID, err)
 	}

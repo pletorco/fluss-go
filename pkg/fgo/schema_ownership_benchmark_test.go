@@ -14,7 +14,7 @@ func BenchmarkSchemaOwnership(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
-			if _, err := client.resolveSchema(context.Background(), path, 1); err != nil {
+			if _, err := client.resolveSchema(context.Background(), path, 9, 1); err != nil {
 				b.Fatal(err)
 			}
 		}

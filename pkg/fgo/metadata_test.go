@@ -6,8 +6,69 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
+
+func TestRouterDiscardAbandonedRefresh(t *testing.T) {
+	for _, partition := range []string{"", "day=2026-11-26"} {
+		t.Run("partition="+partition, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				testRouterDiscardAbandonedRefresh(t, partition)
+			})
+		})
+	}
+}
+
+func testRouterDiscardAbandonedRefresh(t *testing.T, partition string) {
+	t.Helper()
+	path := TablePath{Database: "db", Table: "events"}
+	physical := PhysicalTablePath{TablePath: path, Partition: partition}
+	old := ServerNode{ID: 1, Address: "old", ServerType: TabletServer}
+	next := ServerNode{ID: 2, Address: "new", ServerType: TabletServer}
+	started, finish := make(chan struct{}), make(chan struct{})
+	calls := 0
+	fetchBuckets := func() map[int32]ServerNode {
+		calls++
+		if calls == 1 {
+			close(started)
+			<-finish
+			return map[int32]ServerNode{0: old}
+		}
+		return map[int32]ServerNode{0: next}
+	}
+	router := NewRouter(ServerNode{}, func(context.Context, TablePath) (TableMetadata, error) {
+		table := TableMetadata{Path: path, ID: 9}
+		if partition == "" {
+			table.Buckets = fetchBuckets()
+		}
+		return table, nil
+	}).WithPhysicalMetadataFetcher(func(context.Context, PhysicalTablePath) (PartitionMetadata, error) {
+		return PartitionMetadata{Path: physical, ID: 10, Buckets: fetchBuckets()}, nil
+	})
+	if partition != "" {
+		if err := router.Refresh(context.Background(), path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() { first <- router.RefreshPhysical(ctx, physical) }()
+	<-started
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Errorf("first refresh = %v, want context.Canceled", err)
+	}
+	err := router.RefreshPhysical(context.Background(), physical)
+	close(finish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	synctest.Wait()
+	if got, err := router.RoutePhysical(context.Background(), physical, 0); err != nil || got != next {
+		t.Fatalf("route after abandoned refresh finished = %v, %v; want %v", got, err, next)
+	}
+}
 
 func TestRouterCoalescesConcurrentRefresh(t *testing.T) {
 	path := TablePath{Database: "db", Table: "events"}

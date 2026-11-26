@@ -106,7 +106,7 @@ func decodeEvolvedFetchedBatch(
 		return offset, nil, nil, err
 	}
 	schemaID := int32(int16(binary.LittleEndian.Uint16(payload[schemaOffset:])))
-	writerSchema, err := resolver.resolveSchema(ctx, table.Path, schemaID)
+	writerSchema, err := resolver.resolveSchema(ctx, table.Path, table.ID, schemaID)
 	if err != nil {
 		return offset, nil, nil, fmt.Errorf("fgo: resolve log schema %d: %w", schemaID, err)
 	}

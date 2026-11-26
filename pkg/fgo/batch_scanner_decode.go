@@ -190,7 +190,7 @@ func (d *valueBatchDecoder) decodeRecord(
 	schemaID := int32(int16(binary.LittleEndian.Uint16(encoded[position:])))
 	schema, found := d.schemas[schemaID]
 	if !found {
-		writer, err := d.resolver.resolveSchema(ctx, d.table.Path, schemaID)
+		writer, err := d.resolver.resolveSchema(ctx, d.table.Path, d.table.ID, schemaID)
 		if err != nil {
 			return nil, position, fmt.Errorf("fgo: resolve value schema %d: %w", schemaID, err)
 		}
