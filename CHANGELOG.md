@@ -54,6 +54,8 @@ breaking changes.
   state, returning only a defined terminal status.
 - Routed primary-key reads and writes by the table or partition's actual
   bucket count, even when a bucket temporarily has no leader.
+- Kept throttled KV buckets out of the active RPC slots so healthy buckets
+  can continue writing.
 - Returned an explicit error when a scan cannot resolve all bucket leaders,
   and refreshed cached leaderless routes so they can recover after election.
 - Reloaded schemas for recreated tables even when the path and schema ID
@@ -81,6 +83,8 @@ breaking changes.
 
 - Reduced metadata refresh and invalidation work by updating only the affected
   cache entry, without copying unrelated tables and partitions.
+- Released completed batch references from Append and Upsert queues so their
+  encoded data can be reclaimed.
 - Reused schema mappings across decoded rows in log batches and KV pages,
   reducing allocation and repeated column compatibility checks.
 

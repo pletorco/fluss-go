@@ -12,6 +12,8 @@ The client shares one negotiated connection per server identity through
   server calls for distinct buckets;
 - pending batches fill dynamically until the batch timeout expires or the fixed
   `MaxBatchRecords` or `MaxBatchBytes` cap is reached;
+- KV pressure delays only the affected bucket without reserving an RPC slot.
+  `Flush` waits for those queued writes; `Close` bypasses pressure delays.
 - `Flush` and `Close` are barriers in that writer's queue;
 - an ambiguous write failure poisons only that writer's affected bucket.
 
