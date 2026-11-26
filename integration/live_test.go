@@ -1054,10 +1054,7 @@ func testLogFormat(
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := []fgo.AppendWriterOption{
-		fgo.WithAppendLogFormat(format),
-		fgo.WithAppendBatchTimeout(0),
-	}
+	options := []fgo.AppendWriterOption{fgo.WithAppendBatchTimeout(0)} // Auto must read the advertised format.
 	if format == fgo.LogFormatArrow {
 		options = append(options, fgo.WithAppendArrowCompression(fgo.ArrowCompressionZSTD))
 	}

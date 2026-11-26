@@ -127,7 +127,7 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	if err != nil {
 		return nil, err
 	}
-	if err := validateAppendWriterFormat(table, config); err != nil {
+	if err := resolveAppendWriterFormat(table, &config); err != nil {
 		return nil, err
 	}
 	path := PhysicalTablePath{TablePath: table.Path, Partition: config.Partition}
@@ -160,18 +160,24 @@ func newAppendWriter(ctx context.Context, backend appendWriterBackend, table Tab
 	return writer, nil
 }
 
-func validateAppendWriterFormat(table Table, config AppendWriterConfig) error {
+func resolveAppendWriterFormat(table Table, config *AppendWriterConfig) error {
+	format := LogFormat(strings.ToLower(strings.TrimSpace(table.Properties["table.log.format"])))
+	switch format {
+	case "":
+		// If metadata did not advertise a format, Auto still accepts either
+		// append method and uses compacted encoding for row appends.
+	case LogFormatCompacted, LogFormatIndexed, LogFormatArrow:
+		if config.Format == LogFormatAuto {
+			config.Format = format
+		} else if config.Format != format {
+			return fmt.Errorf("%w: writer format %s does not match table.log.format %s", ErrInvalidConfig, config.Format, format)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported table.log.format %q", ErrInvalidConfig, format)
+	}
 	if config.arrowCompressionSet &&
 		config.Format != LogFormatAuto && config.Format != LogFormatArrow {
-		return fmt.Errorf("%w: Arrow compression requires Arrow or auto format", ErrInvalidConfig)
-	}
-	configured := strings.TrimSpace(table.Properties["table.log.format"])
-	if configured != "" && config.Format != LogFormatAuto &&
-		!strings.EqualFold(configured, string(config.Format)) {
-		return fmt.Errorf(
-			"%w: writer format %s does not match table.log.format %s",
-			ErrInvalidConfig, config.Format, configured,
-		)
+		return fmt.Errorf("%w: Arrow compression requires Arrow-capable table and writer formats", ErrInvalidConfig)
 	}
 	return nil
 }

@@ -104,7 +104,10 @@ write failures are not retried and poison only the affected bucket. See
 ## Log formats and bounded scans
 
 Select an explicit format only when it agrees with the table's advertised
-`table.log.format` property. Auto mode derives the compatible format.
+`table.log.format` property. Auto mode uses the advertised format: call
+`Append` for COMPACTED or INDEXED and `AppendArrow` for ARROW. If metadata
+omits the property, Auto still accepts both methods and encodes row appends
+as COMPACTED. An unrecognized advertised format fails when opening the writer.
 
 <!-- go-source: internal/docexamples/snippets_test.go logFormat -->
 ```go
