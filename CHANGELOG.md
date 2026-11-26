@@ -47,6 +47,8 @@ breaking changes.
   to finish.
 - Kept caller-supplied reader schemas from replacing shared server metadata
   used by subsequent table lookups and record decoding.
+- Rejected null values in historical Arrow columns mapped to a required
+  target, matching row schema evolution.
 - Preserved the server's filtered progress when a bounded log scan delivers
   every eligible record, so it can finish at its stopping offset.
 - Accepted narrower projections returned by snapshot providers and reported
