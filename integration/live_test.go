@@ -416,6 +416,9 @@ func testCatalog(t *testing.T, admin *fadm.Client, database string, logPath, kvP
 	if err := admin.DropKVSnapshotLease(context.Background(), leaseID); err != nil {
 		t.Fatalf("DropKVSnapshotLease() = %v", err)
 	}
+	t.Run("required zero DDL parameters", func(t *testing.T) {
+		testDDLZeroParameters(t, admin, database)
+	})
 }
 
 func requireEnvironment(t *testing.T) {
