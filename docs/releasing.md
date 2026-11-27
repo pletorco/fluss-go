@@ -4,6 +4,44 @@ Releases are made only from a reviewed commit on `main`. A feature branch may
 prepare the changelog and release notes, but it must not publish a tag or
 GitHub Release before merge.
 
+## Release scope and blockers
+
+Before preparing a release, make one targeted review pass over the changes
+since the last published tag and the workflows the release promises to
+support. Check the regressions those changes could introduce; do not make
+another repository-wide audit a condition of release.
+
+- Block the release for reproduced data loss or corruption, misleading
+  success that can hide incomplete or incorrect results, regressions that
+  break promised workflows, confirmed security issues affecting the release,
+  or failure of a required release check. Follow the
+  [security policy](../SECURITY.md) for private disclosures.
+- Distinguish a fluss-go bug from a server limitation. Compare runtime
+  behavior first with the [official Rust Core (`fluss-rs`)](https://fluss.apache.org/docs/1.0/apis/rust/installation/)
+  against the same supported Fluss server, using equivalent input and
+  configuration. Record both versions. If Rust Core does not expose the
+  operation or the results disagree, check the pinned protocol and server
+  behavior; use the official Java client as an additional reference where
+  applicable. A disagreement alone does not establish a server bug.
+- Do not add a workaround or reject a valid request based on a suspected
+  server problem. Preserve the server's error when it already rejects the
+  request safely. Add a targeted guard only if a reproduced case shows it
+  is necessary to prevent corrupted data, silent loss, or misleading success
+  in a supported workflow. Track confirmed server problems separately; they
+  do not block release if the promised workflows remain safe and the
+  limitation and any supported workaround are documented.
+- Record the agreed blockers and their verification in the release PR.
+  Defer other findings to the issue tracker and note user-visible
+  limitations in the release notes. Once the scope is agreed, stop broad
+  issue hunting. Reopen it only for a newly confirmed blocker or a failed
+  required check, and investigate that finding directly.
+
+Publish once the agreed blockers are resolved and the required checks pass
+for the release candidate, as specified below. The goal is to verify the
+release's stated behavior, not to empty the issue tracker.
+
+## Prepare the release PR
+
 Once a release is chosen, create one release-preparation branch from the latest
 reviewed `main`. Put every remaining release blocker and the complete release
 preparation in that branch: dependency, toolchain, security, and version

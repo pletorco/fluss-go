@@ -268,6 +268,9 @@ NOTICE, 업데이트 방법과 보안 패치 책임을 함께 기록한다.
 - `task sonar`: release 준비 branch에서 PR 생성 전에 실행하고 Quality Gate 완료까지
   기다리는 로컬 검증
 
+릴리스의 점검 범위, 차단 기준과 종료 조건은
+[릴리스 절차](docs/releasing.md#release-scope-and-blockers)에 따른다.
+
 릴리스가 결정되면 최신 review 완료 `main`에서 하나의 release 준비 branch를 만들고,
 남은 release blocker와 전체 release 준비를 하나의 PR에 포함한다. dependency, toolchain,
 security와 version 정렬 수정, changelog, release note, 영향받은 사용자 문서, adapter
@@ -424,6 +427,14 @@ gate로 취급하지 않는다.
 
 ### 프로토콜 호환성
 
+- 동작과 상호 운용성은 공식 Rust Core(`fluss-rs`)를 우선 비교 기준으로 삼는다.
+  지원 대상 서버와 Rust Core의 버전을 함께 기록하고 동일한 조건으로 재현한다.
+  Rust Core가 제공하지 않는 기능이나 결과가 엇갈리는 경우 고정된 프로토콜과 서버
+  동작을 확인하고, 필요하면 공식 Java client로 대조한다. 이는 비교 기준이며 Go의
+  공개 API 변경이나 Rust 런타임 도입을 의미하지 않는다.
+- 서버 문제라는 추정만으로 우회나 사전 차단을 추가하지 않는다. 서버가 이미 안전하게
+  거부하면 원래 오류를 보존한다. 지원 경로에서 데이터 오염·누락이나 잘못된 성공
+  보고를 막아야 한다는 재현 근거가 있을 때만 범위를 좁혀 방어 처리를 검토한다.
 - Apache Fluss의 공식 protocol schema와 API key 정의를 source of truth로 사용한다.
 - request마다 지원하는 최소·최대 API version을 명시하고 server와 협상한 범위 안에서
   가장 적절한 version을 사용한다.
