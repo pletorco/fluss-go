@@ -224,7 +224,7 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 			return s.pollKVSession(pollCtx, backend)
 		}
 	}
-	isLog, encoded, err := s.backend.limitScan(pollCtx, s.bucket, int32(s.config.Limit))
+	isLog, encoded, err := s.readCurrentBatch(pollCtx)
 	if err != nil {
 		return BatchResult{}, err
 	}
@@ -235,6 +235,14 @@ func (s *BatchScanner) Poll(ctx context.Context) (BatchResult, error) {
 	s.markDone()
 	result.Done = true
 	return result, nil
+}
+
+func (s *BatchScanner) readCurrentBatch(ctx context.Context) (bool, []byte, error) {
+	limit := int32(s.config.Limit)
+	if backend, ok := s.backend.(logBatchScanBackend); ok && s.table.Kind == LogTable {
+		return backend.limitLogScan(ctx, s.table, s.bucket, limit)
+	}
+	return s.backend.limitScan(ctx, s.bucket, limit)
 }
 
 func (s *BatchScanner) pollSnapshot(ctx context.Context) (BatchResult, error) {

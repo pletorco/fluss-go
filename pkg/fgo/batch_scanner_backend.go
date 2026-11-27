@@ -2,6 +2,7 @@ package fgo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
@@ -10,6 +11,10 @@ import (
 
 type batchScanBackend interface {
 	limitScan(context.Context, TableBucket, int32) (bool, []byte, error)
+}
+
+type logBatchScanBackend interface {
+	limitLogScan(context.Context, Table, TableBucket, int32) (bool, []byte, error)
 }
 
 type kvSessionScanBackend interface {
@@ -73,6 +78,80 @@ func resolvedTableBuckets(
 		}
 	}
 	return result, nil
+}
+
+func (b clientBatchScanBackend) limitLogScan(
+	ctx context.Context, table Table, bucket TableBucket, limit int32,
+) (bool, []byte, error) {
+	isLog, records, err := b.limitScan(ctx, bucket, limit)
+	if ctx.Err() != nil || (!errors.Is(err, ErrMetadata) && !shouldReplaceConnection(err)) {
+		return isLog, records, err
+	}
+	bucket, refreshErr := b.refreshLogScanBucket(ctx, table, bucket)
+	if refreshErr != nil {
+		return false, nil, errors.Join(err, refreshErr)
+	}
+	// LIMIT_SCAN is stateless. Retrying once cannot advance a server cursor.
+	return b.limitScan(ctx, bucket, limit)
+}
+
+func (b clientBatchScanBackend) refreshLogScanBucket(
+	ctx context.Context, table Table, bucket TableBucket,
+) (TableBucket, error) {
+	path := PhysicalTablePath{TablePath: table.Path}
+	if bucket.PartitionID >= 0 {
+		name, err := b.logScanPartitionName(ctx, table, bucket.PartitionID)
+		if err != nil {
+			return TableBucket{}, err
+		}
+		path.Partition = name
+	}
+	layout, err := b.client.fetchBucketLayout(ctx, path)
+	if err != nil {
+		return TableBucket{}, err
+	}
+	if layout.tableID != bucket.TableID || layout.partitionID != bucket.PartitionID {
+		return TableBucket{}, fmt.Errorf("%w: %s now has a different physical identity", ErrMetadata, path)
+	}
+	if layout.count <= bucket.BucketID || (bucket.BucketCount > 0 && layout.count != bucket.BucketCount) {
+		return TableBucket{}, fmt.Errorf("%w: %s now has a different bucket layout", ErrMetadata, path)
+	}
+	leader, ok := layout.leaders[bucket.BucketID]
+	if !ok {
+		return TableBucket{}, fmt.Errorf("%w: %s bucket %d", ErrNoBucketLeader, path, bucket.BucketID)
+	}
+	bucket.Leader, bucket.BucketCount = leader, layout.count
+	return bucket, nil
+}
+
+func (b clientBatchScanBackend) logScanPartitionName(
+	ctx context.Context, table Table, partitionID int64,
+) (string, error) {
+	request, err := fmsg.NewRequest(fmsg.APIKeyListPartitionInfos, 0)
+	if err != nil {
+		return "", err
+	}
+	message := request.Message().(*fmsg.ListPartitionInfosRequest)
+	message.TablePath = pbTablePath(table.Path)
+	message.IncludeSystemPartitions = proto.Bool(true)
+	response, err := b.client.RequestCoordinator(ctx, request)
+	if err != nil {
+		return "", err
+	}
+	partitions, ok := response.Message().(*fmsg.ListPartitionInfosResponse)
+	if !ok {
+		return "", fmt.Errorf("fgo: list partitions: unexpected response %T", response.Message())
+	}
+	for _, partition := range partitions.GetPartitionsInfo() {
+		if partition != nil && partition.PartitionId != nil && partition.GetPartitionId() == partitionID {
+			spec := make(PartitionSpec)
+			for _, entry := range partition.GetPartitionSpec().GetPartitionKeyValues() {
+				spec[entry.GetKey()] = entry.GetValue()
+			}
+			return table.Schema.PartitionName(spec)
+		}
+	}
+	return "", fmt.Errorf("%w: %s partition ID %d", ErrUnknownPartition, table.Path, partitionID)
 }
 
 func (b clientBatchScanBackend) limitScan(

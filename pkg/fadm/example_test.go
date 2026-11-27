@@ -409,6 +409,9 @@ func ExampleClient_AcquireKVSnapshotLease() {
 		log.Fatal(err)
 	}
 	defer exampleDropKVSnapshotLease(admin, leaseID)
+	// Renew a known lease before it expires. A nil error does not confirm
+	// protection if the lease was already lost; acquire a new lease and
+	// check its unavailable snapshots in that case.
 	if err := admin.RenewKVSnapshotLease(ctx, leaseID, 10*time.Minute); err != nil {
 		log.Fatal(err)
 	}
