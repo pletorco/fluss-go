@@ -162,6 +162,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("KV scan interruption preserves undelivered pages", func(t *testing.T) {
 		testInterruptedKVPage(t, plainAddress, client, admin, database)
 	})
+	t.Run("KV scan row limit is per poll", func(t *testing.T) {
+		testKVScanRowLimit(t, client, admin, database)
+	})
 
 	t.Run("typed data API", func(t *testing.T) {
 		testTypedData(t, client, logPath, kvPath)
@@ -173,6 +176,9 @@ func TestFluss100Integration(t *testing.T) {
 
 	t.Run("snapshot and advanced admin APIs", func(t *testing.T) {
 		testAdvancedAdmin(t, client, admin, logPath, kvPath)
+	})
+	t.Run("KV snapshot offset resumes CDC without skipping a row", func(t *testing.T) {
+		testKVSnapshotResumeOffset(t, client, admin, database)
 	})
 
 	t.Run("post-failure data I/O", func(t *testing.T) {

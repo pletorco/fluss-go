@@ -21,13 +21,13 @@ func (b *retryKVSessionBackend) resolveSchema(ctx context.Context, _ TablePath, 
 }
 
 func (b *retryKVSessionBackend) scanKV(
-	ctx context.Context, bucket TableBucket, limit int64, batchSize int32,
+	ctx context.Context, bucket TableBucket, batchSize int32,
 	scannerID []byte, sequence int32, closing bool,
 ) (kvSessionBatch, error) {
 	if !closing && len(b.batches) == 0 {
 		return kvSessionBatch{}, errors.New("unexpected fetch after terminal KV page")
 	}
-	return b.fakeKVSessionBackend.scanKV(ctx, bucket, limit, batchSize, scannerID, sequence, closing)
+	return b.fakeKVSessionBackend.scanKV(ctx, bucket, batchSize, scannerID, sequence, closing)
 }
 
 func retryKVScanFixture(t *testing.T, pages int) (Table, *retryKVSessionBackend) {

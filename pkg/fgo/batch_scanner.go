@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 )
 
-// BatchScanner reads the bounded current state or one immutable snapshot of a
-// table bucket. Poll calls are serialized; call Close to interrupt an active
-// poll and release scanner resources.
+// BatchScanner reads the current state or one immutable snapshot of a table
+// bucket in bounded pages. Log-table current-state scans return only the
+// configured number of latest records. Poll calls are serialized; call Close
+// to interrupt an active poll and release scanner resources.
 type BatchScanner struct {
 	table         Table
 	bucket        TableBucket
@@ -25,7 +27,7 @@ type BatchScanner struct {
 	scannerID []byte
 	sequence  int32
 	kvCall    *kvScanCall
-	pendingKV *kvSessionBatch
+	pendingKV *kvPendingPage
 	kvErr     error
 
 	pollGate chan struct{}
@@ -154,6 +156,10 @@ func batchScannerSettings(
 		if err := option(&config); err != nil {
 			return BatchScannerConfig{}, nil, err
 		}
+	}
+	// Custom options can bypass WithBatchLimit's validation.
+	if config.Limit <= 0 || config.Limit > math.MaxInt32 {
+		return BatchScannerConfig{}, nil, fmt.Errorf("%w: invalid batch scan limit", ErrInvalidConfig)
 	}
 	projection, err := batchProjection(table.Schema, config.Projection)
 	return config, projection, err

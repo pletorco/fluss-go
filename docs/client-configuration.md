@@ -74,9 +74,9 @@ writers can share one client.
 ## KV batch scanner
 
 `NewBatchScanner` uses the Fluss 1.0 `SCAN_KV` server session for primary-key
-tables. `WithBatchSizeBytes` maps to the per-response byte bound. The row
-`WithBatchLimit` is sent when the session opens and applies to the whole scan,
-while projection remains a client-side result-shaping operation. For KV
+tables. `WithBatchSizeBytes` maps to the server's requested per-response byte
+bound. `WithBatchLimit` and projection apply locally to each `Poll`. The
+client leaves the server's optional whole-scan row limit unset. For KV
 scans, the `Poll` context bounds the caller's wait and decoding; a submitted
 request has a separate, fixed 30-second timeout rather than a configurable
 Java-style `client.request-timeout`. A later poll can await the same request

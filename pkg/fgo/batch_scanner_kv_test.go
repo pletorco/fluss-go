@@ -19,12 +19,12 @@ type waitingKVBackend struct {
 }
 
 func (b *waitingKVBackend) scanKV(
-	ctx context.Context, bucket TableBucket, limit int64, size int32, id []byte, seq int32, closing bool,
+	ctx context.Context, bucket TableBucket, size int32, id []byte, seq int32, closing bool,
 ) (kvSessionBatch, error) {
 	if !closing && len(b.batches) == 0 {
 		return kvSessionBatch{}, errors.New("unexpected request after last KV page")
 	}
-	batch, err := b.fakeKVSessionBackend.scanKV(ctx, bucket, limit, size, id, seq, closing)
+	batch, err := b.fakeKVSessionBackend.scanKV(ctx, bucket, size, id, seq, closing)
 	if closing {
 		err = b.closeErr
 	} else if err == nil && b.reply != nil {

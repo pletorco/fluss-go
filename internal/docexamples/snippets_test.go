@@ -320,11 +320,17 @@ func batchScan(ctx context.Context, client *fgo.Client, table fgo.Table) error {
 	}
 	defer scanner.Close()
 
-	result, err := scanner.Poll(ctx)
-	if err != nil {
-		return err
+	for {
+		result, err := scanner.Poll(ctx)
+		if err != nil {
+			return err
+		}
+		log.Printf("rows=%d arrow_batches=%d", len(result.Rows), len(result.ArrowBatches))
+		result.Release()
+		if result.Done {
+			break
+		}
 	}
-	defer result.Release()
 	// doc:snippet-end batchScan
 	return nil
 }

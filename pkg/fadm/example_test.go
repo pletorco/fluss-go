@@ -447,7 +447,9 @@ func ExampleClient_ListKVSnapshots() {
 		log.Fatal(err)
 	}
 	for _, snapshot := range snapshots.Snapshots {
-		log.Printf("bucket=%d snapshot=%d offset=%d", snapshot.Bucket, snapshot.SnapshotID, snapshot.LogOffset)
+		if snapshot.Available {
+			log.Printf("bucket=%d snapshot=%d next_log_offset=%d", snapshot.Bucket, snapshot.SnapshotID, snapshot.LogOffset)
+		}
 	}
 }
 

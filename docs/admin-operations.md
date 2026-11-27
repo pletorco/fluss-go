@@ -115,8 +115,11 @@ See the compile-checked
 `GetLatestKVSnapshots` resolves a logical table path and optional partition name
 to current physical IDs and one result per bucket. `KVSnapshot.Available`
 distinguishes no snapshot from a valid snapshot whose ID is zero.
-`KVSnapshotMetadata` then returns the immutable files and inclusive log offset
-for a specific table, partition, bucket, and snapshot ID.
+`KVSnapshotMetadata` then returns the immutable files and log offset for a
+specific table, partition, bucket, and snapshot ID. In both results, the
+snapshot represents changes **before** `LogOffset`. To read subsequent log
+changes for that bucket, start at `fgo.AtOffset(snapshot.LogOffset)`; do not
+add one.
 
 Snapshot IDs are scoped by their table, partition, and bucket. A
 `PartitionID` of -1 identifies an unpartitioned table; all other IDs and bucket

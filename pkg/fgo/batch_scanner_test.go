@@ -30,7 +30,6 @@ func (f batchScanBackendFunc) limitScan(
 
 type kvSessionCall struct {
 	bucket       TableBucket
-	limit        int64
 	batchSize    int32
 	scannerID    []byte
 	sequence     int32
@@ -49,14 +48,13 @@ func (*fakeKVSessionBackend) limitScan(context.Context, TableBucket, int32) (boo
 func (b *fakeKVSessionBackend) scanKV(
 	_ context.Context,
 	bucket TableBucket,
-	limit int64,
 	batchSize int32,
 	scannerID []byte,
 	sequence int32,
 	closeScanner bool,
 ) (kvSessionBatch, error) {
 	b.calls = append(b.calls, kvSessionCall{
-		bucket: bucket, limit: limit, batchSize: batchSize,
+		bucket: bucket, batchSize: batchSize,
 		scannerID: append([]byte(nil), scannerID...), sequence: sequence, closeScanner: closeScanner,
 	})
 	if closeScanner {
@@ -255,19 +253,19 @@ func TestClientBatchBackendBuildsScanKVRequests(t *testing.T) {
 		return response, nil
 	}))
 	result, err := (clientBatchScanBackend{client: client}).scanKV(
-		context.Background(), bucket, 25, 4096, nil, 0, false,
+		context.Background(), bucket, 4096, nil, 0, false,
 	)
 	if err != nil || string(result.scannerID) != "scan" || !result.hasMore {
 		t.Fatalf("scanKV() = %#v, %v", result, err)
 	}
 	if got.GetBucketScanReq().GetTableId() != table.ID || got.GetBucketScanReq().GetBucketId() != bucket.BucketID ||
-		got.GetBucketScanReq().GetRoutingBucketCount() != 4 || got.GetBucketScanReq().GetLimit() != 25 ||
+		got.GetBucketScanReq().GetRoutingBucketCount() != 4 || got.GetBucketScanReq().Limit != nil ||
 		got.GetBatchSizeBytes() != 4096 || got.GetCallSeqId() != 0 {
 		t.Fatalf("ScanKv request = %#v", got)
 	}
 	bucket.BucketCount = 0
 	if _, err := (clientBatchScanBackend{client: client}).scanKV(
-		context.Background(), bucket, 25, 4096, nil, 0, false,
+		context.Background(), bucket, 4096, nil, 0, false,
 	); !errors.Is(err, ErrMetadata) {
 		t.Fatalf("scanKV() missing bucket count error = %v", err)
 	}
@@ -359,7 +357,7 @@ func TestBatchScannerUsesFluss100KVSession(t *testing.T) {
 	if err != nil || !second.Done || len(second.Rows) != 1 {
 		t.Fatalf("second Poll() = %#v, %v", second, err)
 	}
-	if len(backend.calls) != 2 || backend.calls[0].limit != 2 || backend.calls[0].batchSize != 4096 ||
+	if len(backend.calls) != 2 || backend.calls[0].batchSize != 4096 ||
 		backend.calls[0].sequence != 0 || len(backend.calls[0].scannerID) != 0 ||
 		backend.calls[0].bucket.BucketCount != 3 || backend.calls[1].sequence != 1 ||
 		string(backend.calls[1].scannerID) != "scanner" {

@@ -20,7 +20,9 @@ type BatchScannerConfig struct {
 	BatchSizeBytes int32
 }
 
-// WithBatchLimit bounds the number of rows returned by a current-state request or snapshot poll.
+// WithBatchLimit bounds rows per Poll; the default is 1024. A KV scan continues
+// until the bucket is exhausted, not until limit rows have been returned in total.
+// A log-table batch scan instead returns at most limit latest records in one poll.
 func WithBatchLimit(limit int) BatchScannerOption {
 	return func(config *BatchScannerConfig) error {
 		if limit <= 0 || limit > math.MaxInt32 {

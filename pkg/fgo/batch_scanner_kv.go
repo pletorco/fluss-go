@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/pletorco/fluss-go/pkg/fmsg"
@@ -20,6 +21,14 @@ type kvScanCall struct {
 	err   error
 }
 
+// An accepted server page stays pending until all of its rows are delivered.
+// Once decoding succeeds, retain the remaining rows instead of the wire bytes.
+type kvPendingPage struct {
+	hasMore bool
+	records []byte
+	rows    []Row
+}
+
 func (s *BatchScanner) pollKVSession(ctx context.Context, backend kvSessionScanBackend) (BatchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return BatchResult{}, err
@@ -29,24 +38,40 @@ func (s *BatchScanner) pollKVSession(ctx context.Context, backend kvSessionScanB
 			return BatchResult{}, err
 		}
 	}
-	batch := s.pendingKV
-	var rows []Row
-	if len(batch.records) != 0 {
-		var err error
-		rows, err = decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, batch.records, s.valueEncoding)
+	return s.deliverKVPage(ctx)
+}
+
+func (s *BatchScanner) deliverKVPage(ctx context.Context) (BatchResult, error) {
+	page := s.pendingKV
+	if len(page.records) != 0 {
+		rows, err := decodeValueRecordBatchWithResolver(ctx, s.resolver, s.table, page.records, s.valueEncoding)
 		if err != nil {
 			return BatchResult{}, err
 		}
+		page.rows, page.records = rows, nil
+	}
+	count := min(s.config.Limit, len(page.rows))
+	partial := count < len(page.rows)
+	rows := s.projectRows(page.rows[:count])
+	if partial && len(s.projection) == 0 {
+		// Transfer only the returned entries; caller slice edits must not
+		// reach pending rows or keep their backing array alive.
+		rows = slices.Clone(rows)
 	}
 	if err := ctx.Err(); err != nil {
 		return BatchResult{}, err
 	}
-	result := BatchResult{Rows: s.projectRows(rows), Done: !batch.hasMore}
+	if partial {
+		clear(page.rows[:count])
+		page.rows = page.rows[count:]
+		return BatchResult{Rows: rows}, nil
+	}
 	s.pendingKV = nil
-	if result.Done {
+	done := !page.hasMore
+	if done {
 		s.markDone()
 	}
-	return result, nil
+	return BatchResult{Rows: rows, Done: done}, nil
 }
 
 func (s *BatchScanner) awaitKVPage(ctx context.Context, backend kvSessionScanBackend) error {
@@ -82,7 +107,7 @@ func (s *BatchScanner) startKVCall(ctx context.Context, backend kvSessionScanBac
 		defer cancelLife()
 		defer cancelRequest()
 		call.batch, call.err = backend.scanKV(
-			requestCtx, s.bucket, int64(s.config.Limit), s.config.BatchSizeBytes, scannerID, sequence, false,
+			requestCtx, s.bucket, s.config.BatchSizeBytes, scannerID, sequence, false,
 		)
 	}()
 }
@@ -106,7 +131,7 @@ func (s *BatchScanner) acceptKVReply() {
 		s.scannerID = append(s.scannerID[:0], call.batch.scannerID...)
 		s.sequence++
 	}
-	s.pendingKV = &call.batch
+	s.pendingKV = &kvPendingPage{hasMore: call.batch.hasMore, records: call.batch.records}
 }
 
 func (s *BatchScanner) validateKVReply(batch *kvSessionBatch) error {
@@ -138,7 +163,7 @@ func (s *BatchScanner) closeKVSession(backend kvSessionScanBackend) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := backend.scanKV(
-		ctx, s.bucket, int64(s.config.Limit), s.config.BatchSizeBytes, s.scannerID, s.sequence, true,
+		ctx, s.bucket, s.config.BatchSizeBytes, s.scannerID, s.sequence, true,
 	)
 	var server *ServerError
 	if errors.As(err, &server) && (server.Code == fmsg.ErrorCodeScannerExpired || server.Code == fmsg.ErrorCodeUnknownScannerId) {
