@@ -29,6 +29,7 @@ type BatchScanner struct {
 	kvCall    *kvScanCall
 	pendingKV *kvPendingPage
 	kvErr     error
+	kvOffset  kvScanOffset
 
 	pollGate chan struct{}
 	mu       sync.RWMutex

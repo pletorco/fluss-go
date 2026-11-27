@@ -61,17 +61,18 @@ func (s *BatchScanner) deliverKVPage(ctx context.Context) (BatchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return BatchResult{}, err
 	}
+	result := BatchResult{Rows: rows, SnapshotLogOffset: s.kvOffset.value, SnapshotLogOffsetKnown: s.kvOffset.known}
 	if partial {
 		clear(page.rows[:count])
 		page.rows = page.rows[count:]
-		return BatchResult{Rows: rows}, nil
+		return result, nil
 	}
 	s.pendingKV = nil
-	done := !page.hasMore
-	if done {
+	result.Done = !page.hasMore
+	if result.Done {
 		s.markDone()
 	}
-	return BatchResult{Rows: rows, Done: done}, nil
+	return result, nil
 }
 
 func (s *BatchScanner) awaitKVPage(ctx context.Context, backend kvSessionScanBackend) error {
@@ -126,6 +127,10 @@ func (s *BatchScanner) acceptKVReply() {
 		// this sequence nor opening a different snapshot can recover it.
 		s.kvErr = fmt.Errorf("fgo: KV scan session stopped at sequence %d: %w", s.sequence, err)
 		return
+	}
+	if s.sequence == 0 && call.batch.offset.known {
+		// Continuations do not carry a new snapshot boundary.
+		s.kvOffset = call.batch.offset
 	}
 	if len(call.batch.scannerID) != 0 {
 		s.scannerID = append(s.scannerID[:0], call.batch.scannerID...)

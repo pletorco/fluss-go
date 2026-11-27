@@ -19,7 +19,9 @@ func testKVScanRowLimit(t *testing.T, c *fgo.Client, admin *fadm.Client, databas
 	schema := fgo.Schema{Columns: []fgo.Column{
 		{Name: "id", Type: fgo.IntType}, {Name: "name", Type: fgo.StringType},
 	}, PrimaryKey: []string{"id"}}
-	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{Schema: schema, BucketCount: 1}, false); err != nil {
+	if err := admin.CreateTable(ctx, path, fadm.TableDescriptor{
+		Schema: schema, BucketCount: 1, Properties: map[string]string{"table.log.format": "COMPACTED"},
+	}, false); err != nil {
 		t.Fatal(err)
 	}
 	bucket := readyWireKV(t, ctx, c, admin, fgo.PhysicalTablePath{TablePath: path})
@@ -67,6 +69,13 @@ func testKVScanRowLimit(t *testing.T, c *fgo.Client, admin *fadm.Client, databas
 				if len(result.Rows) > tc.limit {
 					t.Fatalf("poll %d emitted %d rows; limit %d", polls, len(result.Rows), tc.limit)
 				}
+				if !result.SnapshotLogOffsetKnown || result.SnapshotLogOffset != total {
+					t.Fatalf("poll %d opening log offset = %d (known %v), want %d", polls,
+						result.SnapshotLogOffset, result.SnapshotLogOffsetKnown, total)
+				}
+				if polls == 1 && tc.name == "server byte pages" {
+					writeAfterKVScanStarted(t, ctx, c, bucket.table, total)
+				}
 				for _, row := range result.Rows {
 					id := row[0].(int32)
 					if id < 0 || id >= total || seen[id] {
@@ -82,9 +91,39 @@ func testKVScanRowLimit(t *testing.T, c *fgo.Client, admin *fadm.Client, databas
 					if len(seen) != total || polls < 2 {
 						t.Fatalf("scan ended after %d/%d unique rows in %d polls", len(seen), total, polls)
 					}
+					if tc.name == "server byte pages" {
+						assertKVScanCDC(t, ctx, c, bucket.table, result.SnapshotLogOffset, total)
+					}
 					break
 				}
 			}
 		})
+	}
+}
+
+func writeAfterKVScanStarted(t *testing.T, ctx context.Context, c *fgo.Client, table fgo.Table, id int32) {
+	t.Helper()
+	w, err := c.NewUpsertWriter(ctx, table, fgo.WithUpsertBatchTimeout(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close(ctx)
+	if got := w.Upsert(ctx, fgo.Row{id, "after snapshot"}).Await(ctx); got.Err != nil {
+		t.Fatal(got.Err)
+	}
+}
+
+func assertKVScanCDC(t *testing.T, ctx context.Context, c *fgo.Client, table fgo.Table, offset int64, id int32) {
+	t.Helper()
+	scanner, err := c.NewLogScanner(ctx, table, fgo.AtOffset(offset), fgo.WithLogFetchLimits(1<<20, 1<<20, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	result, err := scanner.Poll(ctx)
+	defer result.Release()
+	if err != nil || len(result.BucketErrors) != 0 || len(result.Records) != 1 ||
+		result.Records[0].Record.Offset != offset || result.Records[0].Record.Value[0] != id {
+		t.Fatalf("CDC from %d: %+v, %v; want only post-snapshot key %d", offset, result, err, id)
 	}
 }
