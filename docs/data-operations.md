@@ -427,7 +427,10 @@ expires any session left behind. An empty bucket may complete without a
 scanner ID.
 
 Log-table current-state scans use one bounded `LIMIT_SCAN` request and return
-at most `WithBatchLimit` latest records in total. Snapshot providers use the
+at most `WithBatchLimit` latest records in total. On a stale route or tablet
+connection failure, the scanner refreshes metadata and retries the stateless
+read once, only for the same physical table, partition, and bucket layout.
+This retry does not apply to KV scan sessions. Snapshot providers use the
 limit per call.
 Use `ResolveTableBuckets` for a partition so the request carries that partition's
 routing bucket count, which may differ from the current table default.

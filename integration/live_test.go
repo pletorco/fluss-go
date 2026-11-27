@@ -2233,6 +2233,8 @@ func testLeaderFailover(
 	if stopped < 0 || stopped > 2 {
 		t.Fatalf("initial leaders = %#v", before)
 	}
+	oldScan, scanBucket := openBatchScanOnLeader(t, ctx, client, logTable, stopped)
+	defer oldScan.Close()
 	service := fmt.Sprintf("plaintext-tablet-%d", stopped)
 	compose(t, "stop", service)
 	restarted := false
@@ -2248,6 +2250,7 @@ func testLeaderFailover(
 	}); err != nil {
 		t.Fatalf("leaders did not move away from tablet %d; before=%#v: %v", stopped, before, err)
 	}
+	assertBatchScanAfterFailover(t, ctx, client, logTable, oldScan, scanBucket, stopped)
 
 	mergeExpectedLogWrites(expectedLog, appendFailoverLogRows(t, ctx, client, logTable, 2000, true))
 	updateAndVerifyFailoverKVRows(t, ctx, client, kvTable, kvKeys)
