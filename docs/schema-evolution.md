@@ -5,6 +5,10 @@ the same value if you supply both. A mismatch returns `ErrInvalidSchema`
 before encoding a row, constructing an Arrow schema, or sending DDL. Nested
 fields use the nullability on their own logical types.
 
+Fluss 1.0 only supports adding columns at the end of the schema. Leave
+`fadm.AddColumn.First` false. The server rejects a FIRST request; fluss-go
+does not silently turn it into an append.
+
 `fgo.Client` resolves the writer schema identified by each Fluss 1.0 record
 or batch schema ID. Resolved schemas are shared by all readers on the client,
 coalesced while a lookup is in flight, and retained in a 256-entry LRU cache.

@@ -169,6 +169,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("typed data API", func(t *testing.T) {
 		testTypedData(t, client, logPath, kvPath)
 	})
+	t.Run("ready log bucket does not wait for an empty bucket", func(t *testing.T) {
+		testReadyLogBucket(t, client, admin, database)
+	})
 
 	t.Run("partial upsert and merge modes", func(t *testing.T) {
 		testPartialUpsert(t, client, admin, database)

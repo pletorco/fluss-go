@@ -139,7 +139,11 @@ lease.
 
 Use `RenewKVSnapshotLease` before the lease duration expires when snapshot
 processing continues. Renewal sends the existing lease ID and a new positive
-duration without reacquiring individual snapshots. Use
+duration without reacquiring individual snapshots. Fluss 1.0 can acknowledge
+an unknown or already removed lease ID by creating an empty lease. A nil
+error does not prove that the original snapshots are still protected. If
+renewal is late or continuity is uncertain, acquire a new lease ID for the
+required snapshots and check its unavailable list before continuing. Use
 `ReleaseKVSnapshotLease` to release selected table buckets early.
 `DropKVSnapshotLease` releases everything held by the lease ID. Always arrange
 a bounded drop after a successful acquire attempt; server-side expiration is a

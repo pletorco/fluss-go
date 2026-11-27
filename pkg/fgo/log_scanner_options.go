@@ -17,9 +17,10 @@ type LogScannerConfig struct {
 	FetchMaxBytes int32
 	// FetchMaxBytesForBucket bounds encoded bytes per bucket per fetch.
 	FetchMaxBytesForBucket int32
-	// FetchMinBytes is the aggregate byte threshold before a fetch may return.
+	// FetchMinBytes is the byte threshold for a fetch that can wait on the server.
 	FetchMinBytes int32
-	// FetchWaitMaxTime bounds server waiting when FetchMinBytes is not reached.
+	// FetchWaitMaxTime bounds server waiting. In a multi-bucket poll, only
+	// the last eligible bucket can wait, and only if no records are ready.
 	FetchWaitMaxTime time.Duration
 	// RowLimit is the total delivered row bound; zero is unbounded.
 	RowLimit int64

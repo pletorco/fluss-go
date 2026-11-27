@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type progressLogScannerBackend struct {
@@ -18,6 +19,35 @@ func (b *progressLogScannerBackend) fetch(ctx context.Context, input logFetchReq
 		}
 	}
 	return b.fakeLogScannerBackend.fetch(ctx, input)
+}
+
+func TestLogScannerPollDoesNotWaitForEmptyBucketWhenRowsAreReady(t *testing.T) {
+	for _, ready := range []int32{0, 1} {
+		table := appendWriterTable()
+		table.BucketCount = 2
+		backend := &progressLogScannerBackend{fakeLogScannerBackend: scannerBackend(0, 1)}
+		backend.fetches[ready] = scannerFetch{records: encodedRows(t, table.Schema, 0, 1), highWatermark: 1}
+		backend.beforeFetch = func(ctx context.Context, input logFetchRequest) error {
+			if input.bucket != ready && input.config.FetchWaitMaxTime > 0 {
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			return nil
+		}
+		scanner, err := newLogScanner(t.Context(), backend, table, AtOffset(0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = scanner.Close() })
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		result, err := scanner.Poll(ctx)
+		cancel()
+		result.Release()
+		if err != nil || len(result.Records) != 1 || result.Records[0].Bucket != ready ||
+			scanner.offset[ready] != 1 || scanner.offset[1-ready] != 0 {
+			t.Fatalf("ready bucket %d: Poll = %#v, %v; offsets %v", ready, result, err, scanner.offset)
+		}
+	}
 }
 
 func TestLogScannerInterruptedPollPreservesProgress(t *testing.T) {

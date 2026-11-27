@@ -56,8 +56,8 @@ writers can share one client.
 | `client.scanner.log.max-poll-records` | None | `WithScanRowLimit` is a total completion bound, not a per-poll limit. |
 | `client.scanner.log.fetch.max-bytes` | `WithLogFetchLimits` / `LogScannerConfig.FetchMaxBytes` | Direct semantic mapping. |
 | `client.scanner.log.fetch.max-bytes-for-bucket` | `WithLogFetchLimits` / `LogScannerConfig.FetchMaxBytesForBucket` | Direct semantic mapping. |
-| `client.scanner.log.fetch.wait-max-time` | `WithLogFetchLimits` / `LogScannerConfig.FetchWaitMaxTime` | Direct semantic mapping. |
-| `client.scanner.log.fetch.min-bytes` | `WithLogFetchLimits` / `LogScannerConfig.FetchMinBytes` | Direct semantic mapping. |
+| `client.scanner.log.fetch.wait-max-time` | `WithLogFetchLimits` / `LogScannerConfig.FetchWaitMaxTime` | A multi-bucket poll waits on the server only for the last eligible bucket and only if no rows have been collected. Earlier fetches do not wait on an empty bucket. |
+| `client.scanner.log.fetch.min-bytes` | `WithLogFetchLimits` / `LogScannerConfig.FetchMinBytes` | Applies only to a fetch that can wait. Non-waiting fetches request a zero threshold. |
 | `client.scanner.remote-log.prefetch-num` | None | Remote objects are read through the configured provider without Java's segment-prefetch queue. |
 | `client.scanner.io.tmpdir` | None | Go remote readers stream through adapters and do not use the Java scanner temporary directory. |
 

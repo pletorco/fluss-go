@@ -351,15 +351,15 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 	stop := context.AfterFunc(s.life, cancel)
 	defer stop()
 	result := ScanResult{HighWatermark: make(map[int32]int64, len(progress.positions))}
-	for _, bucket := range s.buckets {
-		position, subscribed := progress.positions[bucket]
-		if !subscribed {
-			continue
+	buckets := s.activePollBuckets(progress)
+	for i, bucket := range buckets {
+		config := s.config
+		// Probe earlier buckets without a server-side wait. Give the last
+		// one the configured wait only if no bucket has returned records.
+		if i+1 < len(buckets) || len(result.Records) != 0 || len(result.ArrowBatches) != 0 {
+			config.FetchMinBytes, config.FetchWaitMaxTime = 0, 0
 		}
-		if stop, bounded := s.config.StoppingOffsets[bucket]; bounded && position.offset >= stop {
-			continue
-		}
-		if err := s.pollBucket(requestCtx, ctx, bucket, progress, &result); err != nil {
+		if err := s.pollBucket(requestCtx, ctx, bucket, config, progress, &result); err != nil {
 			result.Release()
 			return ScanResult{}, err
 		}
@@ -373,6 +373,18 @@ func (s *LogScanner) Poll(ctx context.Context) (ScanResult, error) {
 		return ScanResult{}, err
 	}
 	return result, nil
+}
+
+func (s *LogScanner) activePollBuckets(progress *logPollProgress) []int32 {
+	buckets := make([]int32, 0, len(progress.positions))
+	for _, bucket := range s.buckets {
+		position, subscribed := progress.positions[bucket]
+		stop, bounded := s.config.StoppingOffsets[bucket]
+		if subscribed && (!bounded || position.offset < stop) {
+			buckets = append(buckets, bucket)
+		}
+	}
+	return buckets
 }
 
 type logPollPosition struct {
@@ -430,6 +442,7 @@ func (s *LogScanner) pollBucket(
 	requestCtx context.Context,
 	callerCtx context.Context,
 	bucket int32,
+	config LogScannerConfig,
 	progress *logPollProgress,
 	result *ScanResult,
 ) error {
@@ -442,7 +455,7 @@ func (s *LogScanner) pollBucket(
 	}
 	fetched, err := s.backend.fetch(requestCtx, logFetchRequest{
 		path: s.path, bucket: bucket, tableID: s.tableID, partitionID: s.partitionID,
-		offset: offset, projection: projection, filter: s.filter, config: s.config,
+		offset: offset, projection: projection, filter: s.filter, config: config,
 	})
 	fetchDuration := metricDuration(started)
 	if err != nil {
