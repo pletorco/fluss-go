@@ -1140,6 +1140,9 @@ func testLogFormats(
 	t.Run("Arrow partition batch validation", func(t *testing.T) {
 		testArrowPartitionAppend(t, client, admin, database)
 	})
+	t.Run("lake-bound log routing", func(t *testing.T) {
+		testLakeBoundLogRouting(t, client, admin, database)
+	})
 	t.Run("TIMESTAMP row and key precision", func(t *testing.T) {
 		testTimestampPrecision(t, client, admin, database)
 	})
@@ -1227,6 +1230,13 @@ func appendArrowFormatRow(t *testing.T, writer *fgo.AppendWriter, table fgo.Tabl
 	defer invalid.Release()
 	if got := writer.AppendArrow(t.Context(), 0, invalid, []fgo.ChangeType{fgo.Append}).Await(t.Context()); !errors.Is(got.Err, fgo.ErrInvalidRow) {
 		t.Fatalf("append Arrow null under NOT NULL = %+v, want ErrInvalidRow", got)
+	}
+	builder.Field(0).(*array.Int32Builder).AppendValues([]int32{2, 3}, nil)
+	builder.Field(1).(*array.StringBuilder).AppendValues([]string{"unsubmitted", "delete"}, nil)
+	mixed := builder.NewRecordBatch()
+	defer mixed.Release()
+	if got := writer.AppendArrow(t.Context(), 0, mixed, []fgo.ChangeType{fgo.Append, fgo.Delete}).Await(t.Context()); !errors.Is(got.Err, fgo.ErrInvalidRow) {
+		t.Fatalf("mixed append and delete = %+v, want ErrInvalidRow", got)
 	}
 	builder.Field(0).(*array.Int32Builder).Append(1)
 	builder.Field(1).(*array.StringBuilder).Append("arrow")
@@ -1334,6 +1344,11 @@ func assertFormatRow(
 	rows := len(result.Records)
 	for _, batch := range result.ArrowBatches {
 		rows += int(batch.Batch.Record.NumRows())
+		if batch.Batch.Record.NumRows() != 1 || !batch.Batch.AppendOnly ||
+			len(batch.Batch.Changes) != 1 || batch.Batch.Changes[0] != fgo.Append ||
+			batch.Batch.Record.Column(0).(*array.Int32).Value(0) != 1 {
+			t.Fatalf("expected only the accepted append-only Arrow row, got %+v", batch.Batch)
+		}
 	}
 	if rows != 1 || !result.Done {
 		t.Fatalf("%s scan result = %#v", format, result)
