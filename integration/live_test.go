@@ -177,6 +177,9 @@ func TestFluss100Integration(t *testing.T) {
 	t.Run("snapshot and advanced admin APIs", func(t *testing.T) {
 		testAdvancedAdmin(t, client, admin, logPath, kvPath)
 	})
+	t.Run("KV snapshot offset resumes CDC without skipping a row", func(t *testing.T) {
+		testKVSnapshotResumeOffset(t, client, admin, database)
+	})
 
 	t.Run("post-failure data I/O", func(t *testing.T) {
 		testLeaderFailover(t, client, admin, logPath, kvPath)

@@ -38,6 +38,8 @@ breaking changes.
   so the next poll resumes without replaying a sequence or reopening a session.
 - Removed the implicit total-row cap on KV current-state scans. The default
   1,024-row limit and `WithBatchLimit` now bound each poll, not the entire scan.
+- Corrected the KV snapshot offset documentation: resume log reads directly
+  at the returned offset; adding one skips the first post-snapshot change.
 - Refreshed a stale leader route when a single-bucket `ListOffsets` reply
   reports a routing error in its response body.
 - Closed connections that finish after their shared setup was abandoned

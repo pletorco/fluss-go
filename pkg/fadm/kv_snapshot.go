@@ -16,7 +16,8 @@ type KVSnapshot struct {
 	Bucket int32
 	// SnapshotID is valid only when Available is true.
 	SnapshotID int64
-	// LogOffset is the snapshot's inclusive state offset.
+	// LogOffset is the first log offset not included in the snapshot. Resume
+	// log reads at this offset, without adding one. Valid when Available is true.
 	LogOffset int64
 	// Available distinguishes no snapshot from snapshot ID zero.
 	Available bool
@@ -81,7 +82,8 @@ type SnapshotFile struct {
 
 // KVSnapshotMetadata contains immutable files for one primary-key snapshot.
 type KVSnapshotMetadata struct {
-	// LogOffset is the snapshot's inclusive state offset.
+	// LogOffset is the first log offset not included in the snapshot. Resume
+	// log reads at this offset, without adding one.
 	LogOffset int64
 	// Files contains immutable snapshot objects.
 	Files []SnapshotFile
