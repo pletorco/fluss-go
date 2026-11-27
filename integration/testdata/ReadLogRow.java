@@ -3,6 +3,7 @@ import java.util.Map;
 import org.apache.fluss.client.ConnectionFactory;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.metadata.TablePath;
+import org.apache.fluss.record.ChangeType;
 
 class ReadLogRow {
     public static void main(String[] args) throws Exception {
@@ -14,7 +15,8 @@ class ReadLogRow {
             for (int i = 0; i < 10; i++) {
                 for (var record : scanner.poll(Duration.ofSeconds(1))) {
                     var row = record.getRow();
-                    if (row.getInt(0) != 1 || !args[3].equals(row.getString(1).toString())) {
+                    if (record.getChangeType() != ChangeType.APPEND_ONLY
+                            || row.getInt(0) != 1 || !args[3].equals(row.getString(1).toString())) {
                         throw new AssertionError("read unexpected row: " + row);
                     }
                     return;
