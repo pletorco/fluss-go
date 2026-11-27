@@ -117,6 +117,16 @@ incompatible batches already written to a table.
 For a partitioned Arrow log, every row in a batch must match the partition
 selected by `WithAppendPartition`. A mismatched or null partition value
 rejects the entire batch with `fgo.ErrInvalidRow` before it is queued.
+For all Arrow log appends, supply one `fgo.Append` change per row. Any other
+change type (including the KV changelog marker `fgo.Insert`) rejects the
+whole batch before it is queued. Accepted batches are encoded as append-only.
+
+For log tables with a bucket key and a nonempty `table.datalake.format`,
+opening a COMPACTED or INDEXED writer returns `fgo.ErrUnsupportedAPI`.
+Fluss can use lake-specific bucket routing even with tiering disabled.
+Unkeyed logs can still use row appends. `AppendArrow` accepts an explicit
+bucket; callers must choose it using the table's bucketing rules. This guard
+does not move records already written to the wrong bucket.
 
 <!-- go-source: internal/docexamples/snippets_test.go logFormat -->
 ```go
