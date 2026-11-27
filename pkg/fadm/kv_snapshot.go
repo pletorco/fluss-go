@@ -172,8 +172,11 @@ func (c *Client) AcquireKVSnapshotLease(
 	return leasesFromMessage(acquired.GetUnavailableSnapshots()), nil
 }
 
-// RenewKVSnapshotLease extends an existing lease for duration. Fluss identifies
-// the lease by leaseID; no snapshot identities are required for renewal.
+// RenewKVSnapshotLease asks Fluss to extend the lease identified by leaseID.
+// Renew before expiration. Fluss 1.0 can also acknowledge an unknown lease ID
+// by creating an empty lease, so nil does not confirm that previous snapshots
+// are still protected. If continuity is uncertain, acquire a new lease for the
+// required snapshots and check which snapshots were unavailable before reading.
 func (c *Client) RenewKVSnapshotLease(
 	ctx context.Context,
 	leaseID string,
