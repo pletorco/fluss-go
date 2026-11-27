@@ -8,12 +8,21 @@ breaking changes.
 
 ## [Unreleased]
 
+## [v0.2.0-beta.5] - 2026-11-27
+
 ### Added
 
 - Exposed the server's optional per-bucket next log offset in row and typed
   KV current-state scans for snapshot-to-CDC handoff.
 
 ### Fixed
+
+- Returned ready log rows without incurring a long server wait on an empty
+  peer bucket.
+- Refreshed and retried a stateless log batch scan once after leader failover,
+  without crossing table or partition identities or replaying KV sessions.
+- Clarified Fluss 1.0 limits on snapshot lease renewal and FIRST column
+  placement without changing the server requests.
 
 - Retained undelivered typed log, current-state, and snapshot scan pages when
   an application codec fails. Retrying the poll neither skips rows nor replays
@@ -120,6 +129,9 @@ breaking changes.
   encoded data can be reclaimed.
 - Reused schema mappings across decoded rows in log batches and KV pages,
   reducing allocation and repeated column compatibility checks.
+- Aligned the root requirements and install commands for all four adapters
+  with `v0.2.0-beta.5`. Updated Arrow Go to `v18.9.0` and the optional S3
+  module's AWS SDK service package to `v1.116.0`.
 
 ## [v0.2.0-beta.4] - 2026-11-17
 
@@ -568,7 +580,8 @@ breaking changes.
   repository security gates.
 - Added Apache License 2.0 licensing and third-party attribution.
 
-[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.4...HEAD
+[Unreleased]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.5...HEAD
+[v0.2.0-beta.5]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.4...v0.2.0-beta.5
 [v0.2.0-beta.4]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [v0.2.0-beta.3]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [v0.2.0-beta.2]: https://github.com/pletorco/fluss-go/compare/v0.2.0-beta.1...v0.2.0-beta.2

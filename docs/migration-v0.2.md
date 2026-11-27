@@ -1,25 +1,57 @@
-# Upgrade to v0.2.0-beta.4
+# Upgrade to v0.2.0-beta.5
 
 The fluss-go v0.2 line, introduced by `v0.2.0-beta.1`, targets Apache Fluss 1.0.
 It deliberately drops Apache Fluss 0.9.1 compatibility instead of maintaining a
-mixed protocol baseline. `v0.2.0-beta.4` is the current release of that line.
+mixed protocol baseline. `v0.2.0-beta.5` is the current release of that line.
 
 | Apache Fluss cluster | fluss-go version |
 | --- | --- |
 | `0.9.1-incubating` | Pin `v0.1.0-beta.11` |
-| `1.0.0` | Use `v0.2.0-beta.4` |
+| `1.0.0` | Use `v0.2.0-beta.5` |
 
 Upgrade the cluster to Fluss 1.0 before deploying an application built with
 fluss-go v0.2. No runtime switch or compatibility mode selects the old
 protocol. Root and adapter modules should use the same fluss-go version.
 
 ```sh
-go get github.com/pletorco/fluss-go@v0.2.0-beta.4
-go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.4
+go get github.com/pletorco/fluss-go@v0.2.0-beta.5
+go get github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.5
 go mod tidy
 ```
 
-## Unreleased KV key correction
+## Upgrading from v0.2.0-beta.4
+
+This release keeps Apache Fluss 1.0.0 and Go 1.26.11 as the baselines.
+
+- **Read KV scans to completion.** `WithBatchLimit` applies per poll, not to
+  the entire KV scan. Process the rows on the terminal poll before stopping.
+  If you previously relied on a total cap, count delivered rows and close
+  when you have enough. Log-table `LIMIT_SCAN` is still bounded in total.
+  See [current-state scans](data-operations.md#current-state-and-snapshot-scans).
+- **Resume from the snapshot's offset.** For a persisted KV snapshot, start
+  the bucket log at `AtOffset(LogOffset)`, without adding one. Only changes
+  before that offset are included in the snapshot. Row and typed current-state
+  KV results now expose `SnapshotLogOffset` and `SnapshotLogOffsetKnown`.
+  Consume every snapshot row for a bucket, then start its log at the supplied
+  offset when known. Do not substitute a later `Latest()` if it is absent.
+  See [current-state scans](data-operations.md#current-state-and-snapshot-scans)
+  and [persisted snapshots](admin-operations.md#kv-snapshots-and-leases).
+- **Check log poll timing.** Multi-bucket polls only wait on the server for
+  the last eligible bucket, and only if no rows are ready. Stateless log
+  batch scans retry once on a refreshed route after leader failover. KV
+  sessions still never replay an ambiguous cursor request.
+- **Match the log table's format.** Tables without `table.log.format` use
+  Arrow. Use `AppendArrow` with `fgo.Append` changes, or create the table with
+  COMPACTED or INDEXED for row appends. The Go writer rejects a mismatched
+  partition value, never reroutes an Arrow batch, and does not repair existing
+  incompatible or misplaced records. See [log formats](data-operations.md#log-formats-and-bounded-scans).
+- **Reconcile affected KV keys before cutover.** Partitioned KV keys exclude
+  partition fields; the wide DECIMAL key encoding is corrected at negative
+  byte-width boundaries. Older physical keys are not automatically migrated.
+  Lake-bound keyed KV operations and automatic row routing on keyed
+  lake-bound logs are rejected where this client cannot safely route them.
+
+### KV key correction
 
 Before deploying a client with the partitioned KV and wide DECIMAL key
 corrections, review [KV key compatibility](data-operations.md#kv-key-compatibility).
