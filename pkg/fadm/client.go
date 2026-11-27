@@ -362,7 +362,7 @@ type AlterConfig struct {
 	Op AlterConfigOpType
 }
 
-// AddColumn describes a column appended or inserted by an alter-table request.
+// AddColumn describes a column added by an alter-table request.
 type AddColumn struct {
 	// Name is the new unique column name.
 	Name string
@@ -370,7 +370,8 @@ type AddColumn struct {
 	Type fgo.LogicalType
 	// Description is optional column metadata.
 	Description string
-	// First inserts before existing columns when true.
+	// First requests insertion before existing columns. Fluss 1.0 only
+	// supports appending a column, so leave First false for that server.
 	First bool
 }
 
