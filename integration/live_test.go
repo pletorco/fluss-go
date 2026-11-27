@@ -1218,7 +1218,7 @@ func assertJavaLogRow(t *testing.T, table fgo.Table, message string) {
 		defer cancel()
 		address := net.JoinHostPort("127.0.0.1", env("FLUSS_PLAIN_COORDINATOR_PORT", "19123"))
 		args := []string{"--add-opens=java.base/java.nio=ALL-UNNAMED", "--class-path", jar,
-			"testdata/ReadLogRow.java", address, table.Path.Database, table.Path.Table, message}
+			"testdata/fluss/integration/ReadLogRow.java", address, table.Path.Database, table.Path.Table, message}
 		if output, err := exec.CommandContext(ctx, "java", args...).CombinedOutput(); err != nil {
 			t.Fatalf("official Java reader: %v\n%s", err, output)
 		}

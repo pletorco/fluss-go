@@ -252,22 +252,12 @@ func (r *Router) refresh(ctx context.Context, path TablePath, force bool) error 
 	if r.fetch == nil {
 		return fmt.Errorf("%w: %s", ErrUnknownTable, path)
 	}
-	r.mu.RLock()
-	if !force {
-		if _, ok := r.metadata.Tables[path]; ok {
-			r.mu.RUnlock()
-			return nil
-		}
+	if !force && r.hasTable(path) {
+		return nil
 	}
-	r.mu.RUnlock()
 	_, err := r.flights.Do(ctx, path, func(workCtx context.Context) (struct{}, error) {
-		if !force {
-			r.mu.RLock()
-			_, cached := r.metadata.Tables[path]
-			r.mu.RUnlock()
-			if cached {
-				return struct{}{}, nil
-			}
+		if !force && r.hasTable(path) {
+			return struct{}{}, nil
 		}
 		table, fetchErr := r.fetch(workCtx, path)
 		if fetchErr == nil && table.Path != path {

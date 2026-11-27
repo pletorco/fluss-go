@@ -1,3 +1,5 @@
+package fluss.integration;
+
 import java.time.Duration;
 import java.util.Map;
 import org.apache.fluss.client.ConnectionFactory;
@@ -13,14 +15,17 @@ class ReadLogRow {
                 var scanner = table.newScan().createLogScanner()) {
             scanner.subscribeFromBeginning(0);
             for (int i = 0; i < 10; i++) {
-                for (var record : scanner.poll(Duration.ofSeconds(1))) {
-                    var row = record.getRow();
-                    if (record.getChangeType() != ChangeType.APPEND_ONLY
-                            || row.getInt(0) != 1 || !args[3].equals(row.getString(1).toString())) {
-                        throw new AssertionError("read unexpected row: " + row);
-                    }
-                    return;
+                var rows = scanner.poll(Duration.ofSeconds(1)).iterator();
+                if (!rows.hasNext()) {
+                    continue;
                 }
+                var entry = rows.next();
+                var row = entry.getRow();
+                if (entry.getChangeType() != ChangeType.APPEND_ONLY
+                        || row.getInt(0) != 1 || !args[3].equals(row.getString(1).toString())) {
+                    throw new AssertionError("read unexpected row: " + row);
+                }
+                return;
             }
             throw new AssertionError("no row returned by the Java scanner");
         }
