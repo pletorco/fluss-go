@@ -13,7 +13,7 @@ type batchScanBackend interface {
 }
 
 type kvSessionScanBackend interface {
-	scanKV(context.Context, TableBucket, int64, int32, []byte, int32, bool) (kvSessionBatch, error)
+	scanKV(context.Context, TableBucket, int32, []byte, int32, bool) (kvSessionBatch, error)
 }
 
 type kvSessionBatch struct {
@@ -107,7 +107,6 @@ func (b clientBatchScanBackend) limitScan(
 func (b clientBatchScanBackend) scanKV(
 	ctx context.Context,
 	bucket TableBucket,
-	limit int64,
 	batchSize int32,
 	scannerID []byte,
 	sequence int32,
@@ -126,9 +125,11 @@ func (b clientBatchScanBackend) scanKV(
 		if count <= 0 {
 			return kvSessionBatch{}, fmt.Errorf("%w: KV scan bucket count must be positive", ErrMetadata)
 		}
+		// The optional wire limit caps the entire session, not its pages.
+		// Leave it unset so the cursor reads the entire bucket.
 		message.BucketScanReq = &fmsg.PbScanReqForBucket{
 			TableId: proto.Int64(bucket.TableID), BucketId: proto.Int32(bucket.BucketID),
-			Limit: proto.Int64(limit), RoutingBucketCount: proto.Int32(count),
+			RoutingBucketCount: proto.Int32(count),
 		}
 		if bucket.PartitionID >= 0 {
 			message.BucketScanReq.PartitionId = proto.Int64(bucket.PartitionID)

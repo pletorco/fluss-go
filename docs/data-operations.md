@@ -389,16 +389,28 @@ if err != nil {
 }
 defer scanner.Close()
 
-result, err := scanner.Poll(ctx)
-if err != nil {
-	return err
+for {
+	result, err := scanner.Poll(ctx)
+	if err != nil {
+		return err
+	}
+	log.Printf("rows=%d arrow_batches=%d", len(result.Rows), len(result.ArrowBatches))
+	result.Release()
+	if result.Done {
+		break
+	}
 }
-defer result.Release()
 ```
 
 Primary-key current-state scans use the Fluss 1.0 `SCAN_KV` session API. Each
-new page advances the server-validated call sequence; `WithBatchSizeBytes`
-bounds a response. If a poll is canceled or reaches its deadline while waiting
+new server page advances the server-validated call sequence; `WithBatchSizeBytes`
+bounds the requested response size. `WithBatchLimit` (default 1,024) limits
+the rows returned by each `Poll`, not the total scan. A server page can be
+delivered across several polls before requesting the next page. Call `Poll`
+until `Done`, processing the rows on the terminal poll too. To stop early,
+close the scanner.
+
+If a poll is canceled or reaches its deadline while waiting
 for a submitted request, a later poll waits for the same response instead of
 sending the sequence again. Each request has its own 30-second timeout. If the
 request itself fails, subsequent polls return the same wrapped error: the
@@ -414,7 +426,9 @@ never arrived, there may be no scanner ID available to close; the server
 expires any session left behind. An empty bucket may complete without a
 scanner ID.
 
-Log-table current-state scans use one bounded `LIMIT_SCAN` request.
+Log-table current-state scans use one bounded `LIMIT_SCAN` request and return
+at most `WithBatchLimit` latest records in total. Snapshot providers use the
+limit per call.
 Use `ResolveTableBuckets` for a partition so the request carries that partition's
 routing bucket count, which may differ from the current table default.
 Snapshot scans use

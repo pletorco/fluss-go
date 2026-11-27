@@ -115,6 +115,9 @@ versions and maintainer procedures, with no additional application migration.
 - `NewBatchScanner` now uses the Fluss 1.0 server-side `SCAN_KV` session for
   primary-key tables. Continue polling until `Done`, release each result, and
   close an unfinished scanner. `WithBatchSizeBytes` bounds each response.
+  `WithBatchLimit` limits rows per poll, not per KV scan. If an older caller
+  relied on it as a total cap, count rows across polls and close once it has
+  enough. Log-table `LIMIT_SCAN` continues to return a bounded latest slice.
 - Metadata exposes leader, replica, ISR, bucket-count epoch, remote-data, and
   per-partition bucket-count details. Routing requests send the authoritative
   routing bucket count and dynamic partition creation waits for a real leader.
