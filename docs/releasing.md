@@ -4,6 +4,44 @@ Releases are made only from a reviewed commit on `main`. A feature branch may
 prepare the changelog and release notes, but it must not publish a tag or
 GitHub Release before merge.
 
+## Release scope and blockers
+
+Before preparing a release, make one targeted review pass over the changes
+since the last published tag and the workflows the release promises to
+support. Check the regressions those changes could introduce; do not make
+another repository-wide audit a condition of release.
+
+- Block the release for reproduced data loss or corruption, misleading
+  success that can hide incomplete or incorrect results, regressions that
+  break promised workflows, confirmed security issues affecting the release,
+  or failure of a required release check. Follow the
+  [security policy](../SECURITY.md) for private disclosures.
+- Distinguish a fluss-go bug from a server limitation. Compare runtime
+  behavior first with the [official Rust Core (`fluss-rs`)](https://fluss.apache.org/docs/1.0/apis/rust/installation/)
+  against the same supported Fluss server, using equivalent input and
+  configuration. Record both versions. If Rust Core does not expose the
+  operation or the results disagree, check the pinned protocol and server
+  behavior; use the official Java client as an additional reference where
+  applicable. A disagreement alone does not establish a server bug.
+- Do not add a workaround or reject a valid request based on a suspected
+  server problem. Preserve the server's error when it already rejects the
+  request safely. Add a targeted guard only if a reproduced case shows it
+  is necessary to prevent corrupted data, silent loss, or misleading success
+  in a supported workflow. Track confirmed server problems separately; they
+  do not block release if the promised workflows remain safe and the
+  limitation and any supported workaround are documented.
+- Record the agreed blockers and their verification in the release PR.
+  Defer other findings to the issue tracker and note user-visible
+  limitations in the release notes. Once the scope is agreed, stop broad
+  issue hunting. Reopen it only for a newly confirmed blocker or a failed
+  required check, and investigate that finding directly.
+
+Publish once the agreed blockers are resolved and the required checks pass
+for the release candidate, as specified below. The goal is to verify the
+release's stated behavior, not to empty the issue tracker.
+
+## Prepare the release PR
+
 Once a release is chosen, create one release-preparation branch from the latest
 reviewed `main`. Put every remaining release blocker and the complete release
 preparation in that branch: dependency, toolchain, security, and version
@@ -31,15 +69,18 @@ SonarQube Community Edition records these local analyses under its single
 reported by the scanner against `git rev-parse HEAD` and use the Quality Gate
 result for that revision.
 
-The current prepared prerelease is `v0.2.0-beta.4`, with release notes in
-`.github/releases/v0.2.0-beta.4.md`.
+The current prepared prerelease is `v0.2.0-beta.5`, with release notes in
+`.github/releases/v0.2.0-beta.5.md`.
 
 ## Before publication
 
 1. Merge the release-preparation PR.
-2. Confirm the required CI, dependency review, `Fluss 1.0 live` integration,
-   and security checks passed for the exact merge commit. The integration check
-   is a stable branch-protection context and must not be bypassed for runtime,
+2. Confirm CI and Security passed on the exact merge commit. Verify the
+   required dependency review on the merged PR head and that its tested tree
+   matches the merge commit. Dispatch `Fluss 1.0 Integration` on `main` if
+   there is no exact-commit live run, and check that its SHA matches before
+   using it as release evidence. The PR's integration check is a stable
+   branch-protection context and must not be bypassed for runtime,
    protocol, fixture, or dependency changes. Inspect its retained reliability
    smoke report; client scheduling, connection, cancellation, or lifecycle
    changes also require a recent scheduled `mixed`, `soak`, and `fault` run.
@@ -74,28 +115,28 @@ fix `main` through another reviewed PR and release the corrected commit.
 Create an annotated tag on the verified `main` commit:
 
 ```sh
-git tag -a v0.2.0-beta.4 -m "fluss-go v0.2.0-beta.4"
-git show --no-patch --decorate v0.2.0-beta.4
-git push origin v0.2.0-beta.4
+git tag -a v0.2.0-beta.5 -m "fluss-go v0.2.0-beta.5"
+git show --no-patch --decorate v0.2.0-beta.5
+git push origin v0.2.0-beta.5
 ```
 
 Then create the GitHub prerelease from the committed notes:
 
 ```sh
-gh release create v0.2.0-beta.4 \
+gh release create v0.2.0-beta.5 \
   --repo pletorco/fluss-go \
   --verify-tag \
   --prerelease \
-  --title "fluss-go v0.2.0-beta.4" \
-  --notes-file .github/releases/v0.2.0-beta.4.md
+  --title "fluss-go v0.2.0-beta.5" \
+  --notes-file .github/releases/v0.2.0-beta.5.md
 ```
 
 Verify that the release target SHA equals the peeled annotated tag and the
 reviewed `main` commit:
 
 ```sh
-test "$(git rev-parse v0.2.0-beta.4^{})" = "$(git rev-parse origin/main)"
-gh release view v0.2.0-beta.4 --repo pletorco/fluss-go
+test "$(git rev-parse v0.2.0-beta.5^{})" = "$(git rev-parse origin/main)"
+gh release view v0.2.0-beta.5 --repo pletorco/fluss-go
 ```
 
 ### Adapter module tags
@@ -105,20 +146,20 @@ root tag first, wait until the public Go proxy resolves it, and then publish
 path-prefixed adapter tags on the same reviewed commit:
 
 ```sh
-git tag -a adapters/hdfs/v0.2.0-beta.4 -m "fluss-go HDFS adapter v0.2.0-beta.4"
-git tag -a adapters/oss/v0.2.0-beta.4 -m "fluss-go OSS adapter v0.2.0-beta.4"
-git tag -a adapters/otel/v0.2.0-beta.4 -m "fluss-go OpenTelemetry adapter v0.2.0-beta.4"
-git tag -a adapters/s3/v0.2.0-beta.4 -m "fluss-go S3 adapter v0.2.0-beta.4"
-git push origin adapters/hdfs/v0.2.0-beta.4 adapters/oss/v0.2.0-beta.4 \
-  adapters/otel/v0.2.0-beta.4 adapters/s3/v0.2.0-beta.4
+git tag -a adapters/hdfs/v0.2.0-beta.5 -m "fluss-go HDFS adapter v0.2.0-beta.5"
+git tag -a adapters/oss/v0.2.0-beta.5 -m "fluss-go OSS adapter v0.2.0-beta.5"
+git tag -a adapters/otel/v0.2.0-beta.5 -m "fluss-go OpenTelemetry adapter v0.2.0-beta.5"
+git tag -a adapters/s3/v0.2.0-beta.5 -m "fluss-go S3 adapter v0.2.0-beta.5"
+git push origin adapters/hdfs/v0.2.0-beta.5 adapters/oss/v0.2.0-beta.5 \
+  adapters/otel/v0.2.0-beta.5 adapters/s3/v0.2.0-beta.5
 ```
 
 The adapter `go.mod` files use a repository-local `replace` for development.
 Go ignores dependency-module replacements for downstream applications; the
-versioned root requirement is authoritative after publication. Before tagging,
-verify that every adapter requires an already published root version and that
-all modules pass with the checked-in workspace. Never publish an adapter tag
-before its required root module is available from the public proxy.
+versioned root requirement is authoritative after publication. Before tagging
+adapters, verify that their required root version is available from the public
+proxy and that all modules pass with the checked-in workspace. Never publish
+an adapter tag before its required root module is available from the public proxy.
 
 ## Module and documentation discovery
 
@@ -127,10 +168,10 @@ direct VCS fallback:
 
 ```sh
 GOPROXY=https://proxy.golang.org GONOSUMDB= \
-  go list -m -json github.com/pletorco/fluss-go@v0.2.0-beta.4
+  go list -m -json github.com/pletorco/fluss-go@v0.2.0-beta.5
 ```
 
-Confirm that the returned `Version` is `v0.2.0-beta.4` and that its origin hash
+Confirm that the returned `Version` is `v0.2.0-beta.5` and that its origin hash
 matches the released commit. The proxy may need a short propagation interval,
 but a failed lookup must not be hidden by `GOPROXY=direct`.
 
@@ -138,19 +179,19 @@ For beta.7 and later, repeat the proxy check for every published adapter:
 
 ```sh
 GOPROXY=https://proxy.golang.org GONOSUMDB= \
-  go list -m -json github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.4
+  go list -m -json github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.5
 ```
 
 Open the version-pinned online references and verify their package manuals,
 exported contracts, and examples:
 
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.2.0-beta.4`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.2.0-beta.4`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.2.0-beta.4`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.2.0-beta.4`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.2.0-beta.4`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/otel@v0.2.0-beta.4`
-- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.4`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fmsg@v0.2.0-beta.5`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fgo@v0.2.0-beta.5`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/pkg/fadm@v0.2.0-beta.5`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/hdfs@v0.2.0-beta.5`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/oss@v0.2.0-beta.5`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/otel@v0.2.0-beta.5`
+- `https://pkg.go.dev/github.com/pletorco/fluss-go/adapters/s3@v0.2.0-beta.5`
 
 Check at minimum the `fgo` TLS/SASL and error examples and the `fadm` advanced
 administration examples. Record any pkg.go.dev indexing delay on the release
