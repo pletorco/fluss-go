@@ -10,7 +10,7 @@ import (
 func TestBatchScannerSplitsKVPagesUntilExhausted(t *testing.T) {
 	table := upsertWriterTable()
 	backend := &fakeKVSessionBackend{batches: []kvSessionBatch{
-		{scannerID: []byte("scan"), hasMore: true, records: encodedValueBatch(t, table,
+		{scannerID: []byte("scan"), hasMore: true, offset: kvScanOffset{value: 42, known: true}, records: encodedValueBatch(t, table,
 			Row{int32(1), "one", int64(10)}, Row{int32(2), "two", int64(20)}, Row{int32(3), "three", int64(30)})},
 		{scannerID: []byte("scan"), records: encodedValueBatch(t, table,
 			Row{int32(4), "four", int64(40)}, Row{int32(5), "five", int64(50)}, Row{int32(6), "six", int64(60)})},
@@ -32,6 +32,9 @@ func TestBatchScannerSplitsKVPagesUntilExhausted(t *testing.T) {
 		if err != nil || !reflect.DeepEqual(got, ids) || result.Done != done || scanner.Done() != done {
 			t.Fatalf("poll %d: ids=%v done=%v err=%v; want %v done=%v", i, got, result.Done, err, ids, done)
 		}
+		if !result.SnapshotLogOffsetKnown || result.SnapshotLogOffset != 42 {
+			t.Fatalf("poll %d did not retain opening offset: %+v", i, result)
+		}
 		if len(backend.calls) != i/2+1 {
 			t.Fatalf("poll %d sent an RPC before draining the previous server page", i)
 		}
@@ -41,8 +44,8 @@ func TestBatchScannerSplitsKVPagesUntilExhausted(t *testing.T) {
 			result.Rows = append(result.Rows, Row{int32(999)})
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
-			if _, err := scanner.Poll(ctx); !errors.Is(err, context.Canceled) {
-				t.Fatalf("canceled poll: %v", err)
+			if canceled, err := scanner.Poll(ctx); !errors.Is(err, context.Canceled) || canceled.SnapshotLogOffsetKnown {
+				t.Fatalf("canceled poll: %+v, %v", canceled, err)
 			}
 		}
 	}
@@ -53,6 +56,27 @@ func TestBatchScannerSplitsKVPagesUntilExhausted(t *testing.T) {
 	again, err := scanner.Poll(t.Context())
 	if err != nil || !again.Done || len(again.Rows) != 0 || len(backend.calls) != 2 {
 		t.Fatalf("poll after completion: %+v, %v (calls=%d)", again, err, len(backend.calls))
+	}
+}
+
+func TestTypedBatchScannerExposesOptionalZeroOffsetForEmptyBucket(t *testing.T) {
+	for _, known := range []bool{true, false} {
+		table := upsertWriterTable()
+		backend := &fakeKVSessionBackend{batches: []kvSessionBatch{{offset: kvScanOffset{known: known}}}}
+		raw, err := newBatchScanner(t.Context(), backend, nil, table, testTableBucket(table))
+		if err != nil {
+			t.Fatal(err)
+		}
+		scanner, err := WrapTypedBatchScanner(raw, typedRowCodec())
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := scanner.Poll(t.Context())
+		_ = scanner.Close()
+		if err != nil || !result.Done || len(result.Values) != 0 ||
+			result.SnapshotLogOffsetKnown != known || result.SnapshotLogOffset != 0 {
+			t.Fatalf("known=%v: result=%+v err=%v", known, result, err)
+		}
 	}
 }
 

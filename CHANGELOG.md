@@ -8,6 +8,11 @@ breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Exposed the server's optional per-bucket next log offset in row and typed
+  KV current-state scans for snapshot-to-CDC handoff.
+
 ### Fixed
 
 - Retained undelivered typed log, current-state, and snapshot scan pages when

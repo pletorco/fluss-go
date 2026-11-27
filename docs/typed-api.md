@@ -55,6 +55,10 @@ waiting for a poll slot is respected; an active codec call has no context
 parameter and cannot be interrupted. If its poll was canceled but the page
 was already read, a later poll can still retry it. Closing discards that
 page and prevents a running codec from publishing a result after close.
+For current-state KV scans, a successfully decoded page also carries
+`SnapshotLogOffset` and `SnapshotLogOffsetKnown`. Use the reported per-bucket
+offset after consuming the complete snapshot; a codec error does not deliver
+either rows or the offset.
 Once a row batch scanner has been wrapped, poll and close it through the
 typed wrapper. An unsupported Arrow batch stops the typed scanner explicitly;
 use a row format or an Arrow scanner to read those results.

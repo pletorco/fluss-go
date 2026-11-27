@@ -20,6 +20,12 @@ type kvSessionBatch struct {
 	scannerID []byte
 	hasMore   bool
 	records   []byte
+	offset    kvScanOffset
+}
+
+type kvScanOffset struct {
+	value int64
+	known bool
 }
 
 type clientBatchScanBackend struct{ client *Client }
@@ -149,5 +155,6 @@ func (b clientBatchScanBackend) scanKV(
 	return kvSessionBatch{
 		scannerID: append([]byte(nil), scanned.GetScannerId()...),
 		hasMore:   scanned.GetHasMoreResults(), records: append([]byte(nil), scanned.GetRecords()...),
+		offset: kvScanOffset{value: scanned.GetLogOffset(), known: scanned.LogOffset != nil && scanned.GetLogOffset() >= 0},
 	}, nil
 }

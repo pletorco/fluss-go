@@ -530,6 +530,11 @@ type TypedBatchResult[T any] struct {
 	Values []T
 	// Done reports that the bounded scan has completed.
 	Done bool
+	// SnapshotLogOffset is the first log offset not represented in the KV
+	// current-state snapshot; see [BatchResult.SnapshotLogOffset].
+	SnapshotLogOffset int64
+	// SnapshotLogOffsetKnown reports whether Fluss supplied the offset.
+	SnapshotLogOffsetKnown bool
 }
 
 // TypedBatchScanner decodes bounded current-state or snapshot scan rows.
@@ -620,7 +625,10 @@ func (s *TypedBatchScanner[T]) readRows(ctx context.Context) (BatchResult, error
 }
 
 func (s *TypedBatchScanner[T]) decode(raw BatchResult) (TypedBatchResult[T], error) {
-	result := TypedBatchResult[T]{Values: make([]T, 0, len(raw.Rows)), Done: raw.Done}
+	result := TypedBatchResult[T]{
+		Values: make([]T, 0, len(raw.Rows)), Done: raw.Done,
+		SnapshotLogOffset: raw.SnapshotLogOffset, SnapshotLogOffsetKnown: raw.SnapshotLogOffsetKnown,
+	}
 	for _, row := range raw.Rows {
 		value, err := s.codec.Decode(row)
 		if err != nil {

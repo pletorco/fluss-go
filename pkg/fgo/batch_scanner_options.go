@@ -63,6 +63,14 @@ type BatchResult struct {
 	ArrowBatches []ArrowLogBatch
 	// Done reports that no additional rows remain.
 	Done bool
+	// SnapshotLogOffset is the first log offset not represented in this
+	// bucket's KV current-state snapshot. Resume with [AtOffset] after
+	// consuming the whole scan. Valid only if SnapshotLogOffsetKnown.
+	SnapshotLogOffset int64
+	// SnapshotLogOffsetKnown distinguishes a server-supplied offset (including
+	// zero) from an absent offset. It is retained across delivered KV pages,
+	// but is false for log tables and provider-backed immutable snapshots.
+	SnapshotLogOffsetKnown bool
 }
 
 // Release frees Arrow records owned by the result.

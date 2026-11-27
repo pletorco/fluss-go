@@ -410,6 +410,15 @@ delivered across several polls before requesting the next page. Call `Poll`
 until `Done`, processing the rows on the terminal poll too. To stop early,
 close the scanner.
 
+When `SnapshotLogOffsetKnown` is true, `SnapshotLogOffset` is the first
+offset not represented in that bucket's current-state KV snapshot. The same
+offset is present on each delivered page, including the terminal page and
+typed results. Consume every snapshot row before starting that bucket's CDC
+at `AtOffset(result.SnapshotLogOffset)`; do not add one. Zero can be valid.
+If the server omitted the offset, do not substitute a later `Latest()`:
+that can skip changes made during the scan. This boundary is per bucket,
+not a single atomic snapshot across buckets.
+
 If a poll is canceled or reaches its deadline while waiting
 for a submitted request, a later poll waits for the same response instead of
 sending the sequence again. Each request has its own 30-second timeout. If the
